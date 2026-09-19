@@ -15,7 +15,7 @@ from adjutant.security import password_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap import provision_runtime  # noqa: E402
+from bootstrap import provision_runtime, provision_worker  # noqa: E402
 from migrate import migrate  # noqa: E402
 
 
@@ -40,6 +40,13 @@ def admin(database_urls):
     with psycopg.connect(database_urls[0], autocommit=True, row_factory=dict_row) as conn:
         conn.execute("SET search_path=adjutant,public")
         yield conn
+
+
+@pytest.fixture
+def worker_url(database_urls, admin):
+    password = (ROOT / ".local/worker.password").read_text(encoding="utf-8").strip()
+    provision_worker(admin, password)
+    return f"postgresql://adjutant_worker:{quote(password)}@{database_urls[0].split('@')[1]}"
 
 
 @pytest.fixture
@@ -72,7 +79,6 @@ def client(database_urls, identity):
         database_url=database_urls[1],
         worker_database_url=None,
         signing_key_path=ROOT / ".local/approval.key",
-        registry_path=ROOT / "Adjutant — Event Registry.json",
     )
     with TestClient(create_app(config)) as client:
         client.headers.update({"x-adjutant-client": "console", "origin": "http://localhost:3000"})

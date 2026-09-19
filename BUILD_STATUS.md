@@ -6,17 +6,44 @@ It is not Phase 0 complete, a closed-alpha release, or the finished 199-ticket p
 
 ## Verified on Windows, 2026-09-19
 
-- Backend: 87 tests passed against dedicated PostgreSQL `adjutant_test`, including native process
-  cancellation/recovery, gateway isolation, replay, and concurrent cross-plan brand-budget enforcement.
-- Browser: both end-to-end workflows passed, covering account lifecycle, provider selection/setup
-  errors, campaign approval persistence, deployment preflight, and mobile layout checks.
+- Backend: 97 tests passed against dedicated PostgreSQL `adjutant_test`, including native process
+  cancellation/recovery, gateway isolation, replay, concurrent cross-plan brand-budget enforcement,
+  supervisor database-connection loss, and both worker `SECURITY DEFINER` boundaries.
+- Browser: three end-to-end workflows passed, covering account lifecycle, provider selection/setup
+  errors, campaign approval persistence, deployment preflight, mobile layout, and sign-out during
+  a real generation subprocess with persisted OS exit proof and old-session rejection.
 - Production console build, TypeScript, Python lint/format, and dependency consistency checks passed.
+- Python wheel built and its bundled nine-event runtime registry matched the source artifact.
+  The original full-platform registry is absent from the checkout; this artifact covers current
+  producers only. Existing test-database events were checked for compatibility.
+- BallPython 2.0.0 security and taint scans returned no findings. Its twelve unresolved-import
+  diagnostics were reviewed as false positives (`__file__` and the locally defined `issue_token`).
+  Analysis reports are local artifacts; no automatic code transformations were applied.
 - The installed local Ollama model produced a schema-valid draft that was saved and submitted for
   approval in the test database. No advertising campaign was launched.
 - Native Windows stop/restart commands verified project server exits and successful API/gateway/web
   startup; the existing PostgreSQL process remained running and working account credentials were preserved.
 - Real Ollama Cloud inference, SMTP-provider delivery, advertising APIs, and cloud infrastructure
   remain unverified. Missing cloud keys or external accounts are not represented as working integrations.
+
+## Repository CI evidence
+
+The workflow now provisions a separate PostgreSQL service for the console job and runs all three
+Playwright workflows after building the console, with Chromium installed and failure traces retained.
+The backend job continues to run Ruff and the full database suite. The browser inference endpoint
+is controlled test infrastructure; the worker, session revocation, database writes, and OS exit checks
+are real. No cloud account, GPU, or live Ollama model is required by these CI tests.
+
+No remote GitHub Actions result has been verified for these working-tree changes. The Windows results
+above are local evidence, not a successful CI status or proof of a Linux/container deployment.
+
+## Exit-proof boundary during database loss
+
+When the consumer supervisor loses its database connection, it terminates its owned child but may
+be unable to persist the exit acknowledgement. The regression test terminates the actual supervisor
+connection and temporarily prevents reconnection, then checks OS exit independently. The original
+record's exit fields remain null after recovery; the replacement's later orderly exit is recorded.
+Neither cancellation requests nor stale heartbeats are treated as verified process exit.
 
 ## Implemented and locally exercised
 

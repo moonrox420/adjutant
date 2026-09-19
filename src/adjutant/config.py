@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     ollama_cloud_api_key: SecretStr = SecretStr("")
     temporal_address: str = "localhost:7233"
     temporal_namespace: str = "default"
-    registry_path: Path = Path("Adjutant — Event Registry.json")
+    registry_path: Path = Path(__file__).with_name("event_registry.json")
     worker_database_url: SecretStr | None = None
     gateway_url: str = "http://127.0.0.1:8002"
     gateway_service_secret_path: Path = Path(".local/gateway-service.secret")

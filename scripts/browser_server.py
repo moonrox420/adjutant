@@ -8,6 +8,7 @@ from urllib.parse import quote
 import psycopg
 import uvicorn
 from bootstrap import provision_runtime, provision_worker
+from browser_inference import MODEL, browser_inference
 from live_canary import create_app, seed_identity, test_settings
 from migrate import migrate
 from pydantic import SecretStr
@@ -24,11 +25,18 @@ with psycopg.connect(admin_url) as conn:
     provision_worker(conn, worker_password)
 identity = seed_identity(Path(".local/test-admin.url").read_text().strip())
 Path(".local/browser-user.json").write_text(json.dumps(identity))
+generation_identity = seed_identity(admin_url)
+Path(".local/browser-generation-user.json").write_text(
+    json.dumps(generation_identity), encoding="utf-8"
+)
 config = test_settings("http://127.0.0.1:3001")
 config.ollama_provider = "local"
 config.ollama_cloud_api_key = SecretStr("")
+config.ollama_model = MODEL
 config.worker_database_url = SecretStr(
     f"postgresql://adjutant_worker:{quote(worker_password)}@{admin_url.split('@')[1]}"
 )
 config.mail_directory = root / ".local/browser-mail"
-uvicorn.run(create_app(config), host="127.0.0.1", port=8001)
+with browser_inference(root / ".local/browser-inference.json") as inference_url:
+    config.ollama_url = inference_url
+    uvicorn.run(create_app(config), host="127.0.0.1", port=8001)

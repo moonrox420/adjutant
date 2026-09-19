@@ -244,6 +244,23 @@ trigger restart. The UI shows recent receipts and health. This projection does n
 published to Redpanda or perform advertising platform effects. Broker relay, additional domain
 consumers, and broker DLQ/replay tooling remain future work.
 
+If the supervisor loses its database connection, it still terminates its owned child. When the
+exit acknowledgement cannot be persisted, that consumer record retains null exit fields even
+after a replacement starts. A missing acknowledgement is not proof that the process is alive
+or dead. The regression suite kills the supervisor's real PostgreSQL connection, blocks its
+reconnection temporarily, and independently observes child exit and replacement recovery.
+
+The worker's only callable application `SECURITY DEFINER` functions are `consume_activity_batch`
+and `reap_abandoned_jobs`. They intentionally operate across tenants but return integer counts.
+Tests constrain their changes, batch bounds, pinned search paths, temporary-table shadowing,
+function replacement permissions, and direct access to private tenant data.
+
+The nine events currently emitted by the API have a bundled registry in
+`src/adjutant/event_registry.json`, included in the Python wheel. UUID and date-time formats are
+validated using JSON Schema's format dependencies. `ADJUTANT_REGISTRY_PATH` can override the
+packaged default. The original full-platform design registry is absent from this checkout;
+the bundled runtime contracts do not claim to restore every future platform event.
+
 ## Verification
 
 The backend suite requires a real `adjutant_test` PostgreSQL database; it refuses a working-database URL.
@@ -260,10 +277,15 @@ Pop-Location
 ```
 
 Playwright starts isolated API/console servers on ports 8001/3001. It exercises the complete account
-journey and the existing brand-to-approval workflow. Account test emails go to `.local/browser-mail`.
+journey, the existing brand-to-approval workflow, and logout during active generation. The last
+workflow checks the running worker's PID, account-page cancellation acknowledgement, rejected old
+session, persisted OS exit proof after signing in again, and absence of a late draft.
+Account test emails go to `.local/browser-mail`.
 Run browser and database suites sequentially because both use the dedicated test database. Screenshots
-are written under `.local`; failure traces are under `web/test-results`. Backend fixture tests use
-controlled HTTP inference endpoints for deterministic cancellation; the live canary uses Ollama:
+are written under `.local`; failure traces are under `web/test-results` and the HTML report is under
+`web/playwright-report`. Browser and backend lifecycle tests use controlled HTTP inference endpoints
+with real worker processes for deterministic cancellation. They do not verify model quality or live
+Ollama availability. The live canary uses Ollama:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/live_canary.py --model mirage335/Llama-3-NeuralDaredevil-8B-abliterated-virtuoso:latest
@@ -272,9 +294,28 @@ controlled HTTP inference endpoints for deterministic cancellation; the live can
 The live canary writes only test-database records. Inference success does not prove live ad delivery.
 Two dependency deprecation warnings currently come from FastAPI/Starlette's HTTPX test adapter.
 
+GitHub Actions provisions separate PostgreSQL services for backend and console jobs, installs Chromium,
+and runs all three browser workflows after the console build. Browser failure diagnostics are retained
+for seven days. These gates are configured in the repository; local Windows results do not establish
+that a particular commit has passed GitHub Actions.
+
+BallPython 2.0.0 was also run locally in read-only mode:
+
+```powershell
+.\.venv\Scripts\ballpython.exe check --json src scripts tests
+.\.venv\Scripts\ballpython.exe scan --json src scripts tests
+.\.venv\Scripts\ballpython.exe taint --json src scripts
+```
+
+Security and taint scans returned no findings. The code check reported twelve unresolved-import
+diagnostics: eleven references to Python's `__file__` and one forward reference to `issue_token`,
+which is defined in the same module. These were reviewed as false positives; no automatic fixes
+were applied. BallPython is an optional local analysis tool, not a replacement for the runtime tests.
+
 ## Deployment boundaries
 
-The API and console include Dockerfiles and a GitHub Actions workflow for source/build checks.
+The API and console include Dockerfiles and a GitHub Actions workflow for source, build, database,
+and browser checks.
 Container builds and a remote CI run have not been verified in this environment. Provision PostgreSQL,
 apply checksum-validated migrations, and mount the existing Ed25519 signing key readable by the API
 user. Do not regenerate a deployed approval key silently. Database backups, HTTPS termination,

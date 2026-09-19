@@ -2,12 +2,12 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
-from urllib.parse import quote
+from unittest.mock import patch
 
 import psycopg
 import pytest
-from bootstrap import provision_worker
 from psycopg.rows import dict_row
 from test_process_lifecycle import wait_for
 
@@ -17,13 +17,6 @@ from adjutant.consumer_supervisor import ConsumerSupervisor
 from adjutant.processes import child_environment, terminate_owned
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-@pytest.fixture
-def worker_url(database_urls, admin):
-    password = (ROOT / ".local/worker.password").read_text().strip()
-    provision_worker(admin, password)
-    return f"postgresql://adjutant_worker:{quote(password)}@{database_urls[0].split('@')[1]}"
 
 
 def crash_helper(config):
@@ -163,6 +156,87 @@ def test_supervisor_verifies_killed_consumer_and_starts_replacement(
     finally:
         supervisor.close()
     assert replacement.poll() is not None
+
+
+def test_supervisor_connection_loss_terminates_child_without_fabricated_exit_record(
+    worker_url,
+    database_urls,
+    admin,
+    tmp_path,
+    caplog,
+):
+    unavailable = threading.Event()
+    connected = threading.Event()
+    backend_pids = []
+    connect = psycopg.connect
+
+    def controlled_connection(*args, **kwargs):
+        if unavailable.is_set():
+            raise psycopg.OperationalError("Test supervisor connection is unavailable")
+        conn = connect(*args, **kwargs)
+        if kwargs.get("autocommit"):
+            backend_pids.append(conn.info.backend_pid)
+            connected.set()
+        return conn
+
+    supervisor = ConsumerSupervisor(
+        Settings(
+            database_url=database_urls[1],
+            worker_database_url=worker_url,
+            mail_directory=tmp_path / "mail",
+        )
+    )
+    with patch("adjutant.consumer_supervisor.psycopg.connect", side_effect=controlled_connection):
+        supervisor.start()
+        try:
+            assert connected.wait(5)
+            first = wait_for(lambda: supervisor.process)
+            record = wait_for(
+                lambda: admin.execute(
+                    "SELECT * FROM consumer_process WHERE pid=%s AND heartbeat_at>started_at",
+                    (first.pid,),
+                ).fetchone()
+            )
+            assert first.poll() is None
+            unavailable.set()
+            assert admin.execute(
+                "SELECT pg_terminate_backend(%s) AS stopped", (backend_pids[-1],)
+            ).fetchone()["stopped"]
+            wait_for(lambda: first.poll() is not None)
+            wait_for(lambda: supervisor.process is None)
+            assert first.returncode is not None
+            missing = admin.execute(
+                "SELECT * FROM consumer_process WHERE instance_id=%s", (record["instance_id"],)
+            ).fetchone()
+            assert missing["exit_code"] is None
+            assert missing["exited_at"] is None
+            assert missing["exit_verified_at"] is None
+            assert "Consumer supervision failed" in caplog.text
+            assert worker_url not in caplog.text
+            unavailable.clear()
+            replacement = wait_for(lambda: supervisor.process)
+            assert replacement.pid != first.pid and replacement.poll() is None
+            wait_for(
+                lambda: admin.execute(
+                    "SELECT 1 FROM consumer_process WHERE pid=%s AND heartbeat_at>started_at",
+                    (replacement.pid,),
+                ).fetchone()
+            )
+            missing = admin.execute(
+                "SELECT exit_verified_at FROM consumer_process WHERE instance_id=%s",
+                (record["instance_id"],),
+            ).fetchone()
+            assert missing["exit_verified_at"] is None
+        finally:
+            unavailable.clear()
+            supervisor.close()
+    assert replacement.poll() is not None
+    verified = admin.execute(
+        "SELECT exit_code,exit_verified_at FROM consumer_process WHERE pid=%s",
+        (replacement.pid,),
+    ).fetchone()
+    assert verified["exit_code"] == replacement.returncode
+    assert verified["exit_verified_at"] is not None
 
 
 def test_worker_cannot_read_accounts_or_sessions(worker_url):

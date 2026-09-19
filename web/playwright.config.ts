@@ -1,17 +1,27 @@
 import { defineConfig } from "@playwright/test";
+import { existsSync } from "node:fs";
+
+const virtualenvPython =
+  process.platform === "win32"
+    ? "../.venv/Scripts/python.exe"
+    : "../.venv/bin/python";
+const python = existsSync(virtualenvPython) ? virtualenvPython : "python";
 
 export default defineConfig({
   testDir: "./tests",
   timeout: 60_000,
   workers: 1,
+  forbidOnly: Boolean(process.env.CI),
+  reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:3001",
     viewport: { width: 1440, height: 1050 },
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   webServer: [
     {
-      command: "..\\.venv\\Scripts\\python.exe ..\\scripts\\browser_server.py",
+      command: `"${python}" ../scripts/browser_server.py`,
       url: "http://127.0.0.1:8001/healthz",
       timeout: 30_000,
       reuseExistingServer: false,

@@ -11,7 +11,7 @@ dependencies = [
   "fastapi==0.141.1", "uvicorn[standard]==0.53.0",
   "psycopg[binary,pool]==3.3.6", "cryptography==50.0.1",
   "pydantic-settings==2.15.0", "httpx==0.28.1",
-  "jsonschema==4.26.0", "email-validator>=2.2,<3",
+  "jsonschema[format-nongpl]==4.26.0", "email-validator>=2.2,<3",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +19,9 @@ dev = ["pytest==9.1.1", "ruff==0.16.8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+adjutant = ["event_registry.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,476 @@
+{
+  "registry_version": "runtime-v1",
+  "description": "Contracts for the nine events emitted by the current Adjutant core API. This is not the missing full-platform design registry.",
+  "envelope_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "event_id",
+      "event_type",
+      "event_version",
+      "occurred_at",
+      "produced_at",
+      "producer",
+      "brand_id",
+      "payload"
+    ],
+    "properties": {
+      "event_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "event_type": {
+        "type": "string",
+        "minLength": 1
+      },
+      "event_version": {
+        "const": 1
+      },
+      "occurred_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "produced_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "producer": {
+        "type": "string",
+        "minLength": 1
+      },
+      "brand_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "payload": {
+        "type": "object"
+      }
+    }
+  },
+  "events": [
+    {
+      "event_type": "action.recorded",
+      "event_version": 1,
+      "topic": "adj.audit.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "action_id",
+          "action_type",
+          "actor_kind",
+          "target_kind"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor_kind": {
+            "enum": [
+              "human",
+              "agent",
+              "system"
+            ]
+          },
+          "target_kind": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "event_type": "brand.created",
+      "event_version": 1,
+      "topic": "adj.brand.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "account_id",
+          "account_type",
+          "display_name"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "account_type": {
+            "enum": [
+              "business",
+              "agency"
+            ]
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "event_type": "brand.graph.confirmed",
+      "event_version": 1,
+      "topic": "adj.brand.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "graph_version",
+          "confirmed_by",
+          "confirmed_paths"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "graph_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "confirmed_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmed_paths": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "event_type": "brand.kill_switch.engaged",
+      "event_version": 1,
+      "topic": "adj.control.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "engaged_by",
+          "scope",
+          "reason"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "engaged_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope": {
+            "const": "brand"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "event_type": "plan.drafted",
+      "event_version": 1,
+      "topic": "adj.plan.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "plan_id",
+          "plan_hash",
+          "channels",
+          "objective",
+          "monthly_budget_usd"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "channels": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "meta",
+                "google_ads",
+                "youtube",
+                "tiktok",
+                "linkedin",
+                "microsoft",
+                "reddit",
+                "pinterest",
+                "snapchat",
+                "amazon_ads"
+              ]
+            }
+          },
+          "objective": {
+            "enum": [
+              "awareness",
+              "traffic",
+              "engagement",
+              "leads",
+              "app_promotion",
+              "sales",
+              "store_visits",
+              "video_views"
+            ]
+          },
+          "monthly_budget_usd": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      }
+    },
+    {
+      "event_type": "plan.approved",
+      "event_version": 1,
+      "topic": "adj.plan.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "plan_id",
+          "plan_hash",
+          "approval_request_id",
+          "token_id"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "approval_request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "token_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    {
+      "event_type": "approval.requested",
+      "event_version": 1,
+      "topic": "adj.approval.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "approval_request_id",
+          "subject_type",
+          "subject_id",
+          "subject_hash",
+          "stage",
+          "expires_at",
+          "requested_usd_daily",
+          "requested_usd_total"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approval_request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_type": {
+            "const": "plan"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "stage": {
+            "enum": [
+              "pending_internal",
+              "pending_client"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requested_usd_daily": {
+            "type": "number",
+            "minimum": 0
+          },
+          "requested_usd_total": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    {
+      "event_type": "approval.decided",
+      "event_version": 1,
+      "topic": "adj.approval.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "approval_request_id",
+          "stage",
+          "decision",
+          "decided_by",
+          "decided_at"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approval_request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stage": {
+            "enum": [
+              "pending_internal",
+              "pending_client"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected",
+              "changes_requested"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    {
+      "event_type": "approval.token.issued",
+      "event_version": 1,
+      "topic": "adj.approval.v1",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "brand_id",
+          "token_id",
+          "approval_request_id",
+          "subject_type",
+          "subject_id",
+          "subject_hash",
+          "scopes",
+          "usd_daily_cap",
+          "usd_total_cap",
+          "expires_at"
+        ],
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "token_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approval_request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_type": {
+            "const": "plan"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "scopes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "usd_daily_cap": {
+            "type": "number",
+            "minimum": 0
+          },
+          "usd_total_cap": {
+            "type": "number",
+            "minimum": 0
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  ]
+}
