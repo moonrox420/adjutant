@@ -40,6 +40,7 @@ class PasswordInput(BaseModel):
 class Registration(EmailInput, PasswordInput):
     full_name: str = Field(min_length=1, max_length=120)
     workspace_name: str = Field(min_length=1, max_length=120)
+    account_type: Literal["business", "agency"] = "business"
 
     @field_validator("full_name", "workspace_name")
     @classmethod
@@ -122,7 +123,7 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
         encoded = password_hash(data.password)
         with db.transaction() as conn:
             conn.execute(
-                "SELECT register_account(%s,%s,%s,%s,%s,%s)",
+                "SELECT register_account(%s,%s,%s,%s,%s,%s,%s::account_type)",
                 (
                     data.email,
                     data.full_name,
@@ -130,6 +131,7 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
                     encoded,
                     session_digest(token),
                     message("verify", token),
+                    data.account_type,
                 ),
             )
         return accepted()

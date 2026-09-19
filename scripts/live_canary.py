@@ -11,6 +11,8 @@ import psycopg
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from test_approval_server import approval_test_server
+
 from adjutant.api import create_app
 from adjutant.config import Settings
 from adjutant.security import password_hash
@@ -51,7 +53,15 @@ def test_settings(origin: str = "http://localhost:3000") -> Settings:
 
 def run(model: str) -> None:
     identity = seed_identity(Path(".local/test-admin.url").read_text().strip())
-    with TestClient(create_app(test_settings())) as client:
+    with approval_test_server(Path(".local/test-admin.url").read_text().strip()) as approval_url:
+        config = test_settings()
+        config.approval_url = approval_url
+        run_workflow(identity, config, model)
+
+
+def run_workflow(identity: dict[str, str], config: Settings, model: str) -> None:
+    """Exercise the application with the dedicated approval service available."""
+    with TestClient(create_app(config)) as client:
         client.headers.update({"x-adjutant-client": "console"})
         response = client.post(
             "/api/auth/login", json={"email": identity["email"], "password": identity["password"]}

@@ -1,0 +1,5 @@
+# Preserve the authoritative specification bytes recorded in its provenance manifest.
+docs/specification/*.md -text
+docs/specification/*.sql -text
+docs/specification/*.csv -text
+docs/specification/full-event-registry.json -text

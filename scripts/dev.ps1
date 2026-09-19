@@ -15,8 +15,8 @@ if (-not (Test-Path -LiteralPath '.env')) {
 $nodeExe = (Get-Command node -ErrorAction Stop).Source
 $nextBin = Join-Path $projectRoot 'web\node_modules\next\dist\bin\next'
 if (-not (Test-Path -LiteralPath $nextBin)) { throw 'Run npm ci in the web directory first. See the Windows dependency repair instructions in README.md.' }
-if (-not (Test-Path -LiteralPath '.local/gateway-service.secret')) {
-    throw 'Run .\.venv\Scripts\python.exe scripts/upgrade.py to configure the gateway first.'
+if (-not (Test-Path -LiteralPath '.local/gateway-service.secret') -or -not (Test-Path -LiteralPath '.local/approval-service.secret')) {
+    throw 'Run .\.venv\Scripts\python.exe scripts/upgrade.py to configure the gateway and approval service first.'
 }
 function Assert-ProjectPort([int]$Port) {
     $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
@@ -27,8 +27,8 @@ function Assert-ProjectPort([int]$Port) {
         }
     }
 }
-foreach ($port in @(8000, 8002, 3000)) { Assert-ProjectPort $port }
-if ($Restart) { & (Join-Path $PSScriptRoot 'stop.ps1') -Service api,gateway }
+foreach ($port in @(8000, 8002, 8003, 3000)) { Assert-ProjectPort $port }
+if ($Restart) { & (Join-Path $PSScriptRoot 'stop.ps1') -Service api,gateway,approval }
 & (Join-Path $PostgresBin 'pg_ctl.exe') -D .local/postgres status 2>$null
 if ($LASTEXITCODE -ne 0) {
     & (Join-Path $PostgresBin 'pg_ctl.exe') -D .local/postgres -l .local/postgres.log -o '-h 127.0.0.1 -p 55439' -w start
@@ -52,6 +52,18 @@ function Test-AdjutantGateway {
         return $false
     }
 }
+function Test-AdjutantApproval {
+    try {
+        $result = Invoke-RestMethod -Uri 'http://127.0.0.1:8003/healthz' -TimeoutSec 2
+        return $result.service -eq 'adjutant-approval'
+    } catch {
+        Write-Verbose "Approval service is not ready: $($_.Exception.Message)"
+        return $false
+    }
+}
+if (-not (Test-AdjutantApproval)) {
+    Start-Process -FilePath $pythonExe -ArgumentList @('-m','uvicorn','adjutant.approval_api:create_app','--factory','--app-dir','src','--host','127.0.0.1','--port','8003') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput '.local/approval.stdout.log' -RedirectStandardError '.local/approval.stderr.log'
+}
 if (-not (Test-AdjutantGateway)) {
     Start-Process -FilePath $pythonExe -ArgumentList @('-m','uvicorn','adjutant.gateway_api:create_app','--factory','--app-dir','src','--host','127.0.0.1','--port','8002') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput '.local/gateway.stdout.log' -RedirectStandardError '.local/gateway.stderr.log'
 }
@@ -64,10 +76,10 @@ if (-not $webListening) {
 }
 $ready = $false
 for ($attempt = 0; $attempt -lt 30; $attempt++) {
-    if ((Test-AdjutantApi) -and (Test-AdjutantGateway)) { $ready = $true; break }
+    if ((Test-AdjutantApi) -and (Test-AdjutantGateway) -and (Test-AdjutantApproval)) { $ready = $true; break }
     Start-Sleep -Milliseconds 500
 }
-if (-not $ready) { throw 'API or gateway did not become healthy; inspect .local/api.stderr.log and .local/gateway.stderr.log.' }
+if (-not $ready) { throw 'API, gateway, or approval service did not become healthy; inspect the matching .local/*.stderr.log.' }
 $webReady = $false
 for ($attempt = 0; $attempt -lt 30; $attempt++) {
     try {
@@ -77,4 +89,4 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
     Start-Sleep -Milliseconds 500
 }
 if (-not $webReady) { throw 'Console did not become ready; inspect .local/web.stderr.log.' }
-Write-Output 'Adjutant API, gateway, and console are ready. Open http://localhost:3000'
+Write-Output 'Adjutant API, approval service, gateway, and console are ready. Open http://localhost:3000'

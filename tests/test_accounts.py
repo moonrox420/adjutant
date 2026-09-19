@@ -22,6 +22,64 @@ def mail_token(admin, email, purpose):
     return re.search(rf"#{purpose}=([A-Za-z0-9_-]+)", row["body"])[1]
 
 
+@pytest.mark.parametrize("account_type", ["business", "agency"])
+def test_signup_account_type_is_persisted_and_duplicate_does_not_change_it(
+    client,
+    admin,
+    account_type,
+):
+    data = {**account_data(), "account_type": account_type}
+    assert client.post("/api/auth/register", json=data).status_code == 202
+    assert (
+        client.post(
+            "/api/auth/register",
+            json={
+                **data,
+                "account_type": "agency" if account_type == "business" else "business",
+            },
+        ).status_code
+        == 202
+    )
+    token = mail_token(admin, data["email"], "verify")
+    assert client.post("/api/auth/verify", json={"token": token}).status_code == 200
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={
+                "email": data["email"],
+                "password": data["password"],
+            },
+        ).status_code
+        == 200
+    )
+    account = client.get("/api/me").json()["accounts"][0]
+    assert account["account_type"] == account_type
+    new_brand = {
+        "account_id": account["id"],
+        "display_name": "First test brand",
+        "website_url": "https://example.com",
+        "vertical": "home_services",
+        "monthly_ceiling": "3000",
+        "daily_ceiling": "100",
+    }
+    assert client.post("/api/brands", json=new_brand).status_code == 201
+    second = client.post("/api/brands", json={**new_brand, "display_name": "Second test brand"})
+    assert second.status_code == (201 if account_type == "agency" else 409)
+
+
+def test_signup_rejects_unrecognized_account_type(client):
+    assert (
+        client.post(
+            "/api/auth/register",
+            json={
+                **account_data(),
+                "account_type": "administrator",
+            },
+        ).status_code
+        == 422
+    )
+
+
 @pytest.fixture(autouse=True)
 def reset_signup_rate(admin):
     # Every test uses the same TestClient source address in the isolated test database.

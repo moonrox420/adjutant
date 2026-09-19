@@ -49,7 +49,6 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
         "budget_ceiling",
         "brand_kill_switch",
         "approval_request",
-        "approval_token",
         "creative_concept",
         "creative",
         "asset",
@@ -65,6 +64,43 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
     )
     conn.execute("GRANT DELETE ON plan_allocation TO adjutant_app")
     conn.execute("GRANT INSERT ON action,event_outbox,website_evidence TO adjutant_app")
+    conn.execute("REVOKE INSERT,UPDATE ON approval_token FROM adjutant_app")
+    conn.execute("GRANT UPDATE(voided_at,voided_reason) ON approval_token TO adjutant_app")
+
+
+def provision_approval(conn: psycopg.Connection, password: str) -> None:
+    """Permit issuance only through the dedicated, RLS-bound approval identity."""
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_approval'").fetchone():
+        conn.execute(
+            sql.SQL(
+                "CREATE ROLE adjutant_approval LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
+            ).format(sql.Literal(password))
+        )
+    conn.execute("GRANT USAGE ON SCHEMA adjutant TO adjutant_approval")
+    conn.execute("""GRANT SELECT ON adjutant.brand,adjutant.seat,adjutant.plan,
+        adjutant.plan_allocation,adjutant.budget_ceiling,adjutant.brand_kill_switch,
+        adjutant.channel_capability,adjutant.approval_request,adjutant.approval_token,
+        adjutant.action,adjutant.event_outbox TO adjutant_approval""")
+    conn.execute("GRANT UPDATE(updated_at) ON adjutant.brand TO adjutant_approval")
+    conn.execute("GRANT UPDATE(state) ON adjutant.plan TO adjutant_approval")
+    conn.execute("GRANT UPDATE ON adjutant.approval_request TO adjutant_approval")
+    conn.execute("""GRANT INSERT ON adjutant.approval_token,adjutant.action,
+        adjutant.event_outbox TO adjutant_approval""")
+    conn.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA adjutant TO adjutant_approval")
+    conn.execute("""GRANT EXECUTE ON FUNCTION adjutant.current_brand_ids(),
+        adjutant.current_actor_id(),adjutant.authenticate_session(text),
+        adjutant.lock_session(text) TO adjutant_approval""")
+
+
+def provision_approval_files(local: Path) -> str:
+    """Create separate service credentials once without replacing the existing signing key."""
+    for name in ("approval.password", "approval-service.secret"):
+        target = local / name
+        if not target.exists():
+            with target.open("x", encoding="utf-8") as handle:
+                handle.write(secrets.token_urlsafe(32))
+            target.chmod(0o600)
+    return (local / "approval.password").read_text(encoding="utf-8").strip()
 
 
 def provision_worker(conn: psycopg.Connection, worker_password: str) -> None:
@@ -137,6 +173,7 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
     if not key_path.exists():
         generate_signing_key(key_path)
     gateway_password = provision_gateway_files(local)
+    approval_password = provision_approval_files(local)
     app_password_file = local / "app.password"
     if not app_password_file.exists():
         app_password_file.write_text(secrets.token_urlsafe(32))
@@ -149,6 +186,7 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
         provision_runtime(conn, app_password)
         provision_worker(conn, worker_password)
         provision_gateway(conn, gateway_password)
+        provision_approval(conn, approval_password)
         existing = conn.execute("SELECT id FROM app_user WHERE email=%s", (email,)).fetchone()
         if existing is None:
             user = conn.execute(
@@ -188,6 +226,12 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
             handle.write(
                 f"\nADJUTANT_GATEWAY_DATABASE_URL=postgresql://adjutant_gateway:"
                 f"{quote(gateway_password)}@127.0.0.1:55439/adjutant\n"
+            )
+    if "ADJUTANT_APPROVAL_DATABASE_URL=" not in (root / ".env").read_text(encoding="utf-8"):
+        with (root / ".env").open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"\nADJUTANT_APPROVAL_DATABASE_URL=postgresql://adjutant_approval:"
+                f"{quote(approval_password)}@127.0.0.1:55439/adjutant\n"
             )
     print("Database migrations, runtime permissions, and approval keys are ready.")
 

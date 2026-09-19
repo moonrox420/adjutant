@@ -166,6 +166,14 @@ export function AccountAccess({ signedIn }: { signedIn: () => void }) {
         >
           {mode === "register" && (
             <>
+              <Field label="Account type">
+                <select name="account_type" defaultValue="business">
+                  <option value="business">Business — one brand</option>
+                  <option value="agency">
+                    Agency — multiple client brands
+                  </option>
+                </select>
+              </Field>
               <Field label="Full name">
                 <input
                   name="full_name"

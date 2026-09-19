@@ -22,11 +22,17 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
       - run: pip install -e '.[dev]'
+      - name: Enforce event contract compatibility
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/check_event_contracts.py --base "$BASE_REVISION"
       - name: Provision dedicated development and test databases
         run: |
           mkdir -p .local

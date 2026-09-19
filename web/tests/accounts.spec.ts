@@ -44,6 +44,8 @@ test("consumer signup, delivered verification, mobile logout, recovery, and cros
     .click();
   await page.getByLabel("Full name", { exact: true }).fill("Consumer Owner");
   await page.getByLabel("Workspace name").fill("Consumer workspace");
+  await expect(page.getByLabel("Account type")).toHaveValue("business");
+  await page.getByLabel("Account type").selectOption("agency");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page

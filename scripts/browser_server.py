@@ -12,6 +12,7 @@ from browser_inference import MODEL, browser_inference
 from live_canary import create_app, seed_identity, test_settings
 from migrate import migrate
 from pydantic import SecretStr
+from test_approval_server import approval_test_server
 
 root = Path(__file__).resolve().parents[1]
 os.chdir(root)
@@ -37,6 +38,10 @@ config.worker_database_url = SecretStr(
     f"postgresql://adjutant_worker:{quote(worker_password)}@{admin_url.split('@')[1]}"
 )
 config.mail_directory = root / ".local/browser-mail"
-with browser_inference(root / ".local/browser-inference.json") as inference_url:
+with (
+    approval_test_server(admin_url) as approval_url,
+    browser_inference(root / ".local/browser-inference.json") as inference_url,
+):
+    config.approval_url = approval_url
     config.ollama_url = inference_url
     uvicorn.run(create_app(config), host="127.0.0.1", port=8001)

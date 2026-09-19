@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { resolve } from "node:path";
 
 test("brand evidence to approved plan persists across reloads", async ({
@@ -110,6 +111,38 @@ test("brand evidence to approved plan persists across reloads", async ({
       { exact: false },
     ),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  const downloaded = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download signed audit", exact: true })
+    .click();
+  const download = await downloaded;
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  const bundle = JSON.parse(readFileSync(downloadPath!, "utf8"));
+  expect(bundle.manifest.entry_count).toBeGreaterThan(0);
+  expect(
+    createHash("sha256").update(JSON.stringify(bundle.document)).digest("hex"),
+  ).toBe(bundle.manifest.sha256);
+  const trustedKeys = JSON.parse(
+    readFileSync(resolve("../.local/approval-public-keys.json"), "utf8"),
+  );
+  const publicKey = createPublicKey({
+    key: Buffer.concat([
+      Buffer.from("302a300506032b6570032100", "hex"),
+      Buffer.from(trustedKeys[bundle.manifest.signing_key_id], "base64"),
+    ]),
+    format: "der",
+    type: "spki",
+  });
+  expect(
+    verify(
+      null,
+      Buffer.from(JSON.stringify(bundle.manifest)),
+      publicKey,
+      Buffer.from(bundle.signature, "base64"),
+    ),
+  ).toBe(true);
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await page.screenshot({
     path: "../.local/overview-desktop.png",

@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import { AccountAccess } from "../components/account";
 import { Jobs } from "../components/jobs";
+import { AuditExport } from "../components/audit-export";
 import { BrandForm, PlanForm } from "../components/forms";
 import { GenerateForm, Research } from "../components/research";
 import { DeploymentPreflight } from "../components/preflight";
@@ -837,6 +838,7 @@ export default function Console() {
                     <Badge>Append only</Badge>
                   </div>
                   <Activity items={workspace.audit} expanded />
+                  <AuditExport brandId={selected} onError={fail} />
                 </section>
               )}
               {tab === "Channels" && (

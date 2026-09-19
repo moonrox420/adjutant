@@ -24,6 +24,11 @@ class EventRegistry:
     def __init__(self, path: Path) -> None:
         self.document = json.loads(path.read_text(encoding="utf-8"))
         self.events = {e["event_type"]: e for e in self.document["events"]}
+        if len(self.events) != len(self.document["events"]):
+            raise ValueError("Duplicate event definitions are not permitted")
+        Draft202012Validator.check_schema(self.document["envelope_schema"])
+        for event in self.events.values():
+            Draft202012Validator.check_schema(event["payload_schema"])
         self.envelope = Draft202012Validator(
             self.document["envelope_schema"], format_checker=FormatChecker()
         )
@@ -41,7 +46,7 @@ class EventRegistry:
         envelope = {
             "event_id": str(event_id),
             "event_type": event_type,
-            "event_version": 1,
+            "event_version": self.events[event_type].get("event_version", 1),
             "occurred_at": now.isoformat(),
             "produced_at": now.isoformat(),
             "producer": "core-api@0.1.0",

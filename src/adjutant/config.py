@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     worker_database_url: SecretStr | None = None
     gateway_url: str = "http://127.0.0.1:8002"
     gateway_service_secret_path: Path = Path(".local/gateway-service.secret")
+    approval_url: str = "http://127.0.0.1:8003"
+    approval_service_secret_path: Path = Path(".local/approval-service.secret")
     mail_transport: Literal["file", "smtp"] = "file"
     mail_directory: Path = Path(".local/mail")
     mail_from: str = "Adjutant <accounts@adjutant.local>"
@@ -50,6 +52,21 @@ class Settings(BaseSettings):
                 "PUBLIC_ORIGIN must be an HTTP(S) origin without credentials or a path"
             )
         self.public_origin = self.public_origin.rstrip("/")
+        approval = urlsplit(self.approval_url)
+        if (
+            approval.scheme not in {"http", "https"}
+            or not approval.hostname
+            or approval.username
+            or approval.password
+            or approval.query
+            or approval.fragment
+            or approval.path not in {"", "/"}
+            or (
+                approval.scheme == "http"
+                and approval.hostname not in {"localhost", "127.0.0.1", "::1"}
+            )
+        ):
+            raise ValueError("APPROVAL_URL requires HTTPS outside loopback and must be an origin")
         gateway = urlsplit(self.gateway_url)
         if (
             gateway.scheme not in {"http", "https"}

@@ -103,6 +103,10 @@ class SpendAuthority:
             or digest(plan["plan_document"]) != intent.subject_hash
         ):
             raise DomainError("SubjectChanged", "Approved plan content has changed.", 403)
+        if digest(intent.payload) != intent.subject_hash:
+            raise DomainError(
+                "PayloadChanged", "The operation payload is not the approved plan.", 403
+            )
         if plan["state"] not in {"approved", "deploying", "live"}:
             raise DomainError("ApprovalRequired", "This plan is not approved for deployment.", 403)
         request = one(

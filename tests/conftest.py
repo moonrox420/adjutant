@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap import provision_runtime, provision_worker  # noqa: E402
 from migrate import migrate  # noqa: E402
+from test_approval_server import approval_test_server  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -74,11 +75,12 @@ def identity(admin):
 
 
 @pytest.fixture
-def client(database_urls, identity):
+def client(database_urls, identity, approval_server):
     config = Settings(
         database_url=database_urls[1],
         worker_database_url=None,
         signing_key_path=ROOT / ".local/approval.key",
+        approval_url=approval_server,
     )
     with TestClient(create_app(config)) as client:
         client.headers.update({"x-adjutant-client": "console", "origin": "http://localhost:3000"})
@@ -87,6 +89,12 @@ def client(database_urls, identity):
         )
         assert response.status_code == 200, response.text
         yield client
+
+
+@pytest.fixture(scope="session")
+def approval_server(database_urls):
+    with approval_test_server(database_urls[0]) as url:
+        yield url
 
 
 @pytest.fixture

@@ -13,6 +13,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
 
+from adjutant.approval_client import approval_request, decide_remotely
+from adjutant.audit_export import AuditWindow
 from adjutant.auth import auth_router, cancellation_report
 from adjutant.config import Settings
 from adjutant.consumer_supervisor import ConsumerSupervisor
@@ -36,7 +38,7 @@ from adjutant.models import (
 from adjutant.processes import generate_in_process, lock_active_session
 from adjutant.research import fetch_website
 from adjutant.security import (
-    ApprovalSigner,
+    canonical_bytes,
     digest,
     password_hash,
     password_matches,
@@ -46,7 +48,6 @@ from adjutant.service import (
     EDIT_ROLES,
     RESTRICTED,
     audit,
-    decide,
     generation_gate,
     locked_brand,
     persist_plan,
@@ -71,7 +72,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings or Settings()
     db = Database(config.database_url.get_secret_value())
     events = EventRegistry(config.registry_path)
-    signer = ApprovalSigner(config.signing_key_path)
     planner = OllamaPlanner(config.ollama_url)
     cloud_planner = OllamaPlanner(
         "https://ollama.com",
@@ -289,6 +289,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {**row, "connection_status": "not_connected", "live_adapter_available": False}
             for row in rows
         ]
+
+    @app.post("/api/brands/{brand_id}/audit-export")
+    def audit_export(
+        brand_id: UUID, window: AuditWindow, actor: Actor, request: Request
+    ) -> Response:
+        bundle = approval_request(
+            config,
+            f"/internal/brands/{brand_id}/audit-export",
+            {
+                "session": request.cookies.get("adjutant_session", ""),
+                "window": window.model_dump(mode="json"),
+            },
+        )
+        return Response(
+            content=canonical_bytes(bundle),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="adjutant-audit-{brand_id}.json"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.post("/api/brands/{brand_id}/plans/{plan_id}/preflight")
     def preflight(brand_id: UUID, plan_id: UUID, actor: Actor) -> dict[str, Any]:
@@ -548,9 +569,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
     @app.post("/api/brands/{brand_id}/approvals/{approval_id}/decide")
-    def decision(brand_id: UUID, approval_id: UUID, data: Decision, actor: Actor) -> dict[str, Any]:
-        with db.transaction(actor) as conn:
-            return decide(conn, events, signer, brand_id, approval_id, actor.user_id, data)
+    def decision(
+        brand_id: UUID, approval_id: UUID, data: Decision, actor: Actor, request: Request
+    ) -> dict[str, Any]:
+        return decide_remotely(
+            config, brand_id, approval_id, request.cookies.get("adjutant_session", ""), data
+        )
 
     @app.put("/api/brands/{brand_id}/ceiling")
     def ceiling(brand_id: UUID, data: CeilingInput, actor: Actor) -> dict[str, str]:

@@ -1,5 +1,5 @@
 {
-  "registry_version": "1.1",
+  "registry_version": "1.0",
   "generated_for": "Adjutant PRD v1.0 / Technical Architecture v1.0",
   "bus": {
     "platform": "Redpanda (Kafka API)",
@@ -35,7 +35,8 @@
         "description": "Consumer idempotency key. UUIDv7 so it sorts by time."
       },
       "event_type": {
-        "type": "string"
+        "type": "string",
+        "pattern": "^[a-z_]+(\\.[a-z_]+)+$"
       },
       "event_version": {
         "type": "integer",
@@ -387,7 +388,7 @@
     },
     {
       "event_type": "brand.kill_switch.engaged",
-      "event_version": 2,
+      "event_version": 1,
       "topic": "adj.control.v1",
       "partition_key": "brand_id",
       "producer": "core-api",
@@ -675,7 +676,7 @@
         "core-api",
         "analytics-svc"
       ],
-      "purpose": "Notification only. The authoritative resume signal is the Temporal signal, not this event (see contract doc §3.2).",
+      "purpose": "Notification only. The authoritative resume signal is the Temporal signal, not this event (see contract doc \u00a73.2).",
       "retention_days": 3650,
       "log_compacted": false,
       "contains_pii": false,
@@ -1800,7 +1801,7 @@
         "channel-gateway",
         "security-audit"
       ],
-      "purpose": "A spend authority now exists. Payload carries token metadata only — never the signature or the serialized token.",
+      "purpose": "A spend authority now exists. Payload carries token metadata only \u2014 never the signature or the serialized token.",
       "retention_days": 3650,
       "log_compacted": false,
       "contains_pii": false,

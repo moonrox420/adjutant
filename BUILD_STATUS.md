@@ -6,16 +6,24 @@ It is not Phase 0 complete, a closed-alpha release, or the finished 199-ticket p
 
 ## Verified on Windows, 2026-09-19
 
-- Backend: 97 tests passed against dedicated PostgreSQL `adjutant_test`, including native process
+- Backend: 129 tests passed against dedicated PostgreSQL `adjutant_test`, including native process
   cancellation/recovery, gateway isolation, replay, concurrent cross-plan brand-budget enforcement,
   supervisor database-connection loss, and both worker `SECURITY DEFINER` boundaries.
 - Browser: three end-to-end workflows passed, covering account lifecycle, provider selection/setup
   errors, campaign approval persistence, deployment preflight, mobile layout, and sign-out during
   a real generation subprocess with persisted OS exit proof and old-session rejection.
 - Production console build, TypeScript, Python lint/format, and dependency consistency checks passed.
-- Python wheel built and its bundled nine-event runtime registry matched the source artifact.
-  The original full-platform registry is absent from the checkout; this artifact covers current
-  producers only. Existing test-database events were checked for compatibility.
+- Original requirements restored from the supplied PRD directory into `docs/specification`, with
+  byte-for-byte source copies and SHA-256 provenance: 199 tickets and 46 event contracts.
+  The full event registry validated against 4,497 persisted test events. The runtime retains
+  compatible envelope behavior and versions the stricter kill-switch reason contract to v2.
+- Separate approval HTTP service and database role: the core API no longer loads the signing key
+  or has permission to insert approval tokens. Tests cover revoked sessions, service outage,
+  role isolation, and gateway payload substitution. Production KMS/IAM isolation is still required.
+- Signed deterministic audit downloads are wired through Activity and verified independently in
+  the browser suite. Tampering and cross-tenant export requests are rejected.
+- Business/Agency self-service signup persists the chosen account type and enforces its brand limit.
+- Event compatibility CI rejects removed fields, narrowed constraints, and unversioned topic changes.
 - BallPython 2.0.0 security and taint scans returned no findings. Its twelve unresolved-import
   diagnostics were reviewed as false positives (`__file__` and the locally defined `issue_token`).
   Analysis reports are local artifacts; no automatic code transformations were applied.
@@ -51,7 +59,7 @@ Neither cancellation requests nor stale heartbeats are treated as verified proce
 - Account registration, input validation, single-use email verification and recovery, exact scrypt
   passwords, expiring opaque sessions, persistent rate limits, origin checks, and mutation role checks.
   Current-session and all-session logout, mobile Account controls, and cross-tab sign-out.
-  Owner bootstrap, self-service Business single-brand workspaces, Agency multi-brand.
+  Owner bootstrap, self-service Business single-brand workspaces and Agency multi-brand workspaces.
 - Owned generation subprocesses, cancellation on logout/reset/expiry/stop, final session checks before
   saving drafts, persisted OS exit verification, and parent-pipe loss detection.
 - Supervised local PostgreSQL consumer: durable activity progress and duplicate receipts, transaction
@@ -95,7 +103,7 @@ The full schema contains future service tables that have not all been integrated
 
 | Area | Remaining implementation |
 |---|---|
-| Spend path | Extract independent approval-service identity; actual adapter egress verification; Redis failure behavior; reconciliation, rollback, full APRV-8 release gate |
+| Spend path | KMS-backed signing and production identity isolation; actual adapter egress verification; Redis failure behavior; reconciliation, rollback, full APRV-8 release gate |
 | Platforms | All nine live adapters (Google/YouTube share one platform family), OAuth, credentials, account access, registry refresh, conversion preflight, verified launch/pause |
 | Orchestration | Temporal workflows and workers, durable human signals, retry/replay tests, worker versioning |
 | Events | Redpanda provisioning, broker outbox relay, additional domain consumers, broker DLQ and replay tooling |
@@ -105,13 +113,13 @@ The full schema contains future service tables that have not all been integrated
 | Optimization | Proposals, bounded auto-approval, allocation shifts, tests/outcome attribution, winner scaling |
 | Agency | Invite/seat management, OIDC/MFA, account conversion, client portal, white labeling and portfolio controls |
 | Reporting | First-party connectors, reports/PDFs, report delivery, billing, support tools |
-| Operations | Global pause verification and release flow, audit export, retention/partition management, migrations/restore drills |
+| Operations | Global pause verification and release flow, retention/partition management, migrations/restore drills |
 | Infrastructure | Terraform/EKS/KMS/S3, network boundaries, Redis governor, telemetry stack, secrets rotation, production deployment |
 
 Platform access applications and credentials require the business's platform accounts and cannot be
 validated with local fixtures. No platform applications were submitted, no ad accounts connected,
 and no live campaigns were created by this build.
 
-The next dependency-ordered engineering work is the remaining approval-service/adapter egress boundary
+The next dependency-ordered engineering work is the remaining adapter egress and Redis/KMS boundary
 and full negative suite, followed by Temporal and a conformant Meta adapter. Creative and measurement work
 must follow the prerequisite gates in the supplied implementation roadmap.

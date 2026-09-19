@@ -26,6 +26,11 @@ The separately credentialed gateway listens on <http://127.0.0.1:8002>. Its logs
 `.local/gateway.stdout.log` and `.local/gateway.stderr.log`. `upgrade.py` updates existing installations
 without creating accounts, replacing passwords, or reinitializing PostgreSQL. Run it after updates
 that introduce migrations or service permissions, then restart the API and gateway.
+The separate approval service listens on <http://127.0.0.1:8003>, with logs in
+`.local/approval.stdout.log` and `.local/approval.stderr.log`. It alone loads the private approval
+key and uses the `adjutant_approval` database role. Core forwards the authenticated user's decision;
+the service independently reauthenticates and locks that session, verifies the current role and
+revision, and signs within the approval transaction. Core cannot insert approval tokens.
 
 ## Fresh Windows setup
 
@@ -79,7 +84,8 @@ an existing `.env` without replacing other settings. Do not edit applied migrati
 
 ## Accounts and delivery
 
-Choose **Create an account**. Enter a full name, workspace name, email, and matching passphrase of
+Choose **Create an account**, then **Business** (one brand) or **Agency** (multiple brands).
+Enter a full name, workspace name, email, and matching passphrase of
 15–128 characters. Passwords are scrypt-hashed and preserved exactly, including spaces. New users
 cannot sign in until they verify their email. Verification and recovery tokens are random, stored
 hashed, expire after one hour, and work once. Links use the configured public origin and carry the
@@ -99,7 +105,7 @@ revokes every session for that user. Logout waits up to eight seconds for worker
 and reports pending verification honestly. Other open tabs return to sign-in. Account controls work
 on mobile. **Activity** shows jobs, Stop controls, actual exit verification, and consumer health.
 
-Self-service signup creates a Business workspace with owner approval caps of $1,000/day and $30,000
+Self-service signup creates the selected workspace type with owner approval caps of $1,000/day and $30,000
 total. Invitations, account conversion, email changes, OIDC, and MFA remain outside this implementation.
 The locally provisioned `owner@adjutant.local` address is a development identity; use a valid email
 address for self-service verification and recovery.
@@ -213,7 +219,8 @@ The gateway uses `adjutant_gateway`, a restricted PostgreSQL role. It can read s
 lock same-brand authority, and append reservations. It cannot issue or change approval tokens,
 delete reservations, or read login credentials, sessions, and mail. Public verification keys are
 exported to `.local/approval-public-keys.json`; the gateway does not load the private signing key.
-Core still issues approvals in-process; extracting an independent approval service remains required.
+The separate approval service issues approvals; KMS-backed signing and production IAM isolation
+remain separate requirements from the local process and database-role boundary.
 
 Gateway validation checks the Ed25519 signature, trusted key, signed/relational claim agreement,
 expiry, approved revision hash, operation/channel scope, brand readiness, stop state, allocation,
@@ -255,11 +262,29 @@ and `reap_abandoned_jobs`. They intentionally operate across tenants but return 
 Tests constrain their changes, batch bounds, pinned search paths, temporary-table shadowing,
 function replacement permissions, and direct access to private tenant data.
 
-The nine events currently emitted by the API have a bundled registry in
-`src/adjutant/event_registry.json`, included in the Python wheel. UUID and date-time formats are
-validated using JSON Schema's format dependencies. `ADJUTANT_REGISTRY_PATH` can override the
-packaged default. The original full-platform design registry is absent from this checkout;
-the bundled runtime contracts do not claim to restore every future platform event.
+The full 46-event specification is bundled in `src/adjutant/event_registry.json`. UUID and date-time
+formats are validated using JSON Schema's format dependencies. `ADJUTANT_REGISTRY_PATH` can override
+the packaged default. Original source documents are preserved with checksums in `docs/specification`.
+Runtime registry 1.1 preserves the existing envelope's event-name compatibility and versions
+`brand.kill_switch.engaged` to v2 because the original specification requires a longer reason than
+the temporary runtime contract did. Defining all contracts does not mean all their producers exist.
+CI compares event contracts with the base revision and rejects incompatible unversioned changes.
+
+## Signed audit export
+
+In **Activity**, choose a UTC date range and select **Download signed audit**. The export contains
+the tenant's complete ledger for that range (up to 10,000 records), a content hash, and an Ed25519
+signature produced by the approval service. Unchanged windows export byte-identically. For larger
+ledgers, select smaller windows; an oversized export fails rather than silently truncating rows.
+Verify the downloaded file against an independently trusted public-key ring:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/verify_audit_export.py C:\path\to\audit.json --public-keys .local/approval-public-keys.json
+```
+
+The verifier rejects changed records, changed window/tenant metadata, incorrect counts, and unknown
+signing keys. The public-key file contains verification material only; preserve trusted historical
+keys when rotating signing authority.
 
 ## Verification
 

@@ -1,6 +1,6 @@
 param(
-    [ValidateSet('api', 'gateway', 'web')]
-    [string[]]$Service = @('api', 'gateway', 'web')
+    [ValidateSet('api', 'gateway', 'approval', 'web')]
+    [string[]]$Service = @('api', 'gateway', 'approval', 'web')
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -11,7 +11,8 @@ $selected = foreach ($process in $processes) {
     $matchesService = (
         ($process.Name -in @('python.exe', 'pythonw.exe') -and (
             ('api' -in $Service -and $command -like '*uvicorn adjutant.api:create_app*') -or
-            ('gateway' -in $Service -and $command -like '*uvicorn adjutant.gateway_api:create_app*')
+            ('gateway' -in $Service -and $command -like '*uvicorn adjutant.gateway_api:create_app*') -or
+            ('approval' -in $Service -and $command -like '*uvicorn adjutant.approval_api:create_app*')
         )) -or
         ($process.Name -eq 'node.exe' -and 'web' -in $Service -and $command -like "*$projectRoot\web\node_modules\next\*")
     )

@@ -5,6 +5,8 @@ from urllib.parse import quote
 
 import psycopg
 from bootstrap import (
+    provision_approval,
+    provision_approval_files,
     provision_gateway,
     provision_gateway_files,
     provision_runtime,
@@ -25,10 +27,12 @@ def upgrade() -> None:
     worker_password = (local / "worker.password").read_text(encoding="utf-8").strip()
     migrate(admin_url)
     gateway_password = provision_gateway_files(local)
+    approval_password = provision_approval_files(local)
     with psycopg.connect(admin_url) as conn:
         provision_runtime(conn, app_password)
         provision_worker(conn, worker_password)
         provision_gateway(conn, gateway_password)
+        provision_approval(conn, approval_password)
     env_path = ROOT / ".env"
     content = env_path.read_text(encoding="utf-8")
     keys = {line.split("=", 1)[0].strip() for line in content.splitlines() if "=" in line}
@@ -38,6 +42,13 @@ def upgrade() -> None:
             handle.write(
                 f"\nADJUTANT_GATEWAY_DATABASE_URL=postgresql://adjutant_gateway:"
                 f"{quote(gateway_password)}@{host}\n"
+            )
+    if "ADJUTANT_APPROVAL_DATABASE_URL" not in keys:
+        host = admin_url.split("@", 1)[1]
+        with env_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"\nADJUTANT_APPROVAL_DATABASE_URL=postgresql://adjutant_approval:"
+                f"{quote(approval_password)}@{host}\n"
             )
     print("Workspace upgraded. Existing accounts, passwords, and campaign data were preserved.")
 

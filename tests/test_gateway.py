@@ -30,7 +30,7 @@ def gateway_url(database_urls):
 
 
 @pytest.fixture
-def intent(client, confirmed_brand, approval):
+def intent(client, confirmed_brand, approval, plan):
     result = client.post(
         f"/api/brands/{confirmed_brand}/approvals/{approval['id']}/decide",
         json={"decision": "approved", "expected_hash": approval["subject_hash"]},
@@ -44,7 +44,7 @@ def intent(client, confirmed_brand, approval):
         operation="create",
         daily_usd="100.00",
         total_usd="3000.00",
-        payload={"name": "Approved campaign"},
+        payload=plan["plan_document"],
     )
 
 
@@ -99,6 +99,7 @@ def test_gateway_reserves_once_without_signing_or_mutation_privileges(gateway_ur
         ({"operation": "resume"}, "ScopeDenied"),
         ({"daily_usd": "100.01"}, "AllocationExceeded"),
         ({"total_usd": "3000.01"}, "AllocationExceeded"),
+        ({"payload": {"name": "Unapproved replacement"}}, "PayloadChanged"),
     ],
 )
 def test_gateway_negative_authority(gateway_url, intent, change, code):
@@ -275,7 +276,11 @@ def test_brand_ceiling_combines_concurrent_reservations_from_different_plans(
     )
     assert decision.status_code == 200, decision.text
     second = intent.model_copy(
-        update={"token_id": UUID(decision.json()["token_id"]), "subject_hash": plan["plan_hash"]}
+        update={
+            "token_id": UUID(decision.json()["token_id"]),
+            "subject_hash": plan["plan_hash"],
+            "payload": plan["plan_document"],
+        }
     )
     db = Database(gateway_url)
     db.open()
