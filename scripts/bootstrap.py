@@ -1,0 +1,208 @@
+"""Create an isolated local database, restricted runtime role, and first owner."""
+
+import argparse
+import base64
+import getpass
+import json
+import os
+import secrets
+import sys
+from pathlib import Path
+from urllib.parse import quote
+
+import psycopg
+from psycopg import sql
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from migrate import migrate
+
+from adjutant.security import ApprovalSigner, generate_signing_key, password_hash
+
+
+def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
+    """Apply the same runtime grants in development, tests, and deployments."""
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_app'").fetchone():
+        conn.execute(
+            sql.SQL("CREATE ROLE adjutant_app LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS").format(
+                sql.Literal(app_password)
+            )
+        )
+    conn.execute("SET search_path=adjutant,public")
+    conn.execute("GRANT USAGE ON SCHEMA adjutant TO adjutant_app")
+    conn.execute("GRANT SELECT ON ALL TABLES IN SCHEMA adjutant TO adjutant_app")
+    conn.execute(
+        "REVOKE ALL ON local_credential,auth_session,login_attempt,account_token,mail_outbox "
+        "FROM adjutant_app"
+    )
+    conn.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA adjutant TO adjutant_app")
+    conn.execute("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA adjutant TO adjutant_app")
+    conn.execute("REVOKE EXECUTE ON FUNCTION consume_activity_batch(integer) FROM adjutant_app")
+    conn.execute("REVOKE EXECUTE ON FUNCTION reap_abandoned_jobs() FROM adjutant_app")
+    conn.execute("REVOKE EXECUTE ON FUNCTION lock_spend_authority(uuid,uuid) FROM adjutant_app")
+    writable = [
+        "brand",
+        "brand_graph_assertion",
+        "brand_kit",
+        "brand_constraint",
+        "plan",
+        "plan_allocation",
+        "budget_ceiling",
+        "brand_kill_switch",
+        "approval_request",
+        "approval_token",
+        "creative_concept",
+        "creative",
+        "asset",
+        "rendition",
+        "compliance_record",
+        "compliance_check",
+        "agent_run",
+    ]
+    conn.execute(
+        sql.SQL("GRANT INSERT,UPDATE ON {} TO adjutant_app").format(
+            sql.SQL(",").join(map(sql.Identifier, writable))
+        )
+    )
+    conn.execute("GRANT DELETE ON plan_allocation TO adjutant_app")
+    conn.execute("GRANT INSERT ON action,event_outbox,website_evidence TO adjutant_app")
+
+
+def provision_worker(conn: psycopg.Connection, worker_password: str) -> None:
+    """The delivery role cannot read credentials, sessions, or raw brand tables."""
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_worker'").fetchone():
+        conn.execute(
+            sql.SQL("CREATE ROLE adjutant_worker LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS").format(
+                sql.Literal(worker_password)
+            )
+        )
+    conn.execute("GRANT USAGE ON SCHEMA adjutant TO adjutant_worker")
+    conn.execute("GRANT SELECT,UPDATE ON adjutant.mail_outbox TO adjutant_worker")
+    conn.execute("GRANT SELECT,INSERT,UPDATE ON adjutant.consumer_process TO adjutant_worker")
+    conn.execute(
+        "GRANT EXECUTE ON FUNCTION adjutant.consume_activity_batch(integer) TO adjutant_worker"
+    )
+    conn.execute("GRANT EXECUTE ON FUNCTION adjutant.reap_abandoned_jobs() TO adjutant_worker")
+
+
+def provision_gateway(conn: psycopg.Connection, password: str) -> None:
+    """Grant verification reads and append-only reservations, without approval issuance rights."""
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_gateway'").fetchone():
+        conn.execute(
+            sql.SQL(
+                "CREATE ROLE adjutant_gateway LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
+            ).format(sql.Literal(password))
+        )
+    conn.execute("GRANT USAGE ON SCHEMA adjutant TO adjutant_gateway")
+    conn.execute("""GRANT SELECT ON adjutant.brand,adjutant.approval_token,
+        adjutant.approval_request,adjutant.plan,adjutant.plan_allocation,
+        adjutant.brand_kill_switch,adjutant.budget_ceiling,adjutant.approval_token_consumption
+        TO adjutant_gateway""")
+    conn.execute("GRANT INSERT ON adjutant.approval_token_consumption TO adjutant_gateway")
+    conn.execute("""GRANT EXECUTE ON FUNCTION adjutant.current_brand_ids(),
+        adjutant.lock_spend_authority(uuid,uuid) TO adjutant_gateway""")
+
+
+def provision_gateway_files(local: Path) -> str:
+    """Create service credentials once and export the existing signer's public verification key."""
+    for name in ("gateway.password", "gateway-service.secret"):
+        target = local / name
+        if not target.exists():
+            with target.open("x", encoding="utf-8") as handle:
+                handle.write(secrets.token_urlsafe(32))
+            target.chmod(0o600)
+    signer = ApprovalSigner(local / "approval.key")
+    key_file = local / "approval-public-keys.json"
+    keys = json.loads(key_file.read_text(encoding="utf-8")) if key_file.exists() else {}
+    keys[signer.key_id] = base64.b64encode(signer.public_bytes).decode("ascii")
+    key_file.write_text(json.dumps(keys, indent=2) + "\n", encoding="utf-8")
+    return (local / "gateway.password").read_text(encoding="utf-8").strip()
+
+
+def bootstrap(email: str, password: str, account_type: str) -> None:
+    root = Path(__file__).resolve().parents[1]
+    os.chdir(root)
+    local = root / ".local"
+    local.mkdir(exist_ok=True)
+    admin_password = (local / "postgres.password").read_text().strip()
+    server = f"postgresql://adjutant_admin:{quote(admin_password)}@127.0.0.1:55439"
+    with psycopg.connect(server + "/postgres", autocommit=True) as conn:
+        for name in ("adjutant", "adjutant_test"):
+            if not conn.execute("SELECT 1 FROM pg_database WHERE datname=%s", (name,)).fetchone():
+                conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    admin_url = server + "/adjutant"
+    (local / "admin.url").write_text(admin_url)
+    (local / "test-admin.url").write_text(server + "/adjutant_test")
+    migrate(admin_url)
+    key_path = local / "approval.key"
+    if not key_path.exists():
+        generate_signing_key(key_path)
+    gateway_password = provision_gateway_files(local)
+    app_password_file = local / "app.password"
+    if not app_password_file.exists():
+        app_password_file.write_text(secrets.token_urlsafe(32))
+    app_password = app_password_file.read_text().strip()
+    worker_password_file = local / "worker.password"
+    if not worker_password_file.exists():
+        worker_password_file.write_text(secrets.token_urlsafe(32))
+    worker_password = worker_password_file.read_text().strip()
+    with psycopg.connect(admin_url) as conn:
+        provision_runtime(conn, app_password)
+        provision_worker(conn, worker_password)
+        provision_gateway(conn, gateway_password)
+        existing = conn.execute("SELECT id FROM app_user WHERE email=%s", (email,)).fetchone()
+        if existing is None:
+            user = conn.execute(
+                "INSERT INTO app_user(email,full_name,email_verified_at) "
+                "VALUES(%s,%s,now()) RETURNING id",
+                (email, "Workspace owner"),
+            ).fetchone()[0]
+            account = conn.execute(
+                """INSERT INTO account(account_type,display_name)
+                                    VALUES(%s,'My workspace') RETURNING id""",
+                (account_type,),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO local_credential VALUES(%s,%s)", (user, password_hash(password))
+            )
+            conn.execute(
+                """INSERT INTO seat(account_id,user_id,role,accepted_at,
+                         approval_daily_usd_cap,approval_total_usd_cap)
+                         VALUES(%s,%s,'owner',now(),10000,300000)""",
+                (account, user),
+            )
+            print("Created workspace owner. No sample campaigns or performance data were inserted.")
+        else:
+            print("Owner already exists; password and account data were preserved.")
+    app_url = f"postgresql://adjutant_app:{quote(app_password)}@127.0.0.1:55439/adjutant"
+    if not (root / ".env").exists():
+        (root / ".env").write_text(
+            f"ADJUTANT_DATABASE_URL={app_url}\nADJUTANT_PUBLIC_ORIGIN=http://localhost:3000\n"
+        )
+    if "ADJUTANT_WORKER_DATABASE_URL=" not in (root / ".env").read_text():
+        with (root / ".env").open("a") as handle:
+            handle.write(
+                f"\nADJUTANT_WORKER_DATABASE_URL=postgresql://adjutant_worker:{quote(worker_password)}@127.0.0.1:55439/adjutant\n"
+            )
+    if "ADJUTANT_GATEWAY_DATABASE_URL=" not in (root / ".env").read_text(encoding="utf-8"):
+        with (root / ".env").open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"\nADJUTANT_GATEWAY_DATABASE_URL=postgresql://adjutant_gateway:"
+                f"{quote(gateway_password)}@127.0.0.1:55439/adjutant\n"
+            )
+    print("Database migrations, runtime permissions, and approval keys are ready.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--email", required=True)
+    parser.add_argument("--password-file", type=Path)
+    parser.add_argument("--account-type", choices=["business", "agency"], default="business")
+    args = parser.parse_args()
+    password = (
+        args.password_file.read_text().strip()
+        if args.password_file
+        else getpass.getpass("Owner password (at least 12 characters): ")
+    )
+    if len(password) < 12 or len(password) > 256:
+        raise SystemExit("Password must contain 12–256 characters")
+    bootstrap(args.email, password, args.account_type)

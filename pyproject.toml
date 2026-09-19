@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adjutant"
+version = "0.1.0"
+description = "Adjutant advertising operations control plane"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.141.1", "uvicorn[standard]==0.53.0",
+  "psycopg[binary,pool]==3.3.6", "cryptography==50.0.1",
+  "pydantic-settings==2.15.0", "httpx==0.28.1",
+  "jsonschema==4.26.0", "email-validator>=2.2,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.16.8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
