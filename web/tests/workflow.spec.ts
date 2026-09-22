@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { resolve } from "node:path";
 
-test("brand evidence to approved plan persists across reloads", async ({
+test("brand, guardrails, and first-launch review persist without a review queue", async ({
   page,
 }) => {
   const user = JSON.parse(
@@ -32,18 +32,11 @@ test("brand evidence to approved plan persists across reloads", async ({
   await page
     .getByLabel("What we know")
     .fill("Residential plumbing repairs for local homeowners.");
-  await page.getByLabel("Source URL").fill("https://example.com/services");
-  await page.getByRole("button", { name: "Save sourced fact →" }).click();
-  await page
-    .getByRole("button", { name: "Confirm these brand facts ✓" })
-    .click();
-  await expect(
-    page.getByText("Brand facts confirmed. Campaign planning is available."),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Save brand fact →" }).click();
   await page
     .getByRole("button", { name: "Campaign plans", exact: true })
     .click();
-  await page.getByRole("button", { name: "Generate draft ↗" }).click();
+  await page.getByRole("button", { name: "Generate strategy plan" }).click();
   await expect(dialog.getByLabel("Inference provider")).toHaveValue("local");
   await dialog.getByLabel("Inference provider").selectOption("cloud");
   await expect(dialog.getByRole("alert")).toContainText(
@@ -81,24 +74,81 @@ test("brand evidence to approved plan persists across reloads", async ({
   await dialog.getByLabel("Daily budget 1").fill("100");
   await dialog.getByRole("button", { name: "Save campaign draft →" }).click();
   await expect(dialog).not.toBeVisible();
-  await page.getByRole("button", { name: "Send for review →" }).click();
-  await page.getByRole("button", { name: /^✓Approvals|^Approvals/ }).click();
+  const brands = await (await page.request.get("/api/brands")).json();
+  const reviewedBrand = brands.find(
+    (brand: { display_name: string }) =>
+      brand.display_name === "Northline Plumbing",
+  );
+  const workspace = await (
+    await page.request.get(`/api/brands/${reviewedBrand.id}/workspace`)
+  ).json();
+  const draft = workspace.plans[0];
+  const editedDocument = { ...draft.plan_document };
+  delete editedDocument.revision;
+  const edited = await page.request.put(
+    `/api/brands/${reviewedBrand.id}/plans/${draft.id}`,
+    {
+      headers: {
+        "X-Adjutant-Client": "console",
+        Origin: "http://127.0.0.1:3001",
+      },
+      data: {
+        ...editedDocument,
+        expected_hash: draft.plan_hash,
+        hypothesis: "Updated repair messaging increases qualified inquiries.",
+      },
+    },
+  );
+  expect(edited.ok()).toBe(true);
+  await page.getByRole("button", { name: "Review first-launch scope" }).click();
   await expect(
-    page.getByRole("heading", { name: "Homeowner repair inquiries" }),
+    page.getByRole("button", { name: "Reload the current plan" }),
   ).toBeVisible();
-  await page.screenshot({
-    path: "../.local/approval-desktop.png",
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "Approve plan ✓" }).click();
   await expect(
-    page.getByText("Plan approved. No campaign has been launched."),
-  ).toBeVisible();
-  await page.reload();
+    page.getByRole("button", {
+      name: "Authorize first launch within these guardrails",
+    }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Reload the current plan" }).click();
   await page
     .getByRole("button", { name: "Campaign plans", exact: true })
     .click();
-  await expect(page.getByText("Approved", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Review first-launch scope" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Homeowner repair inquiries" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Select an account in Channels", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: "Authorize first launch within these guardrails",
+    })
+    .click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Connect and verify" }),
+  ).toContainText("Connect and verify every selected ad account");
+  await page.getByRole("button", { name: "Guardrails", exact: true }).click();
+  await page.getByLabel("Maximum daily increase (%)").fill("20");
+  await page.getByLabel("Blocked claims").fill("Guaranteed results");
+  await page
+    .getByRole("button", { name: "Save guardrails", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Guardrails saved" }),
+  ).toContainText("Guardrails saved as version 2");
+  await page.reload();
+  await page.getByRole("button", { name: "Guardrails", exact: true }).click();
+  await expect(page.getByLabel("Maximum daily increase (%)")).toHaveValue(
+    "20.00",
+  );
+  await expect(page.getByLabel("Blocked claims")).toHaveValue(
+    "Guaranteed results",
+  );
+  await page
+    .getByRole("button", { name: "Campaign plans", exact: true })
+    .click();
+  await expect(page.getByText("Draft", { exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: "Check deployment readiness" })
     .click();

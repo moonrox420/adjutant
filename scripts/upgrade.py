@@ -14,6 +14,8 @@ from bootstrap import (
 )
 from migrate import migrate
 
+from adjutant.config import Settings
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

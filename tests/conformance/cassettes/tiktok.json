@@ -1,0 +1,67 @@
+[
+  {
+    "request": {
+      "method": "GET",
+      "url": "campaign/get"
+    },
+    "response": {
+      "status_code": 200,
+      "body": {
+        "code": 0,
+        "data": {
+          "list": [
+            {
+              "campaign_id": "238491029387",
+              "operation_status": "DISABLE"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "POST",
+      "url": "campaign/create"
+    },
+    "response": {
+      "status_code": 200,
+      "body": {
+        "code": 0,
+        "data": {
+          "campaign_id": "238491029384"
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "POST",
+      "url": "adgroup/create"
+    },
+    "response": {
+      "status_code": 200,
+      "body": {
+        "code": 0,
+        "data": {
+          "adgroup_id": "238491029385"
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "POST",
+      "url": "ad/create"
+    },
+    "response": {
+      "status_code": 200,
+      "body": {
+        "code": 0,
+        "data": {
+          "ad_id": "238491029387"
+        }
+      }
+    }
+  }
+]

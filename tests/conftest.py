@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 
 from adjutant.api import create_app
 from adjutant.config import Settings
+from adjutant.credentials import provision_master_key
 from adjutant.security import password_hash
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,10 +76,14 @@ def identity(admin):
 
 
 @pytest.fixture
-def client(database_urls, identity, approval_server):
+def client(database_urls, identity, approval_server, tmp_path):
+    provision_master_key(tmp_path / "tenant-master.key")
     config = Settings(
         database_url=database_urls[1],
         worker_database_url=None,
+        workflow_enabled=False,
+        credential_master_key_path=tmp_path / "tenant-master.key",
+        object_store_path=tmp_path / "objects",
         signing_key_path=ROOT / ".local/approval.key",
         approval_url=approval_server,
     )

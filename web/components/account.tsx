@@ -166,14 +166,33 @@ export function AccountAccess({ signedIn }: { signedIn: () => void }) {
         >
           {mode === "register" && (
             <>
-              <Field label="Account type">
-                <select name="account_type" defaultValue="business">
-                  <option value="business">Business — one brand</option>
-                  <option value="agency">
-                    Agency — multiple client brands
-                  </option>
-                </select>
-              </Field>
+              <fieldset className="account-types">
+                <legend>Account type</legend>
+                <label className="account-type-option">
+                  <input
+                    type="radio"
+                    name="account_type"
+                    value="business"
+                    required
+                  />
+                  <span>
+                    <strong>Business</strong>
+                    <small>Run advertising for your business.</small>
+                  </span>
+                </label>
+                <label className="account-type-option">
+                  <input
+                    type="radio"
+                    name="account_type"
+                    value="agency"
+                    required
+                  />
+                  <span>
+                    <strong>Agency</strong>
+                    <small>Manage advertising for client brands.</small>
+                  </span>
+                </label>
+              </fieldset>
               <Field label="Full name">
                 <input
                   name="full_name"

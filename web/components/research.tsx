@@ -65,8 +65,8 @@ export function Research({
         </button>
       </div>
       <p className="muted">
-        Read your public homepage, then turn its evidence into sourced facts.
-        Imported text remains unconfirmed.
+        Read your public homepage, then turn its evidence into sourced facts. Ad
+        Studio reads a website automatically when you generate ads.
       </p>
       {error && (
         <p className="message error" role="alert">
@@ -169,7 +169,7 @@ export function GenerateForm({
   return (
     <form className="form-stack" onSubmit={submit}>
       <p className="muted">
-        Your selected model uses confirmed brand facts and current budget
+        Your selected model uses supplied brand facts and current budget
         ceilings to propose a draft for your review.
       </p>
       {error && (
@@ -198,7 +198,7 @@ export function GenerateForm({
       </Field>
       {provider === "cloud" && (
         <p className="footnote">
-          The brief and confirmed brand facts will be sent to Ollama Cloud when
+          The brief and supplied brand facts will be sent to Ollama Cloud when
           you generate.
         </p>
       )}

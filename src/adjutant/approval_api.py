@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from adjutant.audit_export import AuditWindow, signed_export
+from adjutant.autonomy import LaunchApprovalInput, issue_launch_authorization
 from adjutant.db import Database
 from adjutant.errors import DomainError
 from adjutant.events import EventRegistry
@@ -49,6 +50,12 @@ class AuditExportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     session: SecretStr = Field(min_length=16, max_length=128)
     window: AuditWindow
+
+
+class LaunchApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session: SecretStr = Field(min_length=16, max_length=128)
+    approval: LaunchApprovalInput
 
 
 def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
@@ -128,5 +135,20 @@ def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
         with db.transaction(actor) as conn:
             lock_active_session(conn, token_hash)
             return signed_export(conn, signer, brand_id, body.window)
+
+    @app.post(
+        "/internal/brands/{brand_id}/plans/{plan_id}/authorize-launch",
+        dependencies=[Depends(authenticate)],
+    )
+    def authorize_launch(
+        brand_id: UUID, plan_id: UUID, body: LaunchApprovalRequest
+    ) -> dict[str, Any]:
+        token_hash = session_digest(body.session.get_secret_value())
+        actor = db.authenticate(token_hash)
+        with db.transaction(actor) as conn:
+            lock_active_session(conn, token_hash)
+            return issue_launch_authorization(
+                conn, events, signer, brand_id, plan_id, actor.user_id, body.approval
+            )
 
     return app

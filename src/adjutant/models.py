@@ -83,7 +83,7 @@ class BrandInput(Input):
 class AssertionInput(Input):
     field_path: str = Field(min_length=2, max_length=200, pattern=r"^[a-zA-Z0-9_.\[\]-]+$")
     value: str = Field(min_length=1, max_length=4000)
-    provenance_uri: HttpUrl
+    provenance_uri: HttpUrl | None = None
     is_claim: bool = False
 
 

@@ -7,6 +7,19 @@ permissions:
   contents: read
 
 jobs:
+  s0-clean-start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: pgvector/pgvector:pg18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install local runtime prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 python3-venv make
+          chown -R postgres:postgres "$GITHUB_WORKSPACE"
+      - name: Verify make up against an empty cluster
+        run: runuser -u postgres -- make up PYTHON=python3 UP_ARGS=--check
   backend:
     runs-on: ubuntu-latest
     services:
@@ -41,6 +54,7 @@ jobs:
           python scripts/bootstrap.py --email ci@adjutant.test --password-file .local/owner.password
       - run: ruff check src scripts tests
       - run: ruff format --check src scripts tests
+      - run: python scripts/check_channel_parity.py
       - run: pytest -q
   console:
     runs-on: ubuntu-latest
@@ -79,6 +93,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - run: node --test scripts/check-channel-parity.test.mjs
+      - run: node scripts/check-channel-parity.mjs
       - run: npx prettier --check app components lib tests next.config.ts playwright.config.ts
       - run: npm run build
       - name: Install Chromium and system dependencies

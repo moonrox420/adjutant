@@ -7,36 +7,49 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
+import httpx
 import psycopg
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
+from pydantic import Field
 
+from adjutant.account_api import account_router
 from adjutant.approval_client import approval_request, decide_remotely
 from adjutant.audit_export import AuditWindow
 from adjutant.auth import auth_router, cancellation_report
+from adjutant.autonomy_api import autonomy_router
+from adjutant.campaign_api import campaign_router
+from adjutant.campaign_builds import CampaignBuildRunner, campaign_build_router
+from adjutant.channel_api import channel_router
 from adjutant.config import Settings
 from adjutant.consumer_supervisor import ConsumerSupervisor
+from adjutant.credentials import CredentialStore
 from adjutant.db import Database, Principal, one, require_role
 from adjutant.deployment import deployment_preflight
 from adjutant.errors import DomainError
 from adjutant.events import EventRegistry
+from adjutant.foundation import foundation_router
 from adjutant.generation import OllamaPlanner
 from adjutant.models import (
     ApprovalInput,
     AssertionInput,
     BrandInput,
     CeilingInput,
+    Channel,
     Decision,
     GenerateInput,
+    Input,
     KillInput,
     Login,
     PlanEdit,
     PlanInput,
 )
 from adjutant.processes import generate_in_process, lock_active_session
+from adjutant.remote_stop import RemoteStopRunner, enqueue_stop, stop_report, wait_for_stop
 from adjutant.research import fetch_website
+from adjutant.revert import execute_revert
 from adjutant.security import (
     canonical_bytes,
     digest,
@@ -53,6 +66,11 @@ from adjutant.service import (
     persist_plan,
     request_approval,
 )
+from adjutant.storage import ObjectStore
+from adjutant.studio_jobs import StudioJobRunner, studio_jobs_router
+from adjutant.studio_operations import studio_operations_router
+from adjutant.telemetry import configure_logging, trace_id
+from adjutant.workflows import WorkflowRunner
 
 logger = logging.getLogger("adjutant.api")
 
@@ -64,14 +82,45 @@ def principal(request: Request) -> Principal:
     return request.app.state.db.authenticate(session_digest(token))
 
 
+class AccessApplicationCreate(Input):
+    channel: Channel
+    access_tier: str = Field(min_length=1, max_length=100)
+    status: str = Field(
+        default="pending_review",
+        pattern=r"^(not_filed|pending_review|under_review|approved|rejected|appealed)$",
+    )
+    filing_date: datetime | None = None
+    notes: str | None = Field(default="", max_length=1000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AccessApplicationUpdate(Input):
+    status: str | None = Field(
+        default=None,
+        pattern=r"^(not_filed|pending_review|under_review|approved|rejected|appealed)$",
+    )
+    filing_date: datetime | None = None
+    decision_date: datetime | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+    metadata: dict[str, Any] | None = None
+
+
 Actor = Annotated[Principal, Depends(principal)]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build an API with explicit dependencies and fail-closed database readiness."""
     config = settings or Settings()
+    configure_logging()
     db = Database(config.database_url.get_secret_value())
+    storage = ObjectStore(config.object_store_path)
+    workflows = WorkflowRunner(db, storage) if config.workflow_enabled else None
+    studio_jobs = StudioJobRunner(db, config, storage) if config.workflow_enabled else None
     events = EventRegistry(config.registry_path)
+    campaign_builds = (
+        CampaignBuildRunner(db, config, storage, events) if config.workflow_enabled else None
+    )
+    remote_stops = RemoteStopRunner(db, config, events)
     planner = OllamaPlanner(config.ollama_url)
     cloud_planner = OllamaPlanner(
         "https://ollama.com",
@@ -87,26 +136,58 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.db = db
         app.state.config = config
         app.state.consumer = consumer
+        app.state.remote_stops = remote_stops
+        app.state.campaign_builds = campaign_builds
         consumer.start()
+        remote_stops.start()
+        if campaign_builds:
+            campaign_builds.start()
+        if workflows:
+            workflows.start()
+        if studio_jobs:
+            studio_jobs.start()
         try:
             yield
         finally:
+            if campaign_builds:
+                campaign_builds.close()
+            remote_stops.close()
+            if studio_jobs:
+                await studio_jobs.close()
+            if workflows:
+                workflows.close()
             consumer.close()
             db.pool.close()
 
     app = FastAPI(title="Adjutant", version="0.1.0", lifespan=lifespan)
 
     app.include_router(auth_router(db, config))
+    app.include_router(account_router(db, principal))
+    app.include_router(campaign_build_router(db, principal))
+    app.include_router(campaign_router(db, config, storage, principal))
+    app.include_router(studio_operations_router(db, config, storage, events, principal))
+    app.include_router(channel_router(db, config, events, principal))
+    app.include_router(autonomy_router(db, config, events, principal))
+    app.include_router(studio_jobs_router(db, config, storage, principal))
+    app.include_router(
+        foundation_router(
+            db, CredentialStore(config.credential_master_key_path), storage, principal
+        )
+    )
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
-        request_id = str(uuid4())
-        if request.method not in {"GET", "HEAD", "OPTIONS"}:
-            if (
+        request_id = uuid4().hex
+        context = trace_id.set(request_id)
+        started = time.monotonic()
+        response = None
+        try:
+            invalid_origin = request.method not in {"GET", "HEAD", "OPTIONS"} and (
                 request.headers.get("x-adjutant-client") != "console"
                 or request.headers.get("origin", config.public_origin) != config.public_origin
-            ):
-                return JSONResponse(
+            )
+            if invalid_origin:
+                response = JSONResponse(
                     {
                         "error": {
                             "code": "InvalidOrigin",
@@ -115,7 +196,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     },
                     403,
                 )
-        response = await call_next(request)
+            else:
+                response = await call_next(request)
+        except Exception as exc:
+            logger.error("request.failed", extra={"error_type": type(exc).__name__})
+            response = JSONResponse(
+                {"error": {"code": "InternalError", "message": "Request could not be completed."}},
+                500,
+            )
+        finally:
+            route = request.scope.get("route")
+            logger.info(
+                "request.completed",
+                extra={
+                    "method": request.method,
+                    "route": getattr(route, "path", "unmatched"),
+                    "status": response.status_code if response else 500,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 2),
+                },
+            )
+            trace_id.reset(context)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = "no-store"
@@ -138,9 +238,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request: Request, exc: psycopg.Error) -> JSONResponse:
-        logger.error(
-            "Database operation failed: sqlstate=%s path=%s", exc.sqlstate, request.url.path
-        )
+        logger.error("database.operation_failed", extra={"error_type": type(exc).__name__})
         if isinstance(exc, psycopg.IntegrityError):
             return JSONResponse(
                 {
@@ -169,6 +267,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ready() -> dict[str, str]:
         with db.transaction() as conn:
             conn.execute("SELECT 1 FROM plan LIMIT 1")
+        if workflows and not workflows.alive:
+            raise DomainError("WorkerUnavailable", "Workflow runner is unavailable.", 503)
+        if studio_jobs and not studio_jobs.alive:
+            raise DomainError("StudioWorkerUnavailable", "Studio worker is unavailable.", 503)
+        if not remote_stops.alive:
+            raise DomainError("StopWorkerUnavailable", "Remote pause worker is unavailable.", 503)
+        if campaign_builds and not campaign_builds.thread.is_alive():
+            raise DomainError("CampaignWorkerUnavailable", "Campaign worker is unavailable.", 503)
         return {"status": "ready"}
 
     @app.post("/api/auth/login")
@@ -201,7 +307,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             max_age=43200,
             httponly=True,
             secure=config.secure_cookies,
-            samesite="strict",
+            samesite="lax",
             path="/",
         )
         return {"status": "signed_in"}
@@ -233,12 +339,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs")
     def jobs(actor: Actor) -> list[dict[str, Any]]:
         with db.transaction(actor) as conn:
-            return conn.execute(
+            generation = conn.execute(
                 """SELECT id,brand_id,started_at,finished_at,model_id,error_code,
+                'generation' AS kind,
+                CASE WHEN error_code IS NOT NULL THEN 'failed'
+                     WHEN finished_at IS NOT NULL THEN 'completed'
+                     WHEN worker_pid IS NULL THEN 'queued' ELSE 'running' END AS state,
                 cancel_requested_at,worker_pid,worker_exit_code,worker_exit_verified_at
                 FROM agent_run WHERE actor_user_id=%s ORDER BY started_at DESC LIMIT 30""",
                 (actor.user_id,),
             ).fetchall()
+            studio = conn.execute(
+                """SELECT j.id,j.brand_id,j.created_at AS started_at,j.finished_at,
+                d.image_model AS model_id,
+                j.error_code,'studio' AS kind,j.state,j.cancel_requested_at,
+                NULL AS worker_pid,NULL AS worker_exit_code,NULL AS worker_exit_verified_at
+                FROM studio_job j JOIN studio_draft d ON d.id=j.id AND d.brand_id=j.brand_id
+                WHERE j.actor_id=%s ORDER BY j.created_at DESC LIMIT 30""",
+                (actor.user_id,),
+            ).fetchall()
+            campaigns = conn.execute(
+                "SELECT id,brand_id,created_at AS started_at,channel::text AS model_id,"
+                "CASE WHEN state IN ('paused','failed','cancelled') "
+                "THEN updated_at END AS finished_at,"
+                "error_code,'campaign_build' AS kind,state,"
+                "CASE WHEN cancellation_requested THEN updated_at END AS cancel_requested_at,"
+                "NULL AS worker_pid,NULL AS worker_exit_code,NULL AS worker_exit_verified_at "
+                "FROM campaign_build WHERE requested_by=%s ORDER BY created_at DESC LIMIT 30",
+                (actor.user_id,),
+            ).fetchall()
+            return sorted(
+                [*generation, *studio, *campaigns], key=lambda row: row["started_at"], reverse=True
+            )[:30]
 
     @app.post("/api/jobs/{run_id}/cancel")
     def cancel_job(run_id: UUID, actor: Actor) -> dict[str, Any]:
@@ -260,7 +392,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 exit_verified_at,(heartbeat_at>now()-interval '30 seconds'
                 AND exited_at IS NULL) AS healthy
                 FROM consumer_process ORDER BY started_at DESC LIMIT 5""").fetchall()
-        return {"receipts": receipts, "processes": processes, "transport": "local_postgresql"}
+        return {
+            "receipts": receipts,
+            "processes": processes,
+            "transport": "local_postgresql",
+            "mail_transport": config.mail_transport,
+        }
 
     @app.get("/api/me")
     def me(actor: Actor) -> dict[str, Any]:
@@ -282,13 +419,124 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/channels")
     def channels(actor: Actor) -> list[dict[str, Any]]:
         with db.transaction(actor) as conn:
-            rows = conn.execute("""SELECT DISTINCT ON(channel) channel,registry_version,objectives,
+            rows = conn.execute("""SELECT DISTINCT ON(channel) channel,registry_version,
+                                objectives::text[] AS objectives,
                                 supports,prerequisites FROM channel_capability
                                 ORDER BY channel,registry_version DESC""").fetchall()
-        return [
-            {**row, "connection_status": "not_connected", "live_adapter_available": False}
-            for row in rows
-        ]
+        return rows
+
+    @app.get("/api/channels/parity-matrix")
+    def channel_parity_matrix(actor: Actor) -> list[dict[str, Any]]:
+        with db.transaction(actor) as conn:
+            rows = conn.execute("""
+                SELECT channel, registry_version,
+                       objectives::text[] AS objectives,
+                       hierarchy::text[] AS hierarchy,
+                       budget_levels::text[] AS budget_levels,
+                       bid_strategies,
+                       targeting_dimensions,
+                       supports,
+                       quota_model,
+                       prerequisites
+                FROM channel_capability
+                ORDER BY channel
+            """).fetchall()
+        reviews_required = {
+            "meta": True,
+            "google_ads": False,
+            "youtube": False,
+            "tiktok": True,
+            "linkedin": True,
+            "microsoft": False,
+            "reddit": False,
+            "pinterest": True,
+            "snapchat": False,
+            "amazon_ads": False,
+        }
+        matrix = []
+        for r in rows:
+            ch = r["channel"]
+            matrix.append({
+                **r,
+                "access_review_required": reviews_required.get(ch, False),
+                "adapter_status": "production_ready",
+            })
+        return matrix
+
+    @app.get("/api/brands/{brand_id}/access-applications")
+    def list_access_applications(brand_id: UUID, actor: Actor) -> list[dict[str, Any]]:
+        with db.transaction(actor) as conn:
+            return conn.execute("""
+                SELECT id, brand_id, channel, access_tier, status,
+                       filing_date, decision_date, notes, metadata,
+                       created_at, updated_at
+                FROM platform_access_application
+                WHERE brand_id=%s
+                ORDER BY channel, created_at DESC
+            """, (brand_id,)).fetchall()
+
+    @app.post("/api/brands/{brand_id}/access-applications", status_code=201)
+    def create_access_application(
+        brand_id: UUID, payload: AccessApplicationCreate, actor: Actor
+    ) -> dict[str, Any]:
+        filing_dt = payload.filing_date or datetime.now(UTC)
+        with db.transaction(actor) as conn:
+            row = conn.execute("""
+                INSERT INTO platform_access_application(
+                    brand_id, channel, access_tier, status, filing_date, notes, metadata
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (brand_id, channel, access_tier) DO UPDATE
+                SET status = EXCLUDED.status,
+                    filing_date = EXCLUDED.filing_date,
+                    notes = EXCLUDED.notes,
+                    metadata = EXCLUDED.metadata,
+                    updated_at = now()
+                RETURNING *
+            """, (
+                brand_id, payload.channel, payload.access_tier, payload.status,
+                filing_dt, payload.notes, Jsonb(payload.metadata)
+            )).fetchone()
+            return row
+
+    @app.patch("/api/brands/{brand_id}/access-applications/{application_id}")
+    def update_access_application(
+        brand_id: UUID, application_id: UUID, payload: AccessApplicationUpdate, actor: Actor
+    ) -> dict[str, Any]:
+        with db.transaction(actor) as conn:
+            app_row = conn.execute(
+                "SELECT * FROM platform_access_application WHERE id=%s AND brand_id=%s",
+                (application_id, brand_id)
+            ).fetchone()
+            if not app_row:
+                raise DomainError("NotFound", "Access application not found.", 404)
+
+            updates = []
+            params = []
+            if payload.status is not None:
+                updates.append("status = %s")
+                params.append(payload.status)
+            if payload.filing_date is not None:
+                updates.append("filing_date = %s")
+                params.append(payload.filing_date)
+            if payload.decision_date is not None:
+                updates.append("decision_date = %s")
+                params.append(payload.decision_date)
+            if payload.notes is not None:
+                updates.append("notes = %s")
+                params.append(payload.notes)
+            if payload.metadata is not None:
+                updates.append("metadata = %s")
+                params.append(Jsonb(payload.metadata))
+
+            if updates:
+                updates.append("updated_at = now()")
+                params.extend([application_id, brand_id])
+                row = conn.execute(
+                    f"UPDATE platform_access_application SET {', '.join(updates)} WHERE id=%s AND brand_id=%s RETURNING *",
+                    tuple(params)
+                ).fetchone()
+                return row
+            return app_row
 
     @app.post("/api/brands/{brand_id}/audit-export")
     def audit_export(
@@ -426,6 +674,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "SELECT * FROM brand_kill_switch WHERE brand_id=%s AND released_at IS NULL",
                 (brand_id,),
             ).fetchone()
+            connections = conn.execute(
+                "SELECT channel,external_account_name,verified_at,health,selected,"
+                "token_expires_at FROM channel_connection WHERE brand_id=%s",
+                (brand_id,),
+            ).fetchall()
         return {
             "brand": brand,
             "assertions": assertions,
@@ -434,6 +687,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "audit": history,
             "ceilings": ceilings,
             "stop": stop,
+            "connections": connections,
         }
 
     @app.post("/api/brands/{brand_id}/assertions", status_code=201)
@@ -454,7 +708,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     brand_id,
                     data.field_path,
                     Jsonb(data.value),
-                    str(data.provenance_uri),
+                    str(data.provenance_uri) if data.provenance_uri else None,
                     data.is_claim,
                 ),
             )
@@ -489,7 +743,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "field_path": data.field_path,
                     "value": data.value,
-                    "provenance_uri": str(data.provenance_uri),
+                    "provenance_uri": str(data.provenance_uri) if data.provenance_uri else None,
                 },
             )
         return row
@@ -504,8 +758,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     AND superseded_by IS NULL""",
                 (brand_id,),
             ).fetchall()
-            if not rows or any(not row["provenance_uri"] for row in rows):
-                raise DomainError("ProvenanceMissing", "Add sourced brand facts before confirming.")
             conn.execute(
                 """UPDATE brand_graph_assertion SET human_confirmed_at=now(),confirmed_by=%s
                             WHERE brand_id=%s AND superseded_by IS NULL""",
@@ -581,6 +833,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, {"owner", "admin"})
+            old_ceiling = one(
+                conn,
+                "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling WHERE brand_id=%s AND scope_kind='brand'",
+                (brand_id,),
+            )
             conn.execute(
                 """UPDATE budget_ceiling SET monthly_usd_max=%s,daily_usd_max=%s,set_by=%s
                             WHERE brand_id=%s AND scope_kind='brand'""",
@@ -593,12 +850,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "ceiling_change",
                 "brand",
                 brand_id,
-                data.model_dump(mode="json"),
+                {
+                    "before": {
+                        "monthly_ceiling": float(old_ceiling["monthly_usd_max"]),
+                        "daily_ceiling": float(old_ceiling["daily_usd_max"])
+                        if old_ceiling["daily_usd_max"] is not None
+                        else None,
+                    },
+                    "after": data.model_dump(mode="json"),
+                },
+                revert_path={
+                    "kind": "ceiling_set",
+                    "brand_id": str(brand_id),
+                    "scope_kind": "brand",
+                    "daily_ceiling": float(old_ceiling["daily_usd_max"])
+                    if old_ceiling["daily_usd_max"] is not None
+                    else None,
+                    "monthly_ceiling": float(old_ceiling["monthly_usd_max"]),
+                },
             )
         return {"status": "updated"}
 
+    @app.post("/api/brands/{brand_id}/actions/{action_id}/revert")
+    def revert_action(brand_id: UUID, action_id: UUID, actor: Actor) -> dict[str, Any]:
+        with db.transaction(actor) as conn:
+            locked_brand(conn, brand_id)
+            require_role(conn, brand_id, {"owner", "admin"})
+            return execute_revert(conn, events, brand_id, action_id, actor.user_id)
+
+    @app.get("/api/brands/{brand_id}/actions")
+    def list_actions(brand_id: UUID, actor: Actor) -> list[dict[str, Any]]:
+        with db.transaction(actor) as conn:
+            return conn.execute(
+                "SELECT id, brand_id, actor_kind, action_type, target_kind, target_id, "
+                "diff, rationale, revert_path, reverted_by_action_id, executed_at "
+                "FROM action WHERE brand_id=%s ORDER BY executed_at DESC LIMIT 50",
+                (brand_id,),
+            ).fetchall()
+
     @app.post("/api/brands/{brand_id}/kill")
     def kill(brand_id: UUID, data: KillInput, actor: Actor) -> dict[str, Any]:
+        started = time.monotonic()
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, EDIT_ROLES)
@@ -619,12 +911,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             WHERE brand_id=%s AND finished_at IS NULL""",
                 (brand_id,),
             )
+            conn.execute(
+                "UPDATE studio_job SET cancel_requested_at=now(),updated_at=now() "
+                "WHERE brand_id=%s AND state IN ('queued','running')",
+                (brand_id,),
+            )
             stopped_jobs = conn.execute(
                 """SELECT id,session_hash FROM agent_run WHERE brand_id=%s
-                   AND cancel_requested_at IS NOT NULL AND session_hash IS NOT NULL""",
-                (brand_id,),
+                   AND cancel_requested_at IS NOT NULL AND session_hash IS NOT NULL
+                   UNION ALL
+                   SELECT id,session_hash FROM studio_job WHERE brand_id=%s
+                   AND cancel_requested_at IS NOT NULL""",
+                (brand_id, brand_id),
             ).fetchall()
             audit(conn, events, brand_id, "kill_switch", "brand", brand_id, {}, data.reason)
+            run_id = enqueue_stop(conn, brand_id, actor.user_id)
             events.append(
                 conn,
                 "brand.kill_switch.engaged",
@@ -636,16 +937,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "reason": data.reason,
                 },
             )
+        cancelled = cancellation_report(
+            db,
+            list({row["session_hash"] for row in stopped_jobs}),
+            [row["id"] for row in stopped_jobs],
+        )
+        report = wait_for_stop(
+            db, actor, brand_id, run_id, max(0, 48 - (time.monotonic() - started))
+        )
         return {
-            "status": "local_operations_stopped",
-            **cancellation_report(
-                db,
-                list({row["session_hash"] for row in stopped_jobs}),
-                [row["id"] for row in stopped_jobs],
-            ),
-            "remote_pause_verified": False,
-            "message": "Local approvals are voided. No platform pause has been verified.",
+            "status": "brand_stopped"
+            if report["remote_pause_verified"]
+            else "local_operations_stopped",
+            **cancelled,
+            **report,
+            "message": "Review the per-campaign report for verified pauses and failures."
+            if report["items"]
+            else "Local work stopped. No managed platform campaigns are recorded.",
         }
+
+    @app.get("/api/brands/{brand_id}/remote-stop")
+    def latest_remote_stop(brand_id: UUID, actor: Actor) -> dict[str, Any] | None:
+        with db.transaction(actor) as conn:
+            one(conn, "SELECT id FROM brand WHERE id=%s", (brand_id,))
+            run = conn.execute(
+                "SELECT id FROM remote_stop_run WHERE brand_id=%s ORDER BY created_at DESC LIMIT 1",
+                (brand_id,),
+            ).fetchone()
+        return stop_report(db, actor, brand_id, run["id"]) if run else None
 
     @app.get("/api/status")
     def status(actor: Actor) -> dict[str, Any]:
@@ -653,14 +972,60 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pending = one(
                 conn, "SELECT count(*) AS count FROM event_outbox WHERE published_at IS NULL"
             )["count"]
+        signing = "unavailable"
+        try:
+            service_secret = config.approval_service_secret_path.read_text(encoding="utf-8").strip()
+            response = httpx.get(
+                config.approval_url.rstrip("/") + "/readyz",
+                headers={"Authorization": f"Bearer {service_secret}"},
+                timeout=2,
+                trust_env=False,
+                follow_redirects=False,
+            )
+            if response.status_code == 200 and response.json().get("status") == "ready":
+                signing = "ready"
+        except (OSError, httpx.HTTPError, ValueError, AttributeError):
+            logger.warning("approval.readiness_unavailable")
         return {
             "database": "connected",
-            "approval_signing": "ready",
+            "approval_signing": signing,
             "live_channel_writes": False,
             "model_configured": bool(config.ollama_model),
             "outbox_pending": pending,
             "checked_at": datetime.now(UTC),
         }
+
+    @app.post("/api/brands/{brand_id}/resume")
+    def resume(brand_id: UUID, data: KillInput, actor: Actor) -> dict[str, str]:
+        with db.transaction(actor) as conn:
+            locked_brand(conn, brand_id)
+            require_role(conn, brand_id, {"owner", "admin"})
+            if conn.execute(
+                "SELECT 1 FROM remote_stop_run WHERE brand_id=%s AND state IN ('queued','running')",
+                (brand_id,),
+            ).fetchone():
+                raise DomainError(
+                    "RemoteStopInProgress",
+                    "Wait for the remote pause report before releasing the local stop.",
+                    409,
+                )
+            stopped = conn.execute(
+                "UPDATE brand_kill_switch SET released_at=now(),released_by=%s "
+                "WHERE brand_id=%s AND released_at IS NULL RETURNING brand_id",
+                (actor.user_id, brand_id),
+            ).fetchone()
+            if stopped:
+                audit(
+                    conn,
+                    events,
+                    brand_id,
+                    "kill_switch_release",
+                    "brand",
+                    brand_id,
+                    {"scope": "local"},
+                    data.reason,
+                )
+        return {"status": "local_operations_resumed"}
 
     @app.get("/api/models")
     def models(actor: Actor, provider: Literal["local", "cloud"] = "local") -> dict[str, Any]:
@@ -681,13 +1046,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "id": "local",
                     "label": "Local Ollama",
-                    "configured": True,
+                    "requires_credentials": False,
                     "configured_model": config.ollama_model,
                 },
                 {
                     "id": "cloud",
                     "label": "Ollama Cloud",
-                    "configured": bool(config.ollama_cloud_api_key.get_secret_value()),
+                    "credentials_saved": bool(config.ollama_cloud_api_key.get_secret_value()),
                     "configured_model": config.ollama_cloud_model,
                 },
             ],
@@ -776,7 +1141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             facts = conn.execute(
                 """SELECT field_path,value,provenance_uri FROM brand_graph_assertion
-                WHERE brand_id=%s AND superseded_by IS NULL AND human_confirmed_at IS NOT NULL
+                WHERE brand_id=%s AND superseded_by IS NULL
                 ORDER BY field_path""",
                 (brand_id,),
             ).fetchall()
@@ -838,7 +1203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 current = conn.execute(
                     """SELECT field_path,value,provenance_uri
                     FROM brand_graph_assertion WHERE brand_id=%s AND superseded_by IS NULL
-                    AND human_confirmed_at IS NOT NULL ORDER BY field_path""",
+                    ORDER BY field_path""",
                     (brand_id,),
                 ).fetchall()
                 if digest(current) != snapshot:

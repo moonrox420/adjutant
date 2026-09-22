@@ -6,6 +6,7 @@ import pytest
 
 from adjutant.errors import DomainError
 from adjutant.generation import OllamaPlanner
+from adjutant.models import PlanInput
 
 
 def test_cloud_uses_bearer_auth_and_validates_without_unsupported_format(plan_input):
@@ -27,7 +28,10 @@ def test_cloud_uses_bearer_auth_and_validates_without_unsupported_format(plan_in
     assert requests[0].headers["Authorization"] == "Bearer private-test-key"
     payload = json.loads(requests[0].content)
     assert "format" not in payload
-    assert "Required schema:" in payload["messages"][0]["content"]
+    assert (
+        json.dumps(PlanInput.model_json_schema(mode="serialization"))
+        in payload["messages"][0]["content"]
+    )
     assert "private-test-key" not in requests[0].content.decode()
 
 

@@ -85,7 +85,7 @@ test("signing out during generation verifies worker exit and revokes the old ses
   await page
     .getByRole("button", { name: "Campaign plans", exact: true })
     .click();
-  await page.getByRole("button", { name: "Generate draft ↗" }).click();
+  await page.getByRole("button", { name: "Generate strategy plan" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Installed local model")).toHaveValue(
     "browser-lifecycle-model",

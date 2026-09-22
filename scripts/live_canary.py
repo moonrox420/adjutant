@@ -15,6 +15,7 @@ from test_approval_server import approval_test_server
 
 from adjutant.api import create_app
 from adjutant.config import Settings
+from adjutant.credentials import provision_master_key
 from adjutant.security import password_hash
 
 
@@ -44,10 +45,13 @@ def seed_identity(admin_url: str) -> dict[str, str]:
 def test_settings(origin: str = "http://localhost:3000") -> Settings:
     admin_url = Path(".local/test-admin.url").read_text().strip()
     password = Path(".local/app.password").read_text().strip()
+    key_path = Path(".local/browser-tenant-master.key")
+    provision_master_key(key_path)
     return Settings(
         database_url=f"postgresql://adjutant_app:{quote(password)}@{admin_url.split('@')[1]}",
         public_origin=origin,
         worker_database_url=None,
+        credential_master_key_path=key_path,
     )
 
 

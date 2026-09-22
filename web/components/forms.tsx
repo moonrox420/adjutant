@@ -28,8 +28,8 @@ export function BrandForm({
   return (
     <form onSubmit={submit} className="form-stack">
       <p className="muted">
-        Start with the business and its spending limits. You’ll confirm the
-        brand’s facts before creating a campaign plan.
+        Start with the business and its spending limits. Ad Studio reads your
+        website automatically when you generate your first ads.
       </p>
       <Field label="Workspace">
         <select name="account_id" required>
@@ -157,7 +157,7 @@ export function PlanForm({
     <form className="form-stack" onSubmit={submit}>
       <p className="muted">
         Define the hypothesis, audience, and channel budgets. Saving creates a
-        draft; submitting sends it to review.
+        draft. Review first-launch scope when the plan and creative are ready.
       </p>
       <Field label="Campaign name">
         <input

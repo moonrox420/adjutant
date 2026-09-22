@@ -28,10 +28,9 @@ def test_authentication_and_csrf(client):
     assert client.get("/api/brands").status_code == 401
 
 
-def test_no_generation_before_confirmation(client, brand, plan_input):
+def test_plan_creation_does_not_require_confirmation(client, brand, plan_input):
     response = client.post(f"/api/brands/{brand}/plans", json=plan_input)
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "GraphUnconfirmed"
+    assert response.status_code == 201, response.text
 
 
 def test_plan_approval_is_persisted_signed_and_audited(client, confirmed_brand, approval, admin):
@@ -193,7 +192,8 @@ def test_every_brand_table_and_partition_has_rls(admin):
         JOIN pg_namespace n ON n.oid=c.relnamespace
         JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='brand_id'
         WHERE n.nspname='adjutant' AND c.relkind IN ('r','p')
-        AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity)""").fetchall()
+        AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity
+             OR NOT EXISTS(SELECT 1 FROM pg_policy p WHERE p.polrelid=c.oid))""").fetchall()
     assert unprotected == []
 
 
@@ -230,13 +230,13 @@ def test_token_expiry_and_scope_and_replay_database(client, confirmed_brand, app
         )
 
 
-def test_confirmed_assertion_requires_source(admin, brand):
-    with pytest.raises(psycopg.errors.CheckViolation):
-        admin.execute(
-            """INSERT INTO brand_graph_assertion(brand_id,field_path,value,human_confirmed_at)
-                         VALUES(%s,'offer','{}',now())""",
-            (brand,),
-        )
+def test_brand_fact_does_not_require_a_source(client, brand):
+    response = client.post(
+        f"/api/brands/{brand}/assertions", json={"field_path": "offer", "value": "Local repairs"}
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["provenance_uri"] is None
+    assert client.post(f"/api/brands/{brand}/confirm").status_code == 200
 
 
 def test_approval_signatures_expire(client, confirmed_brand, approval, admin):

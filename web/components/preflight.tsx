@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import { channelName, when } from "./ui";
+import { CampaignDeployments } from "./campaign-deployments";
 
 type PreflightResult = {
   ready: boolean;
@@ -46,6 +47,7 @@ export function DeploymentPreflight({
   }
   return (
     <div className="form-stack">
+      <CampaignDeployments brandId={brandId} planId={planId} />
       <button className="button" disabled={busy} onClick={check}>
         {busy
           ? "Checking deployment requirements…"

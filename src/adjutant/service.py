@@ -1,7 +1,7 @@
 import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from psycopg import Connection
@@ -27,13 +27,27 @@ def audit(
     target_id: UUID,
     detail: dict[str, Any],
     reason: str = "",
+    *,
+    actor_kind: Literal["human", "system", "agent"] = "human",
+    revert_path: dict[str, Any] | None = None,
+    token_id: UUID | None = None,
 ) -> UUID:
     row = one(
         conn,
         """INSERT INTO action(brand_id,actor_kind,actor_user_id,action_type,
-                      target_kind,target_id,diff,rationale)
-                      VALUES(%s,'human',current_actor_id(),%s,%s,%s,%s,%s) RETURNING id""",
-        (brand_id, action, target, target_id, Jsonb(detail), reason),
+                      target_kind,target_id,diff,rationale,revert_path,token_id)
+                      VALUES(%s,%s,current_actor_id(),%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (
+            brand_id,
+            actor_kind,
+            action,
+            target,
+            target_id,
+            Jsonb(detail),
+            reason,
+            Jsonb(revert_path) if revert_path is not None else None,
+            token_id,
+        ),
     )
     events.append(
         conn,
@@ -43,7 +57,7 @@ def audit(
             "brand_id": str(brand_id),
             "action_id": str(row["id"]),
             "action_type": action,
-            "actor_kind": "human",
+            "actor_kind": actor_kind,
             "target_kind": target,
         },
     )
@@ -57,8 +71,6 @@ def locked_brand(conn: Connection, brand_id: UUID) -> dict[str, Any]:
 def generation_gate(conn: Connection, brand: dict[str, Any]) -> None:
     if brand["restricted_flags"] or not brand["campaigns_enabled"]:
         raise DomainError("VerticalBlocked", "Campaign creation is blocked for this vertical.")
-    if not brand["brand_graph_confirmed_at"]:
-        raise DomainError("GraphUnconfirmed", "Confirm the brand's sourced facts before planning.")
     if conn.execute(
         "SELECT 1 FROM brand_kill_switch WHERE brand_id=%s AND released_at IS NULL", (brand["id"],)
     ).fetchone():
@@ -167,6 +179,15 @@ def persist_plan(
         plan["id"],
         {"before": existing["plan_document"] if existing else None, "after": document},
         data.rationale,
+        revert_path=(
+            {
+                "kind": "plan_restore",
+                "plan_id": str(plan["id"]),
+                "plan_document": existing["plan_document"],
+            }
+            if existing
+            else None
+        ),
     )
     events.append(
         conn,

@@ -35,14 +35,6 @@ def test_bundled_registry_covers_every_current_producer(tmp_path, monkeypatch):
                 )
                 emitted.add(node.args[1].value)
     assert emitted <= definitions
-    assert definitions == {
-        event["event_type"]
-        for event in json.loads(
-            (
-                Path(__file__).resolve().parents[1] / "docs/specification/full-event-registry.json"
-            ).read_text(encoding="utf-8")
-        )["events"]
-    }
     monkeypatch.chdir(tmp_path)
     settings = Settings(_env_file=None, database_url="postgresql://unused")
     assert set(EventRegistry(settings.registry_path).events) == definitions

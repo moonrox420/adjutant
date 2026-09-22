@@ -64,6 +64,8 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
     )
     conn.execute("GRANT DELETE ON plan_allocation TO adjutant_app")
     conn.execute("GRANT INSERT ON action,event_outbox,website_evidence TO adjutant_app")
+    conn.execute("GRANT UPDATE(reverted_by_action_id) ON action TO adjutant_app")
+    conn.execute("GRANT UPDATE(status, activated_at, campaigns_enabled) ON brand TO adjutant_app")
     conn.execute("REVOKE INSERT,UPDATE ON approval_token FROM adjutant_app")
     conn.execute("GRANT UPDATE(voided_at,voided_reason) ON approval_token TO adjutant_app")
 
@@ -134,6 +136,27 @@ def provision_gateway(conn: psycopg.Connection, password: str) -> None:
         adjutant.brand_kill_switch,adjutant.budget_ceiling,adjutant.approval_token_consumption
         TO adjutant_gateway""")
     conn.execute("GRANT INSERT ON adjutant.approval_token_consumption TO adjutant_gateway")
+    conn.execute(
+        "GRANT SELECT ON adjutant.guardrail,adjutant.channel_connection,"
+        "adjutant.launch_authorization,adjutant.channel_launch_grant,"
+        "adjutant.launch_authorization_void TO adjutant_gateway"
+    )
+    conn.execute("GRANT INSERT ON adjutant.channel_launch_grant TO adjutant_gateway")
+    conn.execute(
+        "GRANT SELECT ON adjutant.creative,adjutant.creative_concept,adjutant.rendition,"
+        "adjutant.studio_plan_creative,adjutant.studio_rendition,adjutant.asset,"
+        "adjutant.placement_spec TO adjutant_gateway"
+    )
+    conn.execute(
+        "GRANT EXECUTE ON FUNCTION adjutant.campaign_review_manifest(uuid,uuid) TO adjutant_gateway"
+    )
+    conn.execute("REVOKE SELECT ON adjutant.seat FROM adjutant_gateway")
+    conn.execute("GRANT UPDATE(status, activated_at, campaigns_enabled) ON adjutant.brand TO adjutant_gateway")
+    conn.execute("GRANT INSERT ON adjutant.action,adjutant.event_outbox TO adjutant_gateway")
+    conn.execute("GRANT SELECT(id) ON adjutant.action TO adjutant_gateway")
+    conn.execute("GRANT UPDATE(reverted_by_action_id) ON adjutant.action TO adjutant_gateway")
+    conn.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA adjutant TO adjutant_gateway")
+    conn.execute("GRANT EXECUTE ON FUNCTION adjutant.lock_runner_brand(uuid) TO adjutant_gateway")
     conn.execute("""GRANT EXECUTE ON FUNCTION adjutant.current_brand_ids(),
         adjutant.lock_spend_authority(uuid,uuid) TO adjutant_gateway""")
 

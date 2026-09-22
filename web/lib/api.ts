@@ -11,11 +11,13 @@ export async function api<T>(
   path: string,
   method = "GET",
   data?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method,
     credentials: "same-origin",
     cache: "no-store",
+    signal,
     headers: {
       "Content-Type": "application/json",
       "X-Adjutant-Client": "console",
@@ -106,7 +108,7 @@ export type Assertion = {
   id: string;
   field_path: string;
   value: string;
-  provenance_uri: string;
+  provenance_uri: string | null;
   human_confirmed_at: string | null;
 };
 export type Audit = {
@@ -119,6 +121,14 @@ export type Audit = {
   diff: unknown;
 };
 export type Workspace = {
+  connections: {
+    channel: string;
+    external_account_name: string;
+    verified_at: string | null;
+    health: string;
+    selected: boolean;
+    token_expires_at: string | null;
+  }[];
   brand: Brand;
   assertions: Assertion[];
   plans: Plan[];
@@ -136,7 +146,6 @@ export type Channel = {
   registry_version: string;
   objectives: string[];
   prerequisites: string[];
-  live_adapter_available: boolean;
 };
 export type Status = {
   database: string;

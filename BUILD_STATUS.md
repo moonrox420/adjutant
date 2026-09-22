@@ -1,125 +1,128 @@
-# Build status
+# Adjutant v2.0 execution status
 
-This repository began with specification documents and no application source. Version 0.1.0 is a
-working local **brand → evidence → confirmation → draft plan → signed human approval** path.
-It is not Phase 0 complete, a closed-alpha release, or the finished 199-ticket product.
+## Current implementation checkpoint — September 22
 
-## Verified on Windows, 2026-09-19
+The supported image default is `gemini-3.1-flash-image`; retired Imagen models are rejected.
+Studio jobs now generate five concept-specific copy/image sets with individual checkpoints,
+duplicate-copy repair, four rendered sizes per concept, saved inline edits, cancellation,
+and failed-job retries. The actual local Ollama model produced five distinct validated copy
+bundles. Google image generation has not been authenticated.
 
-- Backend: 129 tests passed against dedicated PostgreSQL `adjutant_test`, including native process
-  cancellation/recovery, gateway isolation, replay, concurrent cross-plan brand-budget enforcement,
-  supervisor database-connection loss, and both worker `SECURITY DEFINER` boundaries.
-- Browser: three end-to-end workflows passed, covering account lifecycle, provider selection/setup
-  errors, campaign approval persistence, deployment preflight, mobile layout, and sign-out during
-  a real generation subprocess with persisted OS exit proof and old-session rejection.
-- Production console build, TypeScript, Python lint/format, and dependency consistency checks passed.
-- Original requirements restored from the supplied PRD directory into `docs/specification`, with
-  byte-for-byte source copies and SHA-256 provenance: 199 tickets and 46 event contracts.
-  The full event registry validated against 4,497 persisted test events. The runtime retains
-  compatible envelope behavior and versions the stricter kill-switch reason contract to v2.
-- Separate approval HTTP service and database role: the core API no longer loads the signing key
-  or has permission to insert approval tokens. Tests cover revoked sessions, service outage,
-  role isolation, and gateway payload substitution. Production KMS/IAM isolation is still required.
-- Signed deterministic audit downloads are wired through Activity and verified independently in
-  the browser suite. Tampering and cross-tenant export requests are rejected.
-- Business/Agency self-service signup persists the chosen account type and enforces its brand limit.
-- Event compatibility CI rejects removed fields, narrowed constraints, and unversioned topic changes.
-- BallPython 2.0.0 security and taint scans returned no findings. Its twelve unresolved-import
-  diagnostics were reviewed as false positives (`__file__` and the locally defined `issue_token`).
-  Analysis reports are local artifacts; no automatic code transformations were applied.
-- The installed local Ollama model produced a schema-valid draft that was saved and submitted for
-  approval in the test database. No advertising campaign was launched.
-- Native Windows stop/restart commands verified project server exits and successful API/gateway/web
-  startup; the existing PostgreSQL process remained running and working account credentials were preserved.
-- Real Ollama Cloud inference, SMTP-provider delivery, advertising APIs, and cloud infrastructure
-  remain unverified. Missing cloud keys or external accounts are not represented as working integrations.
+Business/Agency conversion preserves brands, seats and white-label settings, with immutable
+history and database-enforced owner/admin authorization. Reconnecting an ad account increments
+its authorization generation and requires new first-launch consent; previous grants remain
+immutable history.
 
-## Repository CI evidence
+The Meta square Facebook feed construction path now runs as a durable campaign worker. It
+uploads the stored PNG, creates the campaign/ad set/creative/ad in paused state, checks remote
+identity, ancestry, copy, image association, targeting and budgets, and persists each write
+before proceeding. A lost create response reconciles by the operation's unique name; it does
+not repeat the POST. The form reaches the actual API and database, and records appear in Jobs.
+This is not full Meta lifecycle completion: launch/resume, metrics, remaining formats and
+objectives, comprehensive quota handling and live provider verification still require work.
+The other nine channels' construction paths remain internal work.
 
-The workflow now provisions a separate PostgreSQL service for the console job and runs all three
-Playwright workflows after building the console, with Chromium installed and failure traces retained.
-The backend job continues to run Ruff and the full database suite. The browser inference endpoint
-is controlled test infrastructure; the worker, session revocation, database writes, and OS exit checks
-are real. No cloud account, GPU, or live Ollama model is required by these CI tests.
+Evidence: 65 Studio/launch/campaign checks passed, including real PostgreSQL and simulated
+provider HTTP; the deployment browser workflow passed; the preceding eight-workflow browser
+run passed. These are local execution results, not authenticated platform results. The full backend run passed 278 checks; after the last recovery change, 32 relevant checks
+passed. All nine browser tests and the production Next build passed. Migrations through 037
+are applied to both databases, and the restarted API and running web server return HTTP 200.
 
-No remote GitHub Actions result has been verified for these working-tree changes. The Windows results
-above are local evidence, not a successful CI status or proof of a Linux/container deployment.
+The matrix now has 489 rows, including all 25 requested operations for each platform, and
+records the additional UI/API/domain/persistence/job/provider/authentication/evidence columns.
+Its JSON is the state-count source. Work continues against every internal FAIL row.
 
-## Exit-proof boundary during database loss
+The product is **not complete**. The v2 specification governs the work. The console now uses
+account-bound first-launch review instead of the recurring approval queue. Signed authorization
+and persistent grants are implemented. Durable managed-campaign pause calls and remote state
+read-back are now wired; full deployment and the autonomous runner remain incomplete.
+Legacy approval APIs remain for existing records. No advertising platform has passed
+live campaign verification.
 
-When the consumer supervisor loses its database connection, it terminates its owned child but may
-be unable to persist the exit acknowledgement. The regression test terminates the actual supervisor
-connection and temporarily prevents reconnection, then checks OS exit independently. The original
-record's exit fields remain null after recovery; the replacement's later orderly exit is recorded.
-Neither cancellation requests nor stale heartbeats are treated as verified process exit.
+The [requirement traceability matrix](docs/verification/traceability.md) and its
+[JSON source](docs/verification/traceability.json) record PASS, FAIL and BLOCKED_EXTERNAL_AUTH.
+The [consolidated external setup list](docs/verification/external-authorization.md) separates
+credentials and consent from missing internal implementation.
 
-## Implemented and locally exercised
+## Execution paths changed and exercised
 
-- FastAPI backend and Next.js/React console with real PostgreSQL persistence.
-- Account registration, input validation, single-use email verification and recovery, exact scrypt
-  passwords, expiring opaque sessions, persistent rate limits, origin checks, and mutation role checks.
-  Current-session and all-session logout, mobile Account controls, and cross-tab sign-out.
-  Owner bootstrap, self-service Business single-brand workspaces and Agency multi-brand workspaces.
-- Owned generation subprocesses, cancellation on logout/reset/expiry/stop, final session checks before
-  saving drafts, persisted OS exit verification, and parent-pipe loss detection.
-- Supervised local PostgreSQL consumer: durable activity progress and duplicate receipts, transaction
-  recovery after forced process kills, local email delivery, bounded SMTP retries, and consumer health.
-  SMTP provider delivery remains unverified; local email files and crash recovery have been exercised.
-- Transaction-local tenant context on pooled connections. Runtime connections reject superuser and
-  BYPASSRLS roles. RLS applies to tenant tables, child partitions, and caller-invoked views.
-- Website import with public-IP checks, pinned DNS resolution, redirect revalidation, HTML-only and
-  response-size bounds; immutable source evidence records and manually confirmed brand facts.
-- Manual and Ollama-generated campaign plans with decimal budgets, channel allocation validation,
-  confirmed-brand prerequisite, restricted-vertical blocking, and revision hashes.
-- Plan approval with internal/client stages, separate client identity, role spend caps, absolute
-  expiry, Ed25519 signatures, edit invalidation, rejection feedback, and concurrency serialization.
-- Append-only audit records and event-registry-validated outbox writes committed with domain changes.
-- Budget-limit editing and a local kill switch with explicitly unverified remote pause state.
-- Responsive console, actual browser workflow verification, and persistent data after reload.
-- Explicit Local Ollama/Ollama Cloud selection, separate cloud-key configuration, bearer authentication
-  restricted to Ollama's HTTPS origin, and validated cloud responses without unsupported structured-output
-  parameters. Cloud contract/error tests run locally; actual cloud inference needs the user's API key.
-- Separate gateway process and database role using public verification keys. Signature, revision,
-  scope, expiry, allocation, ceiling, cumulative-cap, and replay validation with atomic reservations.
-  Gateway role cannot issue approvals or read login credentials. Concurrent and cross-brand negative tests.
-- Deployment preflight from approved plan cards, without reserving authority or claiming missing
-  platform access/creative/adapter prerequisites are ready. Windows upgrade and startup checks preserve data.
+- A global pause control commits a durable stop request, stops local jobs, permanently invalidates
+  unconsumed launch tokens, and dispatches managed campaigns to provider pause endpoints in parallel.
+  Paused state is read back independently before persistence. Reports survive reloads and identify
+  each account/campaign with missing credentials, failed calls, missing ancestry, or unverified state.
+  Campaigns outside Adjutant's inventory are not covered; remote resume is not implemented.
+- Campaign pause/read-back protocols exist for all ten channels. Amazon's implemented campaign
+  families are Sponsored Products and Sponsored Brands. Provider contract tests do not establish
+  live operation. A recovered running job was exercised through real TCP HTTP against an explicitly
+  local provider emulator, followed by SQL state, audit and activity persistence.
+- First-launch review includes attached creative, the plan, selected accounts and guardrails.
+  The isolated signing service issues a scoped, expiring authorization. The public-key-only gateway
+  consumes it once; replay produces an immutable security alert and transactional outbox event.
+  A consumed account grant survives later plan edits. Changed unconsumed plans, creative,
+  guardrail versions, account selection, revoked approvers and local stops reject consumption.
+- All nine guardrail fields can be edited with version checks. The database validates initial
+  launch caps and channel shares, increments guardrail versions, synchronizes legacy ceilings,
+  and rejects blocked claims in Studio writes. Execution-time rate, growth and escalation checks
+  still require the missing runner and cannot be claimed operational from these settings.
+- URL/prompt generation no longer requires brand confirmation or source citations. Meta, Google
+  and TikTok copy are validated and stored with revisioned edits; real local Ollama inference was
+  exercised. Google image generation is wired but has not succeeded against a real Google account.
+- Studio jobs persist their brief, copy checkpoint, image checkpoint, attempts and state. A
+  PostgreSQL advisory lock prevents two workers from owning the same job. Cancellation terminates
+  the dedicated copy process, waits for it to exit and records the result. Completed drafts and
+  job completion commit together. Session revocation and local stop include Studio cancellation.
+- Generated background imagery is composed with separate editable text into real PNG and SVG
+  output at 1:1, 4:5, 9:16 and 16:9. Text bounds and contrast are checked. Renditions can be
+  downloaded and attached to a campaign plan's creative records. Full platform conformance is absent.
+- Brand understanding has an editable, optimistic-versioned API and UI. Google provider settings
+  are encrypted per brand. A queued job rejects an intervening image-model change.
+- All ten channel cards have developer application setup, OAuth state/consent handling, encrypted
+  token storage, discovery, selection, refresh/reauthorization and disconnect handling. Protocol
+  tests isolate provider responses. This does not establish live account access or campaign support.
+- Google account discovery walks manager hierarchies. Reddit discovery follows paginated business
+  and account queries. Discovery errors are saved; tokens and OAuth query credentials are redacted
+  from provider/access logs. Callback navigation restores the brand that initiated consent.
+- Channel objective arrays are decoded correctly. Connection and key-presence labels distinguish
+  observed account access from saved configuration. Signing-service status is probed. Email status
+  identifies file delivery when external SMTP delivery has not been selected.
+- Signup presents Business and Agency with equal radio controls and no default. The API requires
+  an explicit account type. CI checks reject channel-specific branching outside adapters.
 
-## Supplied schema corrections
+## Remaining internal defects
 
-- Caller-level RLS on operational views; account, seat, identity, and direct partition policies.
-- Portfolio aggregate joins no longer multiply reported spend.
-- Compliance-flag view predicate is parenthesized correctly.
-- Replay uniqueness is `(token, channel, operation)` and cannot be bypassed with a new idempotency key.
-- Token claims cannot be mutated after issuance; voided tokens cannot be reactivated.
-- Plan content changes require a new hash. Spend audit entries require live same-brand authority.
-- Cross-brand plan/child references are rejected for allocations, concepts, and deployments.
-- Nonblank confirmation provenance and unique brand-level ceiling scope.
+- Production campaign creation, creative association, targeting, budgets, launch, general status
+  synchronization, metrics and error synchronization are missing across the required channels.
+- Once-per-brand/new-channel activation, all nine database-enforced autonomy guardrails, scoped
+  escalations and reversible remote actions are not connected to an execution engine.
+- Kill-switch coverage is limited to recorded campaign roots and their managed descendants.
+  Account-wide remote inventory discovery, isolated child-object control, Amazon Sponsored Display
+  pause support, exact reversible call sequences, and remote resume remain internal defects.
+  No provider pause has been verified against an authorized real ad account.
+- Hourly ingestion, comparable metric history/backfill, fatigue/winner detection, creative refresh,
+  budget reallocation and the unattended autonomous execution loop are incomplete.
+- Five distinct creative concepts, the complete placement registry, platform safe areas, all
+  format conformance and video generation remain incomplete.
+- Agency conversion/rollups/bulk operations, jurisdictional disclosures, full policy rejection
+  handling, billing/dunning and weekly result summaries remain incomplete.
+- Exhaustive role-by-endpoint and tenant-table CRUD verification, all required live provider
+  conformance runs and the seven-day unattended acceptance run have not been completed.
 
-These are focused corrections, not a declaration that every supplied schema invariant is complete.
-The full schema contains future service tables that have not all been integrated into this runtime.
+These are FAIL records, not credential blockers. No supplied API key can substitute for them.
 
-## Still required by the original product
+## External authorization
 
-| Area | Remaining implementation |
-|---|---|
-| Spend path | KMS-backed signing and production identity isolation; actual adapter egress verification; Redis failure behavior; reconciliation, rollback, full APRV-8 release gate |
-| Platforms | All nine live adapters (Google/YouTube share one platform family), OAuth, credentials, account access, registry refresh, conversion preflight, verified launch/pause |
-| Orchestration | Temporal workflows and workers, durable human signals, retry/replay tests, worker versioning |
-| Events | Redpanda provisioning, broker outbox relay, additional domain consumers, broker DLQ and replay tooling |
-| Creative | Brand asset upload, scene graph, static/video rendering, rendition validation, creative review |
-| Compliance | Evidence-backed claim substantiation, policy corpus, likeness/consent, disclosure application, platform rejection learning |
-| Measurement | Metric adapters, watermarks, ClickHouse normalization, comparability annotations, compound fatigue/anomaly detection |
-| Optimization | Proposals, bounded auto-approval, allocation shifts, tests/outcome attribution, winner scaling |
-| Agency | Invite/seat management, OIDC/MFA, account conversion, client portal, white labeling and portfolio controls |
-| Reporting | First-party connectors, reports/PDFs, report delivery, billing, support tools |
-| Operations | Global pause verification and release flow, retention/partition management, migrations/restore drills |
-| Infrastructure | Terraform/EKS/KMS/S3, network boundaries, Redis governor, telemetry stack, secrets rotation, production deployment |
+No ad-platform application credentials/consent, Gemini key, or SMTP credentials were available in
+this runtime. The current Google SDK cannot run the requested legacy Imagen model through its
+Developer API; the UI exposes supported Gemini image-model selection. External setup and live
+verification remain necessary after the corresponding internal path is complete.
 
-Platform access applications and credentials require the business's platform accounts and cannot be
-validated with local fixtures. No platform applications were submitted, no ad accounts connected,
-and no live campaigns were created by this build.
+## Local verification
 
-The next dependency-ordered engineering work is the remaining adapter egress and Redis/KMS boundary
-and full negative suite, followed by Temporal and a conformant Meta adapter. Creative and measurement work
-must follow the prerequisite gates in the supplied implementation roadmap.
+Evidence is recorded in docs/verification/runtime-evidence.md. Backend tests use the dedicated
+adjutant_test PostgreSQL database. Browser tests use ports 3001/8001 and that dedicated database.
+The working database and user data have been preserved. Forward migrations are applied through
+scripts/upgrade.py; previously applied migration files are not edited.
+
+Changes remain uncommitted. A local passing test/build does not establish a successful remote CI
+run or final PRD acceptance. Historical v1 documentation deletions and earlier foundation changes
+were already present in the working tree and are included in git diff statistics.

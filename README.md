@@ -1,352 +1,190 @@
-# Adjutant
+# Adjutant v2.0
 
-A local campaign control plane built from the supplied Adjutant requirements. The implemented path is
-**brand → sourced evidence → human confirmation → manual or Ollama plan → signed human approval → deployment preflight**.
-This is not the completed nine-channel advertising operator. See [BUILD_STATUS.md](BUILD_STATUS.md)
-for the remaining product scope. No advertising platform accounts are connected and no live ads are launched.
+Adjutant is an autonomous ad runner. The governing specification is
+[Adjutant — Ad Runner: Product Spec and Build Plan](docs/specification/Adjutant%20%E2%80%94%20Ad%20Runner%20%20Spec%20and%20Build%20Plan.md),
+version 2.0, September 21, 2026, by Dustin Hill. Build in dependency order, S0–S14.
+The v1.0 roadmap and its recurring approval and source-URL gates are superseded.
 
-## Open the installed workspace
+Approval is required at a brand's first launch and at the first launch on a newly connected channel.
+Subsequent operation is autonomous within database-enforced guardrails. Those launch and optimization
+slices have not been implemented under v2.0 yet. Image generation in S3 uses Google Gemini
+through `google-genai`; it must preserve copy as scene-graph text layers.
+
+## Ad Studio integration
+
+Current evidence and defects are tracked in the [requirement matrix](docs/verification/traceability.md).
+The [consolidated authorization checklist](docs/verification/external-authorization.md) covers all
+ten ad platforms, Google visuals and external email. This repository does not yet provide the
+complete autonomous runner; missing internal campaign/loop implementations remain FAIL.
+
+Open **Campaign plans → Ad Studio** in the existing console. Enter a public URL or a campaign
+prompt and select **Generate**. Adjutant reads the URL automatically, generates Meta, Google,
+and TikTok copy with the configured local Ollama model, and calls Google for each concept's image.
+Studio queues five distinct creative directions, persists each completed concept, and renders
+each to 1:1, 4:5, 9:16 and 16:9. The concept selector opens each saved ad for editing and attachment.
+Retrying a failed job preserves its completed concepts and image checkpoints.
+There is no brand-confirmation or citation gate. Copy and images are persisted; **Save copy edits**
+stores inline changes with revision conflict checks. TikTok output is a written concept, not video.
+
+Set `GEMINI_API_KEY` to your actual Google key in the server `.env` file and keep
+`ADJUTANT_OLLAMA_MODEL` set to an installed completion model. The key stays on the server.
+The default is `gemini-3.1-flash-image`, a
+[supported Gemini image model](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image).
+The installed `google-genai` SDK uses `generate_content` with image output and an explicit
+aspect ratio. Retired Imagen and non-image model names are rejected before generation.
+To override the model, configure:
+
+```dotenv
+ADJUTANT_GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
+```
+
+Image failures return actionable errors; no placeholder image or synthetic success is substituted.
+No Gemini key was configured during integration verification. Provider-contract tests use test
+responses and are not evidence of live Google generation.
+
+Apply the forward migration and restart after configuration changes:
 
 ```powershell
 Set-Location C:\Users\droxa\adjutant
 .\.venv\Scripts\python.exe scripts/upgrade.py
-.\scripts\dev.ps1
+.\scripts\dev.ps1 -Restart
 ```
 
-Open <http://localhost:3000>. The initial account is `owner@adjutant.local`; its generated password is
-in `.local/owner.password`. Existing passwords and workspaces are preserved by bootstrap. Consumer
-accounts can now be created from the sign-in screen. Test data lives in the separate `adjutant_test`
-database, not the working `adjutant` database.
+The console is at <http://localhost:3000>. The authenticated API exposes:
 
-The API listens on <http://127.0.0.1:8000>, with interactive documentation at
-<http://127.0.0.1:8000/docs>. `/healthz` identifies the service; `/readyz` checks PostgreSQL access.
-Logs are `.local/api.stderr.log`, `.local/web.stderr.log`, and `.local/postgres.log`. The startup
-script opens no terminal windows. API startup supervises the local background consumer.
-The separately credentialed gateway listens on <http://127.0.0.1:8002>. Its logs are
-`.local/gateway.stdout.log` and `.local/gateway.stderr.log`. `upgrade.py` updates existing installations
-without creating accounts, replacing passwords, or reinitializing PostgreSQL. Run it after updates
-that introduce migrations or service permissions, then restart the API and gateway.
-The separate approval service listens on <http://127.0.0.1:8003>, with logs in
-`.local/approval.stdout.log` and `.local/approval.stderr.log`. It alone loads the private approval
-key and uses the `adjutant_approval` database role. Core forwards the authenticated user's decision;
-the service independently reauthenticates and locks that session, verifies the current role and
-revision, and signs within the approval transaction. Core cannot insert approval tokens.
+- `POST /api/studio/jobs` with `brand_id`, `url_or_prompt`, and UUID `request_key`; the console uses
+  durable jobs that recover copy/image checkpoints after worker restart.
+- `GET /api/brands/{brand_id}/studio/jobs/{job_id}` and `DELETE` at the same path for status/cancellation.
+- `POST /api/campaigns/generate-quick` remains available for synchronous compatibility.
+- `GET /api/brands/{brand_id}/studio/latest` to recover the latest saved bundle.
+- `PUT /api/brands/{brand_id}/studio/{draft_id}` to save copy with `expected_revision`.
+- `POST /api/brands/{brand_id}/studio/{draft_id}/render` creates real PNG and editable SVG renditions.
+- `POST /api/brands/{brand_id}/studio/{draft_id}/attach` connects the current revision to a plan.
+- `GET/PUT /api/brands/{brand_id}/understanding` reads or versions edits to brand understanding.
+- `GET/PUT /api/brands/{brand_id}/visual-provider` reads model/key-presence metadata or saves encrypted settings.
+- `POST /api/brands/{brand_id}/kill` stops local work and durably requests provider pauses for
+  recorded campaign roots; the response identifies verified and unconfirmed results.
+- `GET /api/brands/{brand_id}/remote-stop` returns the persisted per-campaign pause report.
+- `POST /api/brands/{brand_id}/resume` releases the local stop after pause processing completes;
+  it does not enable remote campaigns.
 
-## Fresh Windows setup
+The Channels screen exposes developer application setup, OAuth consent, account discovery and
+selection for all ten platforms. Account access is reported only after provider discovery.
+No platform campaign-deployment operation has been live-verified. The job monitor includes
+Studio jobs, whose cancellation is included in logout and local stop verification.
 
-**For a new installation only.** If this workspace already runs, use `scripts/dev.ps1` from
-the preceding section. Do not rerun `initdb` against `.local/postgres`, empty that directory,
-or start a second PostgreSQL server. Before reinstalling web dependencies with `npm ci`, stop
-this project's Next.js server: Windows locks its loaded native SWC binary, and an interrupted
-install can leave `node_modules` incomplete. Bootstrap preserves an existing account's password;
-entering a different password at its prompt does not reset that account.
+URL ingest retains the existing public-address and redirect validation. Blocked phrases are
+checked before image generation and before persistence. Automatically accepted brand context is
+versioned without inventing human sign-off. Generation is limited to one active request per brand
+and 30 daily requests. Durable jobs resume from persisted checkpoints. An explicitly disabled
+workflow worker rejects queued generation rather than accepting work it cannot execute.
 
-Repair or reinstall web dependencies with project-scoped process shutdown:
+## S0 foundation
+
+The foundation provides one HTTP service, PostgreSQL migrations, a durable checkpoint workflow,
+local immutable object storage, envelope-encrypted credentials with a random key per brand, and
+JSON request logs with trace IDs. It does not launch ads. See [BUILD_STATUS.md](BUILD_STATUS.md)
+for acceptance evidence and dependency gates.
+
+## Start locally
+
+Prerequisites: Python 3.12+, PostgreSQL 18 with pgvector installed, and GNU Make for `make up`.
+PostgreSQL tools can be on PATH; the launcher also recognizes the standard PostgreSQL 18 Windows
+and Debian installation directories. A fresh checkout automatically creates `.venv`, installs
+`requirements.lock`, initializes PostgreSQL, runs migrations, provisions a restricted application
+role and an owner, creates encryption authority, and starts the HTTP service with its workflow worker.
+
+```sh
+make up
+```
+
+On Windows without Make, the identical entry point is:
 
 ```powershell
 Set-Location C:\Users\droxa\adjutant
-.\scripts\stop.ps1 -Service web
-Push-Location web
-try { npm ci } finally { Pop-Location }
-.\scripts\dev.ps1
+python scripts/up.py
 ```
 
-`stop.ps1` checks each process's command line and creation time before stopping it, then verifies exit.
-It targets this project's selected services and leaves PostgreSQL and Ollama running.
+An already active virtual environment is reused and must have the project dependencies installed.
+Open <http://127.0.0.1:8010/docs>. The initial owner is `owner@adjutant.local`; its generated password
+is in `.local/runner/owner.password`. `/healthz` checks the process and `/readyz` checks PostgreSQL
+and the workflow worker. The worker runs inside the HTTP service. No approval service, gateway,
+frontend, or advertising account is required for S0.
 
-Prerequisites: Python 3.12+, Node.js 20.9+, PostgreSQL 18 with pgvector. The verified installation uses
-Python 3.14.7, Node.js 20.20.2, and PostgreSQL 18.4.
+The new cluster uses port 55440 and `.local/runner/postgres`. It is separate from the pre-existing
+v1 installation on port 55439. Existing passwords, keys, and databases are never overwritten.
+Ctrl+C stops the HTTP service; PostgreSQL and all persisted state remain. Start again to resume work.
+Stop only the new cluster when needed:
 
 ```powershell
-Set-Location C:\Users\droxa\adjutant
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.lock
-.\.venv\Scripts\python.exe -m pip install -e . --no-deps
-New-Item -ItemType Directory -Force .local | Out-Null
-.\.venv\Scripts\python.exe -c "import pathlib,secrets; p=pathlib.Path('.local/postgres.password'); p.write_text(secrets.token_urlsafe(32)) if not p.exists() else None"
-& 'C:\Program Files\PostgreSQL\18\bin\initdb.exe' -D .local/postgres -U adjutant_admin -A scram-sha-256 --encoding=UTF8 --pwfile=.local/postgres.password
-& 'C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe' -D .local/postgres -l .local/postgres.log -o '-h 127.0.0.1 -p 55439' -w start
-.\.venv\Scripts\python.exe scripts/bootstrap.py --email owner@adjutant.local
-Push-Location web
-npm ci
-Pop-Location
-.\scripts\dev.ps1
+& 'C:\Program Files\PostgreSQL\18\bin\pg_ctl.exe' -D .local/runner/postgres -m fast -w stop
 ```
 
-Run `initdb` only for a new cluster. Bootstrap validates migration checksums, preserves existing
-credentials and signing keys, and never deletes user data. Choose `--account-type agency` on initial
-bootstrap for a multi-brand workspace. Business workspaces permit one brand. The operator bootstrap
-creates a verified account; self-service registration requires email verification.
+## Exercise a durable workflow
 
-To apply an upgrade, install the updated dependencies, rerun bootstrap with your existing owner
-email, and restart this project's API. Bootstrap will add the restricted worker role and its URL to
-an existing `.env` without replacing other settings. Do not edit applied migration files.
+Sign in through `POST /api/auth/login`, read your account ID from `GET /api/me`, and create a brand
+with `POST /api/brands`. Send `X-Adjutant-Client: console` and `Origin: http://127.0.0.1:8010` on writes;
+retain the session cookie from login. The OpenAPI document describes the request fields.
 
-## Accounts and delivery
+- `POST /api/brands/{brand_id}/workflows`: supply a UUID `request_key` and `delay_seconds` from 0 to 300.
+  Retrying the same key and input returns the same workflow; changing the input returns HTTP 409.
+- `GET /api/brands/{brand_id}/workflows/{id}`: inspect durable progress and the originating trace ID.
+- `GET /api/brands/{brand_id}/workflows/{id}/result`: retrieve the persisted result after completion.
+- `PUT /api/brands/{brand_id}/credentials/{name}`: owners/admins store a `value` encrypted under the
+  brand's key. The endpoint never returns plaintext. Credential reads are internal operations only.
 
-Choose **Create an account**, then **Business** (one brand) or **Agency** (multiple brands).
-Enter a full name, workspace name, email, and matching passphrase of
-15–128 characters. Passwords are scrypt-hashed and preserved exactly, including spaces. New users
-cannot sign in until they verify their email. Verification and recovery tokens are random, stored
-hashed, expire after one hour, and work once. Links use the configured public origin and carry the
-token in the URL fragment; the browser submits it explicitly rather than activating it on a GET.
-Resending invalidates the preceding token. Duplicate signup and recovery requests use generic
-responses, and rate limits persist in PostgreSQL.
+The demonstration workflow commits a waiting checkpoint, then writes a content-addressed result and
+commits its completion checkpoint. Row locks and unique checkpoints prevent competing workers from
+committing a step twice. Process death releases uncommitted locks; restarting resumes persisted work.
+An object written before a database rollback is reused on retry. This proves local step recovery;
+external advertising mutations and their idempotency contracts belong to S4 and later slices.
 
-This installation uses `ADJUTANT_MAIL_TRANSPORT=file`. The real consumer writes `.eml` messages to
-`.local/mail`. Open the newest email with a mail reader or text editor and follow its account link.
-The UI explicitly identifies local delivery: **nothing is sent to an external inbox in file mode**.
-Mail files contain secret account links and must remain private. Token-bearing bodies are removed
-from the database queue after successful delivery.
+## Storage and secrets
 
-**Forgot password?** sends a recovery link. Resetting revokes all sessions and requests cancellation
-of their generation work. **Account → Sign out** revokes the current session; **Sign out everywhere**
-revokes every session for that user. Logout waits up to eight seconds for worker exit acknowledgements
-and reports pending verification honestly. Other open tabs return to sign-in. Account controls work
-on mobile. **Activity** shows jobs, Stop controls, actual exit verification, and consumer health.
+Assets are stored under `.local/runner/objects/{brand_id}/{sha256}`. Writes use a temporary file,
+flush, and atomic replacement; reads verify hashes and reject traversal. The backend is a local
+filesystem object store, not a cloud dependency.
 
-Self-service signup creates the selected workspace type with owner approval caps of $1,000/day and $30,000
-total. Invitations, account conversion, email changes, OIDC, and MFA remain outside this implementation.
-The locally provisioned `owner@adjutant.local` address is a development identity; use a valid email
-address for self-service verification and recovery.
+Each brand gets a random AES-256-GCM data key. That key is wrapped by the local master key in
+`.local/runner/tenant-master.key`. Brand and credential identity are authenticated encryption context,
+so moving ciphertext between brands or names fails authentication. Database rows contain ciphertext
+only. The master key is outside PostgreSQL; back it up with the database and preserve it across restarts.
+Secret files use owner-only creation permissions on POSIX and inherit the workspace ACL on Windows.
 
-## Consumer deployment email configuration
-
-Configure a real SMTP provider and HTTPS origin in the server environment:
-
-```dotenv
-ADJUTANT_PUBLIC_ORIGIN=https://your-adjutant-domain.example
-ADJUTANT_SECURE_COOKIES=true
-ADJUTANT_MAIL_TRANSPORT=smtp
-ADJUTANT_MAIL_FROM=Adjutant <accounts@your-adjutant-domain.example>
-ADJUTANT_SMTP_HOST=smtp.your-provider.example
-ADJUTANT_SMTP_PORT=587
-ADJUTANT_SMTP_SECURITY=starttls
-ADJUTANT_SMTP_USERNAME=your-provider-login
-ADJUTANT_SMTP_PASSWORD=your-provider-secret
-```
-
-Keep the restricted API and worker database URLs, or provision equivalent roles with
-`scripts.bootstrap.provision_runtime` and `provision_worker` after migrations. Never put these
-credentials in browser environment variables. Implicit TLS uses `SMTP_SECURITY=ssl` and the
-provider's TLS port. Certificate verification is mandatory. Non-loopback consumer origins require
-HTTPS, secure cookies, SMTP, and `ADJUTANT_WORKER_DATABASE_URL` at startup. External provider delivery
-has not been exercised in this installation; local file delivery and retry behavior have been tested.
-
-Mail delivery retries up to eight times with exponential backoff. Failures store the exception class,
-not SMTP responses or credentials. File delivery uses a stable message ID and atomic replacement,
-so retries produce one final file. SMTP is **at least once**: a crash after the provider accepts an
-email but before commit can cause a duplicate. A stable Message-ID and single-use token limit the
-consequences; there is no claim of exactly-once external email delivery. Fix delivery configuration
-and request a fresh link after an exhausted or expired delivery. Operator diagnostics are in the
-API log and the private `mail_outbox` table.
-
-## Use the campaign workflow
-
-1. Add a brand with a website, industry, and daily/monthly ceilings.
-2. In **Brand intelligence**, optionally import its public homepage. Save useful facts with source
-   URLs. Imported text stays unconfirmed; source URLs, retrieval time, and content hashes are retained.
-3. Confirm the facts. Restricted verticals stay blocked even after confirmation.
-4. In **Campaign plans**, create a plan manually or choose **Generate draft** with Local Ollama or Ollama Cloud.
-5. Submit the exact revision to **Approvals**. Approve, reject with feedback, or request changes.
-6. Review immutable history and jobs in **Activity**. Change ceilings under **Guardrails**.
-
-Approval signs the exact plan revision. It does not launch a campaign. Plan edits void outstanding
-tokens; new review requires a new revision. Brand fact changes require reconfirmation and invalidate
-approvals. Expired or rejected revisions must be edited before resubmission.
-
-The brand stop control cancels local generation, blocks planning/approval, and voids tokens. It does
-not claim to pause remote ads. Brand-stop release is not implemented; use **Stop generation** to stop
-an individual job while leaving the brand available for another draft.
-
-## Local and cloud Ollama
-
-Ollama's `/api/tags` and `/api/chat` endpoints supply models and generation. The Local provider
-excludes cloud-backed models and models advertising only embedding capabilities. The installed local model is
-`mirage335/Llama-3-NeuralDaredevil-8B-abliterated-virtuoso:latest`.
-
-The generation form lets you select the provider for each request. These `.env` settings keep the
-local endpoint and model independent from the cloud configuration:
-
-```dotenv
-ADJUTANT_OLLAMA_PROVIDER=local
-ADJUTANT_OLLAMA_URL=http://localhost:11434
-ADJUTANT_OLLAMA_MODEL=mirage335/Llama-3-NeuralDaredevil-8B-abliterated-virtuoso:latest
-ADJUTANT_OLLAMA_CLOUD_MODEL=
-ADJUTANT_OLLAMA_CLOUD_API_KEY=
-```
-
-For Cloud, create an [Ollama API key](https://ollama.com/settings/keys), enter it in
-`ADJUTANT_OLLAMA_CLOUD_API_KEY`, and restart the API. The cloud model list comes from Ollama;
-`ADJUTANT_OLLAMA_CLOUD_MODEL` optionally selects its default. Set `ADJUTANT_OLLAMA_PROVIDER=cloud`
-only if you want Cloud selected by default. The application never automatically switches providers.
-The current `.env` preserves your existing owner login credentials and leaves the cloud key empty.
-After changing provider settings, run `.\scripts\dev.ps1 -Restart` from the project root to load them.
-
-Cloud generation sends the brief, confirmed facts, and budget context to `https://ollama.com`.
-Its bearer key is sent only to that fixed HTTPS origin, never to the browser, local Ollama, logs,
-or process arguments. The owned worker receives it over its private parent pipe. Local generation
-does not receive the cloud key. Redirect following is disabled.
-
-[Ollama Cloud currently does not support structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
-Cloud requests therefore include the schema in the prompt and validate the returned JSON locally;
-local requests additionally use Ollama's schema-constrained `format`. Invalid output is never saved.
-Cloud authentication and error paths have automated contract tests; real cloud inference requires
-your API key and has not been verified in this workspace.
-
-## Generation and process lifecycle
-
-Generation uses confirmed facts and budget ceilings, validates structured output, and permits at most
-three schema attempts. Money uses fixed decimal strings; the provider schema avoids unsupported
-lookahead expressions. The API independently validates precision, positivity, supported channels,
-allocation sums, and ceilings. One run per brand may be active, with 30 starts per rolling day.
-
-Each run has an owned subprocess and a 470-second deadline. Logout, password reset, session expiry,
-job cancellation, and brand stop prevent late draft persistence and end that worker. The API records
-the actual OS exit code and verification timestamp. A parent-pipe watchdog exits the child if its
-API disappears. The background consumer marks jobs with heartbeats older than 30 seconds interrupted,
-without inventing exit proof for an unavailable supervisor. Interrupted work is not automatically
-re-executed; the user can request a new draft. Temporal recovery is not implemented.
-
-Only the dedicated inference child is terminated. The shared Ollama service remains available.
-Generation receives no platform credentials, tools, or spend permission. Process lifetime management
-is not an operating-system security sandbox for arbitrary generated code; this application never
-executes model-generated code.
-
-## Spend gateway and deployment checks
-
-The gateway uses `adjutant_gateway`, a restricted PostgreSQL role. It can read spend prerequisites,
-lock same-brand authority, and append reservations. It cannot issue or change approval tokens,
-delete reservations, or read login credentials, sessions, and mail. Public verification keys are
-exported to `.local/approval-public-keys.json`; the gateway does not load the private signing key.
-The separate approval service issues approvals; KMS-backed signing and production IAM isolation
-remain separate requirements from the local process and database-role boundary.
-
-Gateway validation checks the Ed25519 signature, trusted key, signed/relational claim agreement,
-expiry, approved revision hash, operation/channel scope, brand readiness, stop state, allocation,
-current ceilings, cumulative commitments, and replay. Database locking serializes concurrent
-reservations, and a database trigger independently enforces cumulative total and daily caps.
-Brand and channel ceilings also include existing reservations from other approved plans. Reservations
-remain counted until a reconciliation/release lifecycle is implemented; they do not disappear when a
-token expires. This conservative boundary currently has no live platform egress.
-The authenticated internal endpoints are `/internal/spend/validate` and `/internal/spend/reserve`.
-
-Approved plan cards expose **Check deployment readiness**. This reads current prerequisites and
-calls the gateway's validation endpoint without reserving authority. Missing channel access,
-approved renditions, or an installed adapter remain blockers. A passing spend check does not prove
-that platform deployment is available. Live adapters and verification at actual advertising egress
-are not implemented yet; no live ad writes are enabled.
-
-## Durable background consumer
-
-Bootstrap creates a restricted `adjutant_worker` role and saves its password in `.local/worker.password`.
-The API supervises a separate consumer process through `ADJUTANT_WORKER_DATABASE_URL`. Its role can
-access mail and narrow activity/recovery functions, but cannot read credentials, sessions, or raw
-brand tables. Application runtime roles reject superuser and BYPASSRLS privileges.
-
-The local activity consumer commits a unique receipt and indexed progress marker in one transaction.
-Competing workers skip locked rows. Killed processes release uncommitted work for replay; committed
-events are not applied twice. Consumer exits are verified before replacement, and missing heartbeats
-trigger restart. The UI shows recent receipts and health. This projection does not mark events
-published to Redpanda or perform advertising platform effects. Broker relay, additional domain
-consumers, and broker DLQ/replay tooling remain future work.
-
-If the supervisor loses its database connection, it still terminates its owned child. When the
-exit acknowledgement cannot be persisted, that consumer record retains null exit fields even
-after a replacement starts. A missing acknowledgement is not proof that the process is alive
-or dead. The regression suite kills the supervisor's real PostgreSQL connection, blocks its
-reconnection temporarily, and independently observes child exit and replacement recovery.
-
-The worker's only callable application `SECURITY DEFINER` functions are `consume_activity_batch`
-and `reap_abandoned_jobs`. They intentionally operate across tenants but return integer counts.
-Tests constrain their changes, batch bounds, pinned search paths, temporary-table shadowing,
-function replacement permissions, and direct access to private tenant data.
-
-The full 46-event specification is bundled in `src/adjutant/event_registry.json`. UUID and date-time
-formats are validated using JSON Schema's format dependencies. `ADJUTANT_REGISTRY_PATH` can override
-the packaged default. Original source documents are preserved with checksums in `docs/specification`.
-Runtime registry 1.1 preserves the existing envelope's event-name compatibility and versions
-`brand.kill_switch.engaged` to v2 because the original specification requires a longer reason than
-the temporary runtime contract did. Defining all contracts does not mean all their producers exist.
-CI compares event contracts with the base revision and rejects incompatible unversioned changes.
-
-## Signed audit export
-
-In **Activity**, choose a UTC date range and select **Download signed audit**. The export contains
-the tenant's complete ledger for that range (up to 10,000 records), a content hash, and an Ed25519
-signature produced by the approval service. Unchanged windows export byte-identically. For larger
-ledgers, select smaller windows; an oversized export fails rather than silently truncating rows.
-Verify the downloaded file against an independently trusted public-key ring:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/verify_audit_export.py C:\path\to\audit.json --public-keys .local/approval-public-keys.json
-```
-
-The verifier rejects changed records, changed window/tenant metadata, incorrect counts, and unknown
-signing keys. The public-key file contains verification material only; preserve trusted historical
-keys when rotating signing authority.
+Logs contain structured request metadata and generated trace IDs, excluding bodies, cookies, query
+strings, and exception details. HTTP access logging is disabled in the S0 launcher. The result endpoint
+checks tenant access before reading a stored object.
 
 ## Verification
 
-The backend suite requires a real `adjutant_test` PostgreSQL database; it refuses a working-database URL.
-It covers tenant isolation, approval integrity, registration, expiry/replay, session revocation,
-real subprocess cancellation, consumer crash windows, durable deduplication, and mail retry behavior.
+The empty-cluster startup check runs the same launch path, signs in through real HTTP, writes and
+reads an encrypted credential, runs a workflow to completion, checks retry identity and stored output,
+and shuts down the test service and cluster:
 
 ```powershell
-Set-Location C:\Users\droxa\adjutant
-.\scripts\check.ps1
-Push-Location web
-npx playwright install chromium
-npx playwright test
-Pop-Location
+.\.venv\Scripts\python.exe scripts/up.py --check --state-directory .local/runner-smoke --port 8011 --db-port 55441
 ```
 
-Playwright starts isolated API/console servers on ports 8001/3001. It exercises the complete account
-journey, the existing brand-to-approval workflow, and logout during active generation. The last
-workflow checks the running worker's PID, account-page cancellation acknowledgement, rejected old
-session, persisted OS exit proof after signing in again, and absence of a late draft.
-Account test emails go to `.local/browser-mail`.
-Run browser and database suites sequentially because both use the dedicated test database. Screenshots
-are written under `.local`; failure traces are under `web/test-results` and the HTML report is under
-`web/playwright-report`. Browser and backend lifecycle tests use controlled HTTP inference endpoints
-with real worker processes for deterministic cancellation. They do not verify model quality or live
-Ollama availability. The live canary uses Ollama:
+In a clean environment, CI runs `make up UP_ARGS=--check` with PostgreSQL 18 and pgvector. The separate
+backend job applies migrations to an empty test database and runs the regression suite. The foundation
+tests kill real worker processes both between steps and after object write but before database commit.
+
+The regression suite uses the existing dedicated `adjutant_test` database provisioned by
+`scripts/bootstrap.py`; it refuses the working database. In this installed workspace:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/live_canary.py --model mirage335/Llama-3-NeuralDaredevil-8B-abliterated-virtuoso:latest
+.\.venv\Scripts\python.exe -m pytest -q --basetemp=.local/pytest-v2 -o cache_dir=.local/pytest-v2-cache
+.\.venv\Scripts\python.exe -m ruff check src scripts tests
 ```
 
-The live canary writes only test-database records. Inference success does not prove live ad delivery.
-Two dependency deprecation warnings currently come from FastAPI/Starlette's HTTPX test adapter.
+Use a fresh `--basetemp` directory if permissions from a different Windows identity prevent reuse.
+The S0 test module is `tests/test_foundation.py`. A passing local run is not a remote CI result.
 
-GitHub Actions provisions separate PostgreSQL services for backend and console jobs, installs Chromium,
-and runs all three browser workflows after the console build. Browser failure diagnostics are retained
-for seven days. These gates are configured in the repository; local Windows results do not establish
-that a particular commit has passed GitHub Actions.
+## Existing installation
 
-BallPython 2.0.0 was also run locally in read-only mode:
-
-```powershell
-.\.venv\Scripts\ballpython.exe check --json src scripts tests
-.\.venv\Scripts\ballpython.exe scan --json src scripts tests
-.\.venv\Scripts\ballpython.exe taint --json src scripts
-```
-
-Security and taint scans returned no findings. The code check reported twelve unresolved-import
-diagnostics: eleven references to Python's `__file__` and one forward reference to `issue_token`,
-which is defined in the same module. These were reviewed as false positives; no automatic fixes
-were applied. BallPython is an optional local analysis tool, not a replacement for the runtime tests.
-
-## Deployment boundaries
-
-The API and console include Dockerfiles and a GitHub Actions workflow for source, build, database,
-and browser checks.
-Container builds and a remote CI run have not been verified in this environment. Provision PostgreSQL,
-apply checksum-validated migrations, and mount the existing Ed25519 signing key readable by the API
-user. Do not regenerate a deployed approval key silently. Database backups, HTTPS termination,
-retention, SMTP credentials, and production monitoring require operator configuration.
-
-The supplied specification documents remain the source of product scope. Temporal, Redpanda,
-platform adapters, creative rendering, production spend egress, measurement, optimization, and
-infrastructure are not represented by fake service responses. See [BUILD_STATUS.md](BUILD_STATUS.md).
-# adjutant
+The existing console and its database remain available through `scripts/dev.ps1`. Ad Studio removes
+the confirmation and citation requirements for generation. Older launch approval behavior has not
+yet been migrated to the v2 autonomy model. Applied migrations are historical records and remain
+immutable; future slices change behavior through new migrations and focused implementation changes.
+The former unregistered quick-generation stub has been replaced by `src/adjutant/campaign_api.py`
+and registered on the existing FastAPI app. Ad Studio does not create approval queues or publish ads.

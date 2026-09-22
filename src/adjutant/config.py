@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,14 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="ADJUTANT_", env_file=".env", extra="ignore")
     database_url: SecretStr
+    workflow_enabled: bool = True
+    object_store_path: Path = Path(".local/objects")
+    credential_master_key_path: Path = Path(".local/tenant-master.key")
+    gemini_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("GEMINI_API_KEY", "ADJUTANT_GEMINI_API_KEY"),
+    )
+    gemini_image_model: str = "gemini-3.1-flash-image"
     signing_key_path: Path = Path(".local/approval.key")
     public_origin: str = "http://localhost:3000"
     secure_cookies: bool = False

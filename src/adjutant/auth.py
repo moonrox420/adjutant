@@ -40,7 +40,7 @@ class PasswordInput(BaseModel):
 class Registration(EmailInput, PasswordInput):
     full_name: str = Field(min_length=1, max_length=120)
     workspace_name: str = Field(min_length=1, max_length=120)
-    account_type: Literal["business", "agency"] = "business"
+    account_type: Literal["business", "agency"]
 
     @field_validator("full_name", "workspace_name")
     @classmethod

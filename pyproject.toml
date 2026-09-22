@@ -12,6 +12,8 @@ dependencies = [
   "psycopg[binary,pool]==3.3.6", "cryptography==50.0.1",
   "pydantic-settings==2.15.0", "httpx==0.28.1",
   "jsonschema[format-nongpl]==4.26.0", "email-validator>=2.2,<3",
+  "google-genai==2.24.0",
+  "Pillow==12.3.0",
 ]
 
 [project.optional-dependencies]
@@ -33,3 +35,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.pycleaner]
+exclude = ["migrations/", "generated/"]
+line-length = 88

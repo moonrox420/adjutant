@@ -12,6 +12,7 @@ def account_data():
         "confirm_password": " a very long exact passphrase ",
         "full_name": "New owner",
         "workspace_name": "New consumer workspace",
+        "account_type": "business",
     }
 
 
@@ -78,6 +79,14 @@ def test_signup_rejects_unrecognized_account_type(client):
         ).status_code
         == 422
     )
+
+
+def test_signup_requires_explicit_account_type(client):
+    data = account_data()
+    del data["account_type"]
+    response = client.post("/api/auth/register", json=data)
+    assert response.status_code == 422
+    assert "account type: Field required" in response.json()["error"]["message"]
 
 
 @pytest.fixture(autouse=True)

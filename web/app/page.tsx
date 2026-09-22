@@ -10,14 +10,19 @@ import {
   type Plan,
   type Workspace,
   type Status,
-  type Approval,
 } from "../lib/api";
 import { AccountAccess } from "../components/account";
+import { AccountSettings } from "../components/account-settings";
 import { Jobs } from "../components/jobs";
 import { AuditExport } from "../components/audit-export";
+import { ChannelConnections } from "../components/channel-connections";
+import { AdStudio } from "../components/ad-studio";
+import { BrandUnderstandingEditor } from "../components/studio-settings";
 import { BrandForm, PlanForm } from "../components/forms";
 import { GenerateForm, Research } from "../components/research";
 import { DeploymentPreflight } from "../components/preflight";
+import { GuardrailEditor, LaunchReview } from "../components/autonomy";
+import { RemoteStopReport } from "../components/remote-stop";
 import {
   Badge,
   channelName,
@@ -33,7 +38,7 @@ const tabs = [
   "Overview",
   "Brand intelligence",
   "Campaign plans",
-  "Approvals",
+  "Launch review",
   "Activity",
   "Channels",
   "Guardrails",
@@ -50,6 +55,15 @@ export default function Console() {
   const [selected, setSelected] = useState("");
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
+  const callbackBrand = useRef<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("channels")) {
+      callbackBrand.current = params.get("brand");
+      setTab("Channels");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
   const [modal, setModal] = useState<
     "brand" | "plan" | "stop" | "generate" | null
   >(null);
@@ -57,6 +71,7 @@ export default function Console() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stopRevision, setStopRevision] = useState(0);
   const workspaceRequest = useRef(0);
 
   const fail = useCallback((error: unknown) => {
@@ -81,9 +96,15 @@ export default function Console() {
     setBrands(list);
     setChannels(registry);
     setStatus(health);
-    setSelected((current) =>
-      list.some((b) => b.id === current) ? current : list[0]?.id || "",
-    );
+    const requested = callbackBrand.current;
+    callbackBrand.current = null;
+    setSelected((current) => {
+      if (requested && list.some((brand) => brand.id === requested))
+        return requested;
+      return list.some((brand) => brand.id === current)
+        ? current
+        : list[0]?.id || "";
+    });
   }, []);
   const refreshWorkspace = useCallback(async (brandId: string) => {
     const request = ++workspaceRequest.current;
@@ -145,6 +166,7 @@ export default function Console() {
     setNotice("");
     try {
       await api(path, method, data);
+      if (path.endsWith("/kill")) setStopRevision((value) => value + 1);
       await refresh();
       if (selected) await refreshWorkspace(selected);
       setNotice(message);
@@ -166,12 +188,6 @@ export default function Console() {
       fail(e);
     }
   }
-  const pending =
-    workspace?.approvals.filter(
-      (a) =>
-        ["pending_internal", "pending_client"].includes(a.state) &&
-        !a.is_expired,
-    ) || [];
   const userRoles =
     me?.seats
       .filter(
@@ -230,9 +246,6 @@ export default function Console() {
                 {marks[index]}
               </span>
               {name}
-              {name === "Approvals" && pending.length > 0 && (
-                <span className="nav-count">{pending.length}</span>
-              )}
             </button>
           ))}
         </nav>
@@ -261,6 +274,22 @@ export default function Console() {
               <summary>Account</summary>
               <div>
                 <p>{me.email}</p>
+                {me.accounts
+                  .filter((account) =>
+                    me.seats.some(
+                      (seat) =>
+                        seat.account_id === account.id &&
+                        seat.brand_id === null &&
+                        ["owner", "admin"].includes(seat.role),
+                    ),
+                  )
+                  .map((account) => (
+                    <AccountSettings
+                      key={account.id}
+                      account={account}
+                      saved={refresh}
+                    />
+                  ))}
                 <button
                   className="button compact"
                   disabled={busy}
@@ -300,9 +329,21 @@ export default function Console() {
             >
               + Add brand
             </button>
+            {selected && (
+              <button
+                className="button danger compact"
+                disabled={!canEdit || busy}
+                onClick={() => setModal("stop")}
+              >
+                Pause everything
+              </button>
+            )}
           </div>
         </header>
         <main id="main" className="main-content">
+          {workspace?.stop && (
+            <RemoteStopReport brandId={selected} refreshToken={stopRevision} />
+          )}
           {tab === "Activity" && <Jobs />}
           <div className="page-heading">
             <div>
@@ -323,7 +364,7 @@ export default function Console() {
                       "The source of truth behind every campaign.",
                     "Campaign plans":
                       "A hypothesis, an audience, and a budget you can account for.",
-                    Approvals:
+                    "Launch review":
                       "Review the full picture before giving a plan your approval.",
                     Activity:
                       "A permanent record of what changed, who acted, and why.",
@@ -338,26 +379,26 @@ export default function Console() {
               <div className="card-actions">
                 <button
                   className="button"
-                  disabled={
-                    !workspace?.brand.brand_graph_confirmed_at ||
-                    !!workspace?.stop
+                  onClick={() =>
+                    document.getElementById("studio-input")?.focus()
                   }
-                  onClick={() => setModal("generate")}
                 >
                   Generate draft ↗
                 </button>
                 <button
                   className="button primary"
-                  disabled={
-                    !workspace?.brand.brand_graph_confirmed_at ||
-                    !!workspace?.stop
-                  }
                   onClick={() => {
                     setEditing(undefined);
                     setModal("plan");
                   }}
                 >
                   + New campaign plan
+                </button>
+                <button
+                  className="button quiet"
+                  onClick={() => setModal("generate")}
+                >
+                  Generate strategy plan
                 </button>
               </div>
             )}
@@ -381,7 +422,8 @@ export default function Console() {
           {workspace?.stop && (
             <div className="message error">
               <strong>Local operations stopped.</strong> {workspace.stop.reason}{" "}
-              Platform pause verification is unavailable.
+              Review the remote pause report for each platform’s confirmed state
+              or failure.
             </div>
           )}
           {!brands.length ? (
@@ -409,9 +451,11 @@ export default function Console() {
                 <>
                   <div className="stats-grid">
                     <Stat
-                      label="AWAITING A DECISION"
-                      value={String(pending.length)}
-                      detail="Campaign plans ready for review"
+                      label="SELECTED AD ACCOUNTS"
+                      value={String(
+                        workspace.connections.filter((c) => c.selected).length,
+                      )}
+                      detail="Accounts selected in Channels"
                       accent
                     />
                     <Stat
@@ -427,44 +471,23 @@ export default function Console() {
                     <Stat
                       label="VERIFIED LIVE CAMPAIGNS"
                       value={String(brand?.active_objects || 0)}
-                      detail="No ad accounts connected"
+                      detail="Remote objects recorded as active"
                     />
                   </div>
                   <div className="overview-grid">
                     <section className="panel next-step">
                       <span className="eyebrow">THE NEXT CONSIDERED MOVE</span>
-                      <h2>
-                        {!workspace.brand.brand_graph_confirmed_at
-                          ? "Get the brand story right."
-                          : pending.length
-                            ? "Your judgment is needed."
-                            : "Turn understanding into a plan."}
-                      </h2>
+                      <h2>Turn your business into your next ad.</h2>
                       <p>
-                        {!workspace.brand.brand_graph_confirmed_at
-                          ? "Add the facts that make this business distinct, attach their sources, and confirm the profile before campaign creation."
-                          : pending.length
-                            ? `${pending.length} campaign ${pending.length === 1 ? "plan is" : "plans are"} waiting. Review the audience, strategy, and budgets together.`
-                            : "Start with a clear hypothesis and a channel budget. Every draft stays under your control until review."}
+                        Paste a URL or describe your offer in Ad Studio. Get
+                        channel copy and a generated image, then edit every word
+                        in place.
                       </p>
                       <button
                         className="button primary"
-                        onClick={() =>
-                          setTab(
-                            !workspace.brand.brand_graph_confirmed_at
-                              ? "Brand intelligence"
-                              : pending.length
-                                ? "Approvals"
-                                : "Campaign plans",
-                          )
-                        }
+                        onClick={() => setTab("Campaign plans")}
                       >
-                        {!workspace.brand.brand_graph_confirmed_at
-                          ? "Build brand intelligence"
-                          : pending.length
-                            ? "Open approval queue"
-                            : "View campaign plans"}{" "}
-                        →
+                        Open Ad Studio →
                       </button>
                       <div className="step-line">
                         <span
@@ -481,7 +504,9 @@ export default function Console() {
                         >
                           02 <b>Plan</b>
                         </span>
-                        <span className={pending.length ? "current" : ""}>
+                        <span
+                          className={workspace?.plans.length ? "current" : ""}
+                        >
                           03 <b>Review</b>
                         </span>
                         <span>
@@ -492,7 +517,19 @@ export default function Console() {
                     <section className="panel">
                       <div className="panel-title">
                         <h2>Operational readiness</h2>
-                        <Badge tone="green">Connected</Badge>
+                        <Badge
+                          tone={
+                            status?.approval_signing === "ready" &&
+                            status.live_channel_writes
+                              ? "green"
+                              : "amber"
+                          }
+                        >
+                          {status?.approval_signing === "ready" &&
+                          status.live_channel_writes
+                            ? "Ready"
+                            : "Setup incomplete"}
+                        </Badge>
                       </div>
                       <ul className="readiness">
                         <li>
@@ -505,21 +542,65 @@ export default function Console() {
                             }
                           >
                             {workspace.brand.brand_graph_confirmed_at
-                              ? "Confirmed"
-                              : "Needs confirmation"}
+                              ? "Context available"
+                              : "Context not yet generated"}
                           </Badge>
                         </li>
                         <li>
                           <span>Budget boundaries</span>
-                          <Badge tone="green">Set</Badge>
+                          <Badge
+                            tone={
+                              workspace.ceilings.some(
+                                (limit) =>
+                                  limit.scope_kind === "brand" &&
+                                  Number(limit.monthly_usd_max) > 0 &&
+                                  Number(limit.daily_usd_max) > 0,
+                              )
+                                ? "green"
+                                : "amber"
+                            }
+                          >
+                            {workspace.ceilings.some(
+                              (limit) =>
+                                limit.scope_kind === "brand" &&
+                                Number(limit.monthly_usd_max) > 0 &&
+                                Number(limit.daily_usd_max) > 0,
+                            )
+                              ? "Limits saved"
+                              : "Limits required"}
+                          </Badge>
                         </li>
                         <li>
                           <span>Approval authority</span>
-                          <Badge tone="green">Active</Badge>
+                          <Badge
+                            tone={
+                              status?.approval_signing === "ready"
+                                ? "green"
+                                : "amber"
+                            }
+                          >
+                            {status?.approval_signing === "ready"
+                              ? "Ready"
+                              : "Unavailable"}
+                          </Badge>
                         </li>
                         <li>
                           <span>Ad platform connections</span>
-                          <Badge>Not connected</Badge>
+                          <Badge>
+                            {
+                              (workspace.connections ?? []).filter(
+                                (connection) =>
+                                  connection.selected &&
+                                  connection.health === "healthy" &&
+                                  connection.verified_at &&
+                                  (!connection.token_expires_at ||
+                                    new Date(
+                                      connection.token_expires_at,
+                                    ).getTime() > Date.now()),
+                              ).length
+                            }{" "}
+                            accounts verified
+                          </Badge>
                         </li>
                       </ul>
                       <p className="footnote">
@@ -550,6 +631,11 @@ export default function Console() {
                     brandId={selected}
                     canEdit={canEdit}
                   />
+                  <BrandUnderstandingEditor
+                    key={`understanding-${selected}`}
+                    brandId={selected}
+                    canEdit={canEdit}
+                  />
                   <div className="two-column">
                     <section className="panel">
                       <div className="panel-title">
@@ -562,14 +648,14 @@ export default function Console() {
                           }
                         >
                           {workspace.brand.brand_graph_confirmed_at
-                            ? "Confirmed"
-                            : "Unconfirmed"}
+                            ? "Context available"
+                            : "No generated context"}
                         </Badge>
                       </div>
                       {!workspace.assertions.length ? (
                         <Empty title="Build from evidence.">
                           Add your offers, audience, voice, and differentiators
-                          with a source for each fact.
+                          in your own words. Sources are optional.
                         </Empty>
                       ) : (
                         <div className="facts">
@@ -582,47 +668,29 @@ export default function Console() {
                                     f.human_confirmed_at ? "green" : "amber"
                                   }
                                 >
-                                  {f.human_confirmed_at
-                                    ? "Confirmed"
-                                    : "Review"}
+                                  {f.human_confirmed_at ? "Confirmed" : "Added"}
                                 </Badge>
                               </div>
                               <p>{f.value}</p>
-                              <a
-                                href={f.provenance_uri}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {f.provenance_uri} ↗
-                              </a>
+                              {f.provenance_uri && (
+                                <a
+                                  href={f.provenance_uri}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {f.provenance_uri} ↗
+                                </a>
+                              )}
                             </article>
                           ))}
                         </div>
                       )}
-                      {canEdit &&
-                        workspace.assertions.length > 0 &&
-                        !workspace.brand.brand_graph_confirmed_at && (
-                          <button
-                            className="button primary"
-                            disabled={busy}
-                            onClick={() =>
-                              mutate(
-                                `/brands/${selected}/confirm`,
-                                undefined,
-                                "POST",
-                                "Brand facts confirmed. Campaign planning is available.",
-                              )
-                            }
-                          >
-                            Confirm these brand facts ✓
-                          </button>
-                        )}
                     </section>
                     <section className="panel">
-                      <h2>Add a sourced fact</h2>
+                      <h2>Add a brand fact</h2>
                       <p className="muted">
-                        Updating a fact reopens brand confirmation and voids
-                        outstanding approvals.
+                        Describe your offers and audience in your own words.
+                        These details guide future copy generation.
                       </p>
                       <form
                         className="form-stack"
@@ -654,14 +722,11 @@ export default function Console() {
                             maxLength={4000}
                           />
                         </Field>
-                        <Field label="Source URL">
-                          <input name="provenance_uri" type="url" required />
-                        </Field>
                         <button
                           className="button primary"
                           disabled={busy || !canEdit}
                         >
-                          Save sourced fact →
+                          Save brand fact →
                         </button>
                       </form>
                     </section>
@@ -670,15 +735,19 @@ export default function Console() {
               )}
               {tab === "Campaign plans" && (
                 <section className="panel">
-                  {!workspace.brand.brand_graph_confirmed_at && (
-                    <div className="message warning">
-                      Confirm brand intelligence before creating a campaign
-                      plan.
-                    </div>
-                  )}
+                  <AdStudio
+                    key={workspace.brand.id}
+                    brand={workspace.brand}
+                    canEdit={canEdit}
+                    canManage={userRoles.some((role) =>
+                      ["owner", "admin"].includes(role),
+                    )}
+                    plans={workspace.plans}
+                    fail={fail}
+                  />
                   {!workspace.plans.length ? (
                     <Empty title="Your next campaign starts here.">
-                      Once the brand is confirmed, create a plan with a testable
+                      Create ads above, or add a campaign plan with a testable
                       hypothesis and explicit channel budgets.
                     </Empty>
                   ) : (
@@ -721,7 +790,7 @@ export default function Console() {
                             <summary>Audience, hypothesis & allocation</summary>
                             <PlanDetail document={p.plan_document} />
                           </details>
-                          {canEdit && p.state === "approved" && (
+                          {canEdit && (
                             <DeploymentPreflight
                               key={p.plan_hash}
                               brandId={selected}
@@ -739,22 +808,12 @@ export default function Console() {
                               >
                                 Edit revision
                               </button>
-                              {p.state === "draft" && (
-                                <button
-                                  className="button primary"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    mutate(
-                                      `/brands/${selected}/plans/${p.id}/submit`,
-                                      { expected_hash: p.plan_hash },
-                                      "POST",
-                                      "Campaign plan sent to review.",
-                                    )
-                                  }
-                                >
-                                  Send for review →
-                                </button>
-                              )}
+                              <button
+                                className="button"
+                                onClick={() => setTab("Launch review")}
+                              >
+                                Review first-launch scope
+                              </button>
                             </div>
                           )}
                         </article>
@@ -763,73 +822,32 @@ export default function Console() {
                   )}
                 </section>
               )}
-              {tab === "Approvals" && (
-                <>
-                  <div className="queue-heading">
-                    <Badge tone="amber">
-                      {pending.length} awaiting decision
-                    </Badge>
-                    <span>
-                      Every decision binds to the exact revision you review.
-                    </span>
-                  </div>
-                  {pending.length === 0 ? (
-                    <section className="panel">
-                      <Empty title="Nothing waiting on your judgment.">
-                        Campaign plans appear here when they are submitted for
-                        review.
-                      </Empty>
-                    </section>
+              {tab === "Launch review" && (
+                <section className="panel">
+                  <h2>First launch by channel account</h2>
+                  {workspace.plans.length === 0 ? (
+                    <Empty title="Create a campaign plan first.">
+                      Review its audience, budget, and finished creative before
+                      authorizing first launch.
+                    </Empty>
                   ) : (
-                    pending.map((a) => (
-                      <ApprovalCard
-                        key={a.id}
-                        approval={a}
-                        busy={busy}
-                        canApprove={userRoles.some((r) =>
-                          (a.state === "pending_client"
-                            ? ["client_approver"]
-                            : ["owner", "admin", "buyer"]
-                          ).includes(r),
-                        )}
-                        decide={(decision, reason) =>
-                          mutate(
-                            `/brands/${selected}/approvals/${a.id}/decide`,
-                            { decision, reason, expected_hash: a.subject_hash },
-                            "POST",
-                            decision === "approved"
-                              ? "Plan approved. No campaign has been launched."
-                              : "Decision recorded with your feedback.",
-                          )
-                        }
-                      />
+                    workspace.plans.map((plan) => (
+                      <article className="plan-card" key={plan.id}>
+                        <h2>{plan.name}</h2>
+                        <PlanDetail document={plan.plan_document} />
+                        <LaunchReview
+                          brandId={selected}
+                          plan={plan}
+                          canApprove={userRoles.some((role) =>
+                            ["owner", "admin", "client_approver"].includes(
+                              role,
+                            ),
+                          )}
+                        />
+                      </article>
                     ))
                   )}
-                  {workspace.approvals.some((a) => !pending.includes(a)) && (
-                    <section className="panel">
-                      <h2>Decision history</h2>
-                      <div className="history-list">
-                        {workspace.approvals
-                          .filter((a) => !pending.includes(a))
-                          .map((a) => (
-                            <div key={a.id}>
-                              <span>
-                                {a.plan_name}
-                                {a.rejection_detail && (
-                                  <small>{a.rejection_detail}</small>
-                                )}
-                              </span>
-                              <Badge>
-                                {a.is_expired && a.state.startsWith("pending")
-                                  ? "Expired"
-                                  : human(a.state)}
-                              </Badge>
-                            </div>
-                          ))}
-                      </div>
-                    </section>
-                  )}
-                </>
+                </section>
               )}
               {tab === "Activity" && (
                 <section className="panel">
@@ -842,112 +860,74 @@ export default function Console() {
                 </section>
               )}
               {tab === "Channels" && (
-                <>
-                  <div className="message warning">
-                    Channel capabilities are loaded from the supplied registry.
-                    Live adapters and account connections are not enabled in
-                    this build.
-                  </div>
-                  <div className="channel-grid">
-                    {channels.map((c) => (
-                      <section className="panel channel-card" key={c.channel}>
-                        <div className="channel-monogram">
-                          {channelName[c.channel].slice(0, 1)}
-                        </div>
-                        <h2>{channelName[c.channel]}</h2>
-                        <Badge>Not connected</Badge>
-                        <p>{c.objectives.map(human).join(" · ")}</p>
-                        <details>
-                          <summary>Connection prerequisites</summary>
-                          <ul>
-                            {c.prerequisites.map((p) => (
-                              <li key={p}>{human(p)}</li>
-                            ))}
-                          </ul>
-                        </details>
-                        <small>Registry {c.registry_version}</small>
-                      </section>
-                    ))}
-                  </div>
-                </>
+                <ChannelConnections
+                  key={selected}
+                  brandId={selected}
+                  channels={channels}
+                  canManage={userRoles.some((role) =>
+                    ["owner", "admin"].includes(role),
+                  )}
+                />
               )}
               {tab === "Guardrails" && (
                 <div className="two-column">
-                  <section className="panel">
-                    <h2>Spend boundaries</h2>
-                    <p className="muted">
-                      Limits are checked when a plan is submitted and again when
-                      it is approved.
-                    </p>
-                    <form
-                      className="form-stack"
-                      key={selected}
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void mutate(
-                          `/brands/${selected}/ceiling`,
-                          Object.fromEntries(new FormData(e.currentTarget)),
-                          "PUT",
-                        );
-                      }}
-                    >
-                      <Field label="Monthly ceiling (USD)">
-                        <input
-                          type="number"
-                          name="monthly_ceiling"
-                          min="0.01"
-                          step="0.01"
-                          required
-                          defaultValue={
-                            workspace.ceilings.find(
-                              (c) => c.scope_kind === "brand",
-                            )?.monthly_usd_max
-                          }
-                        />
-                      </Field>
-                      <Field label="Daily ceiling (USD)">
-                        <input
-                          type="number"
-                          name="daily_ceiling"
-                          min="0.01"
-                          step="0.01"
-                          required
-                          defaultValue={
-                            workspace.ceilings.find(
-                              (c) => c.scope_kind === "brand",
-                            )?.daily_usd_max
-                          }
-                        />
-                      </Field>
-                      <button
-                        className="button primary"
-                        disabled={
-                          busy ||
-                          !userRoles.some((r) => ["owner", "admin"].includes(r))
-                        }
-                      >
-                        Save boundaries
-                      </button>
-                    </form>
-                  </section>
+                  <GuardrailEditor
+                    key={selected}
+                    brandId={selected}
+                    canManage={userRoles.some((role) =>
+                      ["owner", "admin"].includes(role),
+                    )}
+                  />
                   <section className="panel danger-panel">
                     <span className="eyebrow">OPERATIONAL CONTROL</span>
-                    <h2>Stop local operations.</h2>
+                    <h2>Pause managed campaigns.</h2>
                     <p>
-                      Block new plan approvals and invalidate outstanding spend
-                      tokens for this brand.
+                      Stop local work, invalidate outstanding spend tokens, and
+                      request verified pauses from each managed campaign's
+                      platform.
                     </p>
                     <p className="footnote">
-                      This build cannot pause ads in platform accounts. Manage
-                      any existing live ads directly in the platform.
+                      A failed platform request remains unverified in the pause
+                      report. Releasing the local stop does not resume remote
+                      campaigns.
                     </p>
                     <button
                       className="button danger"
-                      disabled={!canEdit || !!workspace.stop}
-                      onClick={() => setModal("stop")}
+                      disabled={
+                        busy ||
+                        (workspace.stop
+                          ? !userRoles.some((role) =>
+                              ["owner", "admin"].includes(role),
+                            )
+                          : !canEdit)
+                      }
+                      onClick={() =>
+                        workspace.stop
+                          ? mutate(
+                              `/brands/${selected}/resume`,
+                              {
+                                reason:
+                                  "Owner resumed local brand operations from the console.",
+                              },
+                              "POST",
+                              "Local operations resumed.",
+                            )
+                          : setModal("stop")
+                      }
                     >
-                      Stop brand operations
+                      {workspace.stop
+                        ? "Resume local operations"
+                        : "Stop brand operations"}
                     </button>
+                    {workspace.stop && (
+                      <button
+                        className="button danger"
+                        disabled={!canEdit || busy}
+                        onClick={() => setModal("stop")}
+                      >
+                        Retry platform pauses
+                      </button>
+                    )}
                   </section>
                 </div>
               )}
@@ -1013,13 +993,14 @@ export default function Console() {
                   `/brands/${selected}/kill`,
                   data,
                   "POST",
-                  "Local operations stopped. Review platform accounts separately.",
+                  "Stop requested. Review the per-campaign pause report.",
                 );
               }}
             >
               <p>
-                This voids outstanding tokens and blocks planning for{" "}
-                {brand?.display_name}.
+                Stop local work for {brand?.display_name} and pause its managed
+                campaigns across connected platforms. The report shows each
+                verified result and every unconfirmed pause.
               </p>
               <Field label="Reason for stopping">
                 <textarea
@@ -1089,88 +1070,6 @@ function PlanDetail({ document }: { document: Plan["plan_document"] }) {
         </tbody>
       </table>
     </div>
-  );
-}
-
-function ApprovalCard({
-  approval: a,
-  busy,
-  canApprove,
-  decide,
-}: {
-  approval: Approval;
-  busy: boolean;
-  canApprove: boolean;
-  decide: (decision: string, reason: string) => Promise<void>;
-}) {
-  const [reason, setReason] = useState("");
-  return (
-    <article className="panel approval-card">
-      <div className="plan-card-top">
-        <div>
-          <span className="eyebrow">
-            {a.state === "pending_client" ? "CLIENT REVIEW" : "INTERNAL REVIEW"}{" "}
-            / CAMPAIGN PLAN
-          </span>
-          <h2>{a.plan_name}</h2>
-        </div>
-        <Badge tone="amber">Needs a decision</Badge>
-      </div>
-      <p>{a.plan_document.rationale}</p>
-      <div className="approval-budget">
-        <div>
-          <span>Daily authority</span>
-          <strong>{money(a.requested_daily_usd)}</strong>
-        </div>
-        <div>
-          <span>Total authority</span>
-          <strong>{money(a.requested_total_usd)}</strong>
-        </div>
-        <div>
-          <span>Review expires</span>
-          <strong className="expiry">{when(a.expires_at)}</strong>
-        </div>
-      </div>
-      <PlanDetail document={a.plan_document} />
-      <p className="footnote">
-        You are approving this plan revision. Creative review and channel
-        deployment are separate steps; this decision does not launch ads.
-      </p>
-      <Field
-        label="Decision feedback"
-        hint="Required for rejection or requested changes; at least 10 characters."
-      >
-        <textarea
-          rows={2}
-          maxLength={4000}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        />
-      </Field>
-      <div className="card-actions">
-        <button
-          className="button"
-          disabled={busy || !canApprove || reason.trim().length < 10}
-          onClick={() => decide("rejected", reason)}
-        >
-          Reject
-        </button>
-        <button
-          className="button"
-          disabled={busy || !canApprove || reason.trim().length < 10}
-          onClick={() => decide("changes_requested", reason)}
-        >
-          Request changes
-        </button>
-        <button
-          className="button primary"
-          disabled={busy || !canApprove}
-          onClick={() => decide("approved", reason)}
-        >
-          Approve plan ✓
-        </button>
-      </div>
-    </article>
   );
 }
 

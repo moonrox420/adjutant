@@ -6,6 +6,9 @@ import { human, when } from "./ui";
 
 type Job = {
   id: string;
+  brand_id: string;
+  kind: "generation" | "studio" | "campaign_build";
+  state: string;
   model_id: string;
   finished_at: string | null;
   error_code: string | null;
@@ -14,6 +17,7 @@ type Job = {
   worker_exit_verified_at: string | null;
 };
 type Activity = {
+  mail_transport: "file" | "smtp";
   receipts: { event_id: string; event_type: string; processed_at: string }[];
   processes: {
     instance_id: string;
@@ -55,18 +59,27 @@ export function Jobs() {
       clearInterval(timer);
     };
   }, [refresh]);
-  async function cancel(id: string) {
-    setBusy(id);
+  async function cancel(job: Job) {
+    setBusy(job.id);
     setError("");
     try {
-      const report = await api<{ cancellation_verified: boolean }>(
-        `/jobs/${id}/cancel`,
-        "POST",
-      );
-      if (!report.cancellation_verified)
-        setError(
-          "Cancellation requested. Process exit is still awaiting verification.",
+      if (job.kind === "studio") {
+        await api(`/brands/${job.brand_id}/studio/jobs/${job.id}`, "DELETE");
+      } else if (job.kind === "campaign_build") {
+        await api(
+          `/brands/${job.brand_id}/deployments/${job.id}/cancel`,
+          "POST",
         );
+      } else {
+        const report = await api<{ cancellation_verified: boolean }>(
+          `/jobs/${job.id}/cancel`,
+          "POST",
+        );
+        if (!report.cancellation_verified)
+          setError(
+            "Cancellation requested. Process exit is still awaiting verification.",
+          );
+      }
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to cancel generation.");
@@ -77,44 +90,56 @@ export function Jobs() {
   return (
     <section className="panel">
       <div className="panel-title">
-        <h2>Generation jobs & delivery</h2>
+        <h2>Jobs & delivery</h2>
       </div>
       <p className="muted">
-        Stopping a job ends its dedicated generation worker. Your shared Ollama
-        service stays available.
+        Generation cancellation stops its dedicated worker. Campaign
+        cancellation stops remaining construction and retains the record of
+        provider operations.
       </p>
       {error && (
         <p role="alert" className="message error">
           {error}
         </p>
       )}
-      {!jobs.length && (
-        <p className="footnote">You have no generation jobs yet.</p>
-      )}
+      {!jobs.length && <p className="footnote">You have no jobs yet.</p>}
       {jobs.map((job) => (
         <div className="job-row" key={job.id}>
           <div>
-            <strong>{job.model_id}</strong>
+            <strong>
+              {job.kind === "studio"
+                ? "Ad Studio · "
+                : job.kind === "campaign_build"
+                  ? "Campaign · "
+                  : ""}
+              {job.model_id}
+            </strong>
             <p>
-              {job.error_code
-                ? human(job.error_code)
-                : job.finished_at
-                  ? "Completed"
-                  : "Running"}
-              {job.worker_exit_verified_at
-                ? ` · Process exit verified ${when(job.worker_exit_verified_at)}`
-                : job.worker_pid
-                  ? " · Process exit not yet verified"
-                  : " · Worker not started"}
+              {job.cancel_requested_at && !job.finished_at
+                ? "Cancellation requested"
+                : job.error_code
+                  ? human(job.error_code)
+                  : human(job.state)}
+              {job.kind !== "generation"
+                ? ""
+                : job.worker_exit_verified_at
+                  ? ` · Process exit verified ${when(job.worker_exit_verified_at)}`
+                  : job.worker_pid
+                    ? " · Process exit not yet verified"
+                    : " · Worker not started"}
             </p>
           </div>
           {!job.finished_at && (
             <button
               className="button compact"
               disabled={busy === job.id}
-              onClick={() => cancel(job.id)}
+              onClick={() => cancel(job)}
             >
-              {busy === job.id ? "Verifying stop…" : "Stop generation"}
+              {busy === job.id
+                ? "Requesting stop…"
+                : job.kind === "campaign_build"
+                  ? "Cancel remaining work"
+                  : "Stop generation"}
             </button>
           )}
         </div>
@@ -122,7 +147,7 @@ export function Jobs() {
       <h3>Background consumer</h3>
       <p>
         {activity?.processes.some((process) => process.healthy)
-          ? "Running · local activity and account email delivery"
+          ? `Running · activity processing · ${activity.mail_transport === "smtp" ? "SMTP delivery selected" : "email saved locally; external delivery is not selected"}`
           : "No healthy consumer heartbeat. Delivery may be delayed."}
       </p>
       {activity?.processes
