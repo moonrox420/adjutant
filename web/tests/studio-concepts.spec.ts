@@ -58,10 +58,7 @@ test("persisted concepts load, edit, render, and survive reload through real API
     const render = await context.request.post(
       `/api/brands/${user.brand_id}/studio/${draft.id}/render`,
       {
-        headers: {
-          "X-Adjutant-Client": "console",
-          Origin: "http://127.0.0.1:3001",
-        },
+        headers: { "X-Adjutant-Client": "console" },
         data: { expected_revision: 2, aspect_ratio },
       },
     );
