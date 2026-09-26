@@ -5,7 +5,7 @@ import logging
 import threading
 from datetime import UTC, datetime
 from functools import partial
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 import httpx
@@ -40,7 +40,7 @@ class CampaignBuildInput(Input):
     settings: dict
 
 
-def build_report(conn, brand_id: UUID, build_id: UUID) -> dict:
+def build_report(conn: psycopg.Connection[Any], brand_id: UUID, build_id: UUID) -> dict:
     row = one(
         conn,
         "SELECT * FROM campaign_build WHERE id=%s AND brand_id=%s",
@@ -65,7 +65,11 @@ def build_report(conn, brand_id: UUID, build_id: UUID) -> dict:
 
 
 def queue_build(
-    conn, actor: Principal, brand_id: UUID, plan_id: UUID, data: CampaignBuildInput
+    conn: psycopg.Connection[Any],
+    actor: Principal,
+    brand_id: UUID,
+    plan_id: UUID,
+    data: CampaignBuildInput,
 ) -> dict:
     """Freeze a complete source snapshot before the worker can perform provider writes."""
     brand = locked_brand(conn, brand_id)
@@ -471,10 +475,13 @@ class CampaignBuildRunner:
             if self.stop.is_set():
                 return
             with self.db.pool.connection() as lock:
-                acquired = lock.execute(
+                res: Any = lock.execute(
                     "SELECT pg_try_advisory_lock(hashtextextended(%s,33)) AS acquired",
                     (str(job["id"]),),
-                ).fetchone()["acquired"]
+                ).fetchone()
+                if not res:
+                    continue
+                acquired = res["acquired"] if isinstance(res, dict) else res[0]
                 if not acquired:
                     continue
                 try:

@@ -1,10 +1,9 @@
-"""Brand context editing, provider configuration, rendering, and campaign attachment."""
-
 import json
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, Depends, Request, Response
 from psycopg.types.json import Jsonb
 from pydantic import Field, SecretStr
@@ -44,7 +43,9 @@ class AttachInput(Input):
     plan_id: UUID
 
 
-def visual_generator(conn, brand_id: UUID, config: Settings) -> VisualsGenerator:
+def visual_generator(
+    conn: psycopg.Connection[Any], brand_id: UUID, config: Settings
+) -> VisualsGenerator:
     configured = conn.execute(
         "SELECT 1 FROM tenant_secret WHERE brand_id=%s AND name='visual_provider'",
         (brand_id,),
@@ -62,7 +63,11 @@ def visual_generator(conn, brand_id: UUID, config: Settings) -> VisualsGenerator
 
 
 def persist_render(
-    conn, storage: ObjectStore, brand_id: UUID, row: dict, ratio: str
+    conn: psycopg.Connection[Any],
+    storage: ObjectStore,
+    brand_id: UUID,
+    row: dict,
+    ratio: str,
 ) -> dict:
     """Store a validated revision-specific PNG, SVG, and editable scene atomically."""
     enforce_blocked_claims(conn, brand_id, row["document"])

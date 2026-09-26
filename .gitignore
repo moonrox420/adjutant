@@ -1,10 +1,13 @@
 .venv/
+venv/
 .local/
 .cache/
 __pycache__/
 .pytest_cache/
+.pytest_temp/
 .ruff_cache/
 *.egg-info/
+adjutant.egg-info/
 .env
 node_modules/
 .next/
@@ -12,7 +15,7 @@ node_modules/
 *.tsbuildinfo
 test-results/
 playwright-report/
-BUILD_STATUS.md/
-.venv/
-venv/
-adjutant.egg-info/
+BUILD_STATUS.md
+tests/
+migrations/
+GEMINI.md

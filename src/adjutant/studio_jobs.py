@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -368,10 +368,13 @@ class StudioJobRunner:
     async def run_job(self, brand_id: UUID, job_id: UUID) -> None:
         work: asyncio.Task | None = None
         with self.db.pool.connection() as ownership:
-            held = ownership.execute(
+            held_res: Any = ownership.execute(
                 "SELECT pg_try_advisory_lock(hashtextextended(%s,0)) AS held",
                 (str(job_id),),
-            ).fetchone()["held"]
+            ).fetchone()
+            if not held_res:
+                return
+            held = held_res["held"] if isinstance(held_res, dict) else held_res[0]
             if not held:
                 return
             try:

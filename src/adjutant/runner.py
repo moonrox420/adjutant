@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_tick(
-    conn: Connection,
+    conn: Connection[Any],
     config: Settings,
     events: EventRegistry,
     brand_id: UUID,
@@ -29,9 +29,8 @@ def run_tick(
     tid = tick_id or uuid4()
 
     # Step 0: Ensure tenant scope and acquire brand runner advisory lock
-    current_ids = (
-        conn.execute("SELECT current_brand_ids() AS ids").fetchone()["ids"] or []
-    )
+    ids_row: Any = conn.execute("SELECT current_brand_ids() AS ids").fetchone()
+    current_ids = (ids_row["ids"] if ids_row else None) or []
     if brand_id not in current_ids:
         new_ids = list(current_ids) + [brand_id]
         conn.execute(
@@ -80,11 +79,11 @@ def run_tick(
                     }
                 )
             elif f["kind"] == "winner":
-                obj = conn.execute(
+                obj: Any = conn.execute(
                     "SELECT daily_budget_usd FROM campaign_object WHERE id=%s",
                     (f["object_id"],),
                 ).fetchone()
-                current_daily = obj["daily_budget_usd"] or Decimal("50.00")
+                current_daily = (obj["daily_budget_usd"] if obj else None) or Decimal("50.00")
                 proposed_daily = current_daily * Decimal("1.25")
                 candidates.append(
                     {
@@ -107,7 +106,7 @@ def run_tick(
             idem_key = f"{brand_id}:{tid}:{cand['kind']}:{cand['target_id']}"
 
             # Check if this exact action was already executed in this tick (S8.8)
-            prior = conn.execute(
+            prior: Any = conn.execute(
                 """SELECT state, action_id FROM autonomous_decision
                 WHERE brand_id=%s AND idempotency_key=%s""",
                 (brand_id, idem_key),
@@ -145,7 +144,7 @@ def run_tick(
             # Execute approved action
             action_id = None
             # Invariant #2: Every spend-affecting action names the token that authorized it.
-            active_token = conn.execute(
+            active_token: Any = conn.execute(
                 """SELECT id FROM approval_token
                 WHERE brand_id=%s AND voided_at IS NULL AND expires_at > now()
                 ORDER BY expires_at DESC LIMIT 1""",
@@ -155,9 +154,11 @@ def run_tick(
 
             if cand["kind"] == "refresh_creative":
                 fatigued_id = cand["target_id"]
-                fatigued_obj = conn.execute(
+                fatigued_obj: Any = conn.execute(
                     "SELECT * FROM campaign_object WHERE id=%s", (fatigued_id,)
                 ).fetchone()
+                if not fatigued_obj:
+                    continue
 
                 # S8.2 Strict ordering:
                 # 1. Create and launch replacement FIRST
@@ -222,7 +223,7 @@ def run_tick(
                     (fatigued_id,),
                 )
 
-                pause_action_id = conn.execute(
+                pause_row: Any = conn.execute(
                     """INSERT INTO action(
                         brand_id, actor_kind, action_type, target_kind, target_id,
                         channel, target_native_id, diff, rationale, revert_path,
@@ -251,8 +252,8 @@ def run_tick(
                             }
                         ),
                     ),
-                ).fetchone()["id"]
-                action_id = pause_action_id
+                ).fetchone()
+                action_id = pause_row["id"] if pause_row else None
 
             elif cand["kind"] == "scale_winner":
                 obj_id = cand["target_id"]
@@ -261,7 +262,7 @@ def run_tick(
                     "UPDATE campaign_object SET daily_budget_usd=%s WHERE id=%s",
                     (new_budget, obj_id),
                 )
-                action_id = conn.execute(
+                action_row: Any = conn.execute(
                     """INSERT INTO action(
                         brand_id, actor_kind, action_type, target_kind, target_id,
                         channel, diff, rationale, token_id, revert_path
@@ -290,7 +291,8 @@ def run_tick(
                             }
                         ),
                     ),
-                ).fetchone()["id"]
+                ).fetchone()
+                action_id = action_row["id"] if action_row else None
 
             conn.execute(
                 """INSERT INTO autonomous_decision(

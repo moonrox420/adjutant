@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def sync_brand_channel_metrics(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     channel: str,
     fetch_func: Any,
@@ -33,7 +33,7 @@ def sync_brand_channel_metrics(
     if not windows:
         return 0
 
-    campaign_objects = conn.execute(
+    campaign_objects: Any = conn.execute(
         """SELECT id, native_id FROM campaign_object
         WHERE brand_id=%s AND channel=%s AND state NOT IN ('deleted', 'archived')""",
         (brand_id, channel),

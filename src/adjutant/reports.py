@@ -11,7 +11,7 @@ from adjutant.db import one
 
 
 def generate_weekly_result_summary(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     end_date: datetime | None = None,
 ) -> dict[str, Any]:
@@ -27,7 +27,7 @@ def generate_weekly_result_summary(
     )
 
     # Current 7 days metrics
-    cur_metrics = conn.execute(
+    cur_metrics: Any = conn.execute(
         """SELECT
             COALESCE(sum(spend_usd), 0) AS spend,
             COALESCE(sum(conversions), 0) AS conversions,
@@ -40,7 +40,7 @@ def generate_weekly_result_summary(
     ).fetchone()
 
     # Prior 7 days metrics
-    prior_metrics = conn.execute(
+    prior_metrics: Any = conn.execute(
         """SELECT
             COALESCE(sum(spend_usd), 0) AS spend,
             COALESCE(sum(conversions), 0) AS conversions,
@@ -50,14 +50,14 @@ def generate_weekly_result_summary(
         (brand_id, prior_start, start),
     ).fetchone()
 
-    spend = Decimal(str(cur_metrics["spend"]))
-    convs = Decimal(str(cur_metrics["conversions"]))
-    revenue = Decimal(str(cur_metrics["revenue"]))
+    spend = Decimal(str(cur_metrics["spend"])) if cur_metrics else Decimal("0.00")
+    convs = Decimal(str(cur_metrics["conversions"])) if cur_metrics else Decimal("0.00")
+    revenue = Decimal(str(cur_metrics["revenue"])) if cur_metrics else Decimal("0.00")
     cpa = (spend / convs) if convs > 0 else Decimal("0.00")
     roas = (revenue / spend) if spend > 0 else Decimal("0.00")
 
-    prior_spend = Decimal(str(prior_metrics["spend"]))
-    prior_convs = Decimal(str(prior_metrics["conversions"]))
+    prior_spend = Decimal(str(prior_metrics["spend"])) if prior_metrics else Decimal("0.00")
+    prior_convs = Decimal(str(prior_metrics["conversions"])) if prior_metrics else Decimal("0.00")
     prior_cpa = (prior_spend / prior_convs) if prior_convs > 0 else Decimal("0.00")
 
     cpa_change_pct = (
@@ -67,7 +67,7 @@ def generate_weekly_result_summary(
     )
 
     # Autonomous actions taken in this window
-    actions = conn.execute(
+    actions: Any = conn.execute(
         """SELECT action_type, count(*) AS count FROM action
         WHERE brand_id=%s AND executed_at >= %s AND executed_at < %s
         GROUP BY action_type""",
@@ -80,7 +80,7 @@ def generate_weekly_result_summary(
     pauses = action_counts.get("pause", 0)
 
     # Top performing channel
-    channel_perf = conn.execute(
+    channel_perf: Any = conn.execute(
         """SELECT channel, COALESCE(sum(spend_usd), 0) AS spend,
         COALESCE(sum(conversions), 0) AS convs
         FROM metric_fact_raw

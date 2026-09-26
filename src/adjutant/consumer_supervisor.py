@@ -48,6 +48,8 @@ class ConsumerSupervisor:
 
     def run(self) -> None:
         config = self.config
+        if not config.worker_database_url:
+            return
         url = config.worker_database_url.get_secret_value()
         while not self.stop_event.is_set():
             instance = uuid4()
@@ -73,8 +75,9 @@ class ConsumerSupervisor:
                         "smtp_username": config.smtp_username,
                         "smtp_password": config.smtp_password.get_secret_value(),
                     }
-                    process.stdin.write((json.dumps(payload) + "\n").encode())
-                    process.stdin.flush()
+                    if process.stdin:
+                        process.stdin.write((json.dumps(payload) + "\n").encode())
+                        process.stdin.flush()
                     checked = time.monotonic()
                     while process.poll() is None and not self.stop_event.wait(0.25):
                         if time.monotonic() - checked >= 2:
@@ -101,6 +104,8 @@ class ConsumerSupervisor:
             finally:
                 if process:
                     terminate_owned(process)
-                    process.stdin.close()
+                    if process.stdin:
+                        process.stdin.close()
                 self.process = None
             self.stop_event.wait(1)
+

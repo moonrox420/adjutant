@@ -4,6 +4,7 @@ import base64
 import re
 import time
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
@@ -125,7 +126,7 @@ def authorization_url(
     return provider.authorization_url + "?" + urlencode(params)
 
 
-def request_json(method: str, url: str, *, allow_empty: bool = False, **kwargs):
+def request_json(method: str, url: str, *, allow_empty: bool = False, **kwargs: Any) -> Any:
     """No automatic mutation retries or redirects; provider secrets never enter error messages."""
     try:
         with httpx.Client(
@@ -378,8 +379,10 @@ def reddit_pages(method: str, path: str, headers: dict) -> list[dict]:
                 502,
             )
         seen.add(url)
-        body = {"json": {"data": {}}} if method == "POST" else {}
-        result = request_json(method, url, headers=headers, **body)
+        if method == "POST":
+            result = request_json(method, url, headers=headers, json={"data": {}})
+        else:
+            result = request_json(method, url, headers=headers)
         records.extend(result["data"])
         url = result.get("pagination", {}).get("next_url")
         if not url:

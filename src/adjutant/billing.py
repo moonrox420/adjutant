@@ -41,7 +41,7 @@ BILLING_TIERS = {
 
 
 def create_subscription(
-    conn: Connection,
+    conn: Connection[Any],
     account_id: UUID,
     tier_id: str,
     payment_method_id: str,
@@ -93,7 +93,7 @@ def create_subscription(
 
 
 def handle_billing_failure(
-    conn: Connection,
+    conn: Connection[Any],
     account_id: UUID,
     failure_reason: str,
 ) -> dict[str, Any]:
@@ -129,7 +129,7 @@ def handle_billing_failure(
 
 
 def cancel_subscription(
-    conn: Connection,
+    conn: Connection[Any],
     account_id: UUID,
     immediate_pause_campaigns: bool = True,
 ) -> dict[str, Any]:
@@ -151,7 +151,7 @@ def cancel_subscription(
     paused_brands = []
     if immediate_pause_campaigns:
         # Pause all active campaigns across all brands in the account so spend does not run wild
-        brands = conn.execute(
+        brands: Any = conn.execute(
             "SELECT id FROM brand WHERE account_id=%s", (account_id,)
         ).fetchall()
 
@@ -173,3 +173,4 @@ def cancel_subscription(
         "campaigns_safely_paused": immediate_pause_campaigns,
         "paused_brand_ids": paused_brands,
     }
+

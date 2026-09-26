@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -42,7 +43,7 @@ class CredentialStore:
     def __init__(self, master_key_path: Path) -> None:
         self._master_key_path = master_key_path
 
-    def _key(self, conn: Connection, brand_id: UUID, *, create: bool) -> bytes:
+    def _key(self, conn: Connection[Any], brand_id: UUID, *, create: bool) -> bytes:
         master = self._master_key_path.read_bytes()
         if len(master) != 32:
             raise ValueError("Credential master key must contain exactly 32 bytes")
@@ -61,7 +62,7 @@ class CredentialStore:
         )
         return unseal(master, bytes(row["wrapped_key"]), context)
 
-    def write(self, conn: Connection, brand_id: UUID, name: str, value: str) -> None:
+    def write(self, conn: Connection[Any], brand_id: UUID, name: str, value: str) -> None:
         if not value or len(value.encode()) > 65536:
             raise ValueError("Credential must contain 1 to 65536 UTF-8 bytes")
         key = self._key(conn, brand_id, create=True)
@@ -73,7 +74,7 @@ class CredentialStore:
             (brand_id, name, seal(key, value.encode(), context)),
         )
 
-    def read(self, conn: Connection, brand_id: UUID, name: str) -> str:
+    def read(self, conn: Connection[Any], brand_id: UUID, name: str) -> str:
         key = self._key(conn, brand_id, create=False)
         row = one(
             conn,
@@ -82,3 +83,4 @@ class CredentialStore:
         )
         context = f"adjutant:credential:v1:{brand_id}:{name}".encode()
         return unseal(key, bytes(row["ciphertext"]), context).decode()
+

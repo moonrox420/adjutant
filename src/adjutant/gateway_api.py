@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -60,14 +60,12 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
     events = EventRegistry(Path(__file__).with_name("event_registry.json"))
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         db.open()
         try:
             with db.transaction() as conn:
-                if (
-                    conn.execute("SELECT current_user AS name").fetchone()["name"]
-                    != "adjutant_gateway"
-                ):
+                user_row: Any = conn.execute("SELECT current_user AS name").fetchone()
+                if not user_row or user_row["name"] != "adjutant_gateway":
                     raise RuntimeError(
                         "The gateway requires the adjutant_gateway database role"
                     )
@@ -159,7 +157,7 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
                     "security.launch_token_replay", extra={"brand_id": str(brand_id)}
                 )
                 with db.transaction(extra_brand=brand_id) as conn:
-                    action = conn.execute(
+                    action: Any = conn.execute(
                         "INSERT INTO action(brand_id,actor_kind,action_type,target_kind,target_id,"
                         "diff,rationale) VALUES(%s,'system','approval_reject',"
                         "'launch_authorization',%s,%s,"
@@ -170,18 +168,20 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
                             Jsonb({"security_alert": "LaunchTokenReplay"}),
                         ),
                     ).fetchone()
-                    events.append(
-                        conn,
-                        "action.recorded",
-                        brand_id,
-                        {
-                            "brand_id": str(brand_id),
-                            "action_id": str(action["id"]),
-                            "action_type": "approval_reject",
-                            "actor_kind": "system",
-                            "target_kind": "launch_authorization",
-                        },
-                    )
+                    if action:
+                        events.append(
+                            conn,
+                            "action.recorded",
+                            brand_id,
+                            {
+                                "brand_id": str(brand_id),
+                                "action_id": str(action["id"]),
+                                "action_type": "approval_reject",
+                                "actor_kind": "system",
+                                "target_kind": "launch_authorization",
+                            },
+                        )
             raise
 
     return app
+

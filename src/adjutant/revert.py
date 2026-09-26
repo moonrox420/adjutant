@@ -14,14 +14,14 @@ from adjutant.security import digest
 
 
 def execute_revert(
-    conn: Connection,
+    conn: Connection[Any],
     events: EventRegistry,
     brand_id: UUID,
     action_id: UUID,
     actor_user_id: UUID,
 ) -> dict[str, Any]:
     """Execute a recorded revert path and preserve the immutable audit pointer."""
-    action = conn.execute(
+    action: Any = conn.execute(
         "SELECT * FROM action WHERE id=%s AND brand_id=%s FOR UPDATE",
         (action_id, brand_id),
     ).fetchone()

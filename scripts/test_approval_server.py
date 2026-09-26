@@ -3,7 +3,7 @@
 import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
@@ -16,7 +16,7 @@ from adjutant.approval_api import ApprovalSettings, create_app
 
 
 @contextmanager
-def approval_test_server(admin_url: str) -> Iterator[str]:
+def approval_test_server(admin_url: str) -> Generator[str, None, None]:
     """Bind an ephemeral loopback listener and use the real restricted approval role."""
     if admin_url.rsplit("/", 1)[-1] != "adjutant_test":
         raise ValueError("Approval test service requires adjutant_test")

@@ -166,7 +166,10 @@ class VisualsGenerator:
                 with Image.open(io.BytesIO(content)) as decoded:
                     if decoded.width * decoded.height > 25_000_000:
                         raise ValueError("Image exceeds pixel limit")
-                    if Image.MIME.get(decoded.format) != mime or decoded.is_animated:
+                    if (
+                        Image.MIME.get(decoded.format or "") != mime
+                        or getattr(decoded, "is_animated", False)
+                    ):
                         raise ValueError("Image format does not match response")
                     decoded.verify()
                 with Image.open(io.BytesIO(content)) as decoded:

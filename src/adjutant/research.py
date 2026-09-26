@@ -78,7 +78,7 @@ def public_target(url: str) -> tuple[str, int, str]:
         raise DomainError(
             "WebsiteUnavailable", "The website hostname could not be resolved.", 422
         ) from exc
-    ips = list(dict.fromkeys(address[4][0] for address in addresses))
+    ips: list[str] = list(dict.fromkeys(str(address[4][0]) for address in addresses))
     parsed_ips = [ipaddress.ip_address(ip) for ip in ips]
     if not ips or any(
         not ip.is_global or ip.is_multicast or ip.is_reserved for ip in parsed_ips
@@ -89,6 +89,7 @@ def public_target(url: str) -> tuple[str, int, str]:
             422,
         )
     return hostname, port, ips[0]
+
 
 
 def fetch_website(url: str) -> WebsiteEvidence:

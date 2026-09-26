@@ -1,6 +1,5 @@
-"""Synthetic persisted creative fixtures for browser tests, never a provider replacement."""
-
 import io
+from typing import Any
 from uuid import uuid4
 
 import psycopg
@@ -21,15 +20,21 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
         raise ValueError("Browser fixtures may only use adjutant_test")
     with psycopg.connect(admin_url, row_factory=dict_row) as conn:
         conn.execute("SET search_path=adjutant,public")
-        user = conn.execute(
+        user_row: Any = conn.execute(
             "SELECT id FROM app_user WHERE email=%s", (identity["email"],)
-        ).fetchone()["id"]
-        brand = conn.execute(
+        ).fetchone()
+        if not user_row:
+            raise RuntimeError("User not found")
+        user = user_row["id"]
+        brand_row: Any = conn.execute(
             "INSERT INTO brand(account_id,display_name,website_url,vertical,campaigns_enabled) "
             "VALUES(%s,'Concept browser fixture','https://example.com','home_services',true) "
             "RETURNING id",
             (identity["account_id"],),
-        ).fetchone()["id"]
+        ).fetchone()
+        if not brand_row:
+            raise RuntimeError("Brand insertion failed")
+        brand = brand_row["id"]
         conn.execute(
             "INSERT INTO budget_ceiling(brand_id,scope_kind,monthly_usd_max,daily_usd_max,set_by) "
             "VALUES(%s,'brand',5000,200,%s)",
@@ -47,11 +52,14 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
             "voice": "Practical",
             "proof_points": [],
         }
-        context = conn.execute(
+        context_row: Any = conn.execute(
             "INSERT INTO brand_context(brand_id,version,input_hash,source_kind,document) "
             "VALUES(%s,1,%s,'prompt',%s) RETURNING id",
             (brand, digest(understanding), Jsonb(understanding)),
-        ).fetchone()["id"]
+        ).fetchone()
+        if not context_row:
+            raise RuntimeError("Brand context insertion failed")
+        context = context_row["id"]
         root = uuid4()
         conn.execute(
             "INSERT INTO studio_draft(id,brand_id,actor_user_id,image_model) "
@@ -108,7 +116,7 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
                     "VALUES(%s,%s,%s,'browser-fixture')",
                     (draft_id, brand, user),
                 )
-            row = conn.execute(
+            row: Any = conn.execute(
                 "UPDATE studio_draft SET job_id=%s,concept_index=%s,context_id=%s,"
                 "state='completed',document=%s,scene_graph=%s,image_key=%s,"
                 "image_mime='image/png' WHERE id=%s RETURNING *",
@@ -122,7 +130,8 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
                     draft_id,
                 ),
             ).fetchone()
-            persist_render(conn, storage, brand, row, "1:1")
+            if row:
+                persist_render(conn, storage, brand, dict(row) if isinstance(row, dict) else row, "1:1")
         conn.execute(
             "UPDATE studio_job SET state='completed',finished_at=now() WHERE id=%s",
             (root,),

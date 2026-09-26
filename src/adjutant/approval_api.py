@@ -2,7 +2,7 @@
 
 import hmac
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -69,12 +69,12 @@ def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
     db = Database(config.database_url.get_secret_value())
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         db.open()
         try:
             with db.transaction() as conn:
-                role = conn.execute("SELECT current_user AS name").fetchone()["name"]
-                if role != "adjutant_approval":
+                role_row: Any = conn.execute("SELECT current_user AS name").fetchone()
+                if not role_row or role_row["name"] != "adjutant_approval":
                     raise RuntimeError(
                         "Approval service requires the adjutant_approval role"
                     )

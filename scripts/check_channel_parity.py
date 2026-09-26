@@ -37,8 +37,9 @@ def violations(source: str, filename: str) -> list[str]:
         elif isinstance(node, ast.MatchValue):
             values = [node.value]
         if any(channel_value(value) for value in values):
+            lineno = getattr(node, "lineno", 1)
             errors.append(
-                f"{filename}:{node.lineno}: channel-specific branching belongs in adapters/"
+                f"{filename}:{lineno}: channel-specific branching belongs in adapters/"
             )
     return errors
 

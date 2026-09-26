@@ -51,10 +51,10 @@ def determine_comparability_class(
 
 
 def get_channel_watermark(
-    conn: Connection, brand_id: UUID, channel: str
+    conn: Connection[Any], brand_id: UUID, channel: str
 ) -> datetime | None:
     """Read the latest metric sync watermark for a channel."""
-    row = conn.execute(
+    row: Any = conn.execute(
         "SELECT watermark FROM metric_sync_watermark WHERE brand_id=%s AND channel=%s",
         (brand_id, channel),
     ).fetchone()
@@ -62,7 +62,7 @@ def get_channel_watermark(
 
 
 def advance_channel_watermark(
-    conn: Connection, brand_id: UUID, channel: str, watermark: datetime
+    conn: Connection[Any], brand_id: UUID, channel: str, watermark: datetime
 ) -> None:
     """Update or insert channel watermark."""
     conn.execute(
@@ -101,7 +101,7 @@ def compute_sync_windows(
 
 
 def record_metric_facts(
-    conn: Connection,
+    conn: Connection[Any],
     facts: list[RawMetricFact],
     restatement_reason: str = "Platform attribution sync update",
 ) -> int:
@@ -114,7 +114,7 @@ def record_metric_facts(
         date_hour = fact.date_hour.astimezone(UTC).replace(
             minute=0, second=0, microsecond=0
         )
-        existing = conn.execute(
+        existing: Any = conn.execute(
             """SELECT conversions, conversion_value_usd
             FROM metric_fact_raw
             WHERE date_hour=%s AND campaign_object_id=%s""",

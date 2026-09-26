@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -34,7 +34,7 @@ class Database:
     def open(self) -> None:
         self.pool.open(wait=True, timeout=15)
         with self.pool.connection() as conn:
-            role = conn.execute(
+            role: Any = conn.execute(
                 "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname=current_user"
             ).fetchone()
             if role is None or role["rolsuper"] or role["rolbypassrls"]:
@@ -46,7 +46,7 @@ class Database:
     @contextmanager
     def transaction(
         self, principal: Principal | None = None, extra_brand: UUID | None = None
-    ) -> Iterator[Connection[dict[str, Any]]]:
+    ) -> Generator[Connection[dict[str, Any]], None, None]:
         with self.pool.connection() as conn, conn.transaction():
             conn.execute("SET LOCAL search_path = adjutant, public")
             brands = list(principal.brand_ids) if principal else []
@@ -61,11 +61,11 @@ class Database:
                 (str(principal.user_id) if principal else "",),
             )
             conn.execute("SET LOCAL statement_timeout = '10s'")
-            yield conn
+            yield conn  # type: ignore[misc]
 
     def authenticate(self, token_hash: str) -> Principal:
         with self.transaction() as conn:
-            row = conn.execute(
+            row: Any = conn.execute(
                 "SELECT * FROM authenticate_session(%s)", (token_hash,)
             ).fetchone()
         if not row:
@@ -75,21 +75,24 @@ class Database:
         )
 
 
-def one(conn: Connection, sql: str, params: tuple = ()) -> dict[str, Any]:
-    row = conn.execute(sql, params).fetchone()
+def one(conn: Connection[Any], sql: Any, params: tuple[Any, ...] | list[Any] = ()) -> dict[str, Any]:
+    row: Any = conn.execute(sql, params).fetchone()
     if row is None:
         raise DomainError("NotFound", "The requested record is not available.", 404)
-    return row
+    return dict(row) if isinstance(row, dict) else row
 
 
-def require_role(conn: Connection, brand_id: UUID, roles: set[str]) -> dict[str, Any]:
-    seats = conn.execute(
+def require_role(
+    conn: Connection[Any], brand_id: UUID, roles: set[str]
+) -> dict[str, Any]:
+    seats: Any = conn.execute(
         """SELECT s.* FROM seat s JOIN brand b ON b.account_id=s.account_id
            WHERE b.id=%s AND s.user_id=current_actor_id() AND s.revoked_at IS NULL
              AND s.accepted_at IS NOT NULL AND (s.brand_id IS NULL OR s.brand_id=b.id)""",
         (brand_id,),
     ).fetchall()
-    eligible = [seat for seat in seats if seat["role"] in roles]
+    eligible: list[dict[str, Any]] = [seat for seat in seats if seat["role"] in roles]
     if not eligible:
         raise DomainError("Forbidden", "Your role does not permit this action.", 403)
-    return max(eligible, key=lambda seat: seat["approval_daily_usd_cap"] or 0)
+    return max(eligible, key=lambda seat: seat.get("approval_daily_usd_cap") or 0)
+

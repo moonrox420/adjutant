@@ -40,7 +40,11 @@ class EventRegistry:
         }
 
     def append(
-        self, conn: Connection, event_type: str, brand_id: UUID, payload: dict[str, Any]
+        self,
+        conn: Connection[Any],
+        event_type: str,
+        brand_id: UUID,
+        payload: dict[str, Any],
     ) -> UUID:
         self.payloads[event_type].validate(payload)
         now = datetime.now(UTC)

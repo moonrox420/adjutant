@@ -26,12 +26,25 @@ class GuardrailInput(Input):
     monthly_spend_cap_usd: Money
     daily_spend_cap_usd: Money
     max_daily_spend_increase_pct: Decimal = Field(
-        default=25, ge=0, le=100, decimal_places=2
+        default=Decimal("25.00"),
+        ge=Decimal("0.00"),
+        le=Decimal("100.00"),
+        decimal_places=2,
     )
     max_new_campaigns_per_day: int = Field(default=3, ge=1, le=1000)
     max_new_ads_per_day: int = Field(default=20, ge=1, le=10000)
-    per_channel_cap_pct: Decimal = Field(default=60, gt=0, le=100, decimal_places=2)
-    min_channel_floor_pct: Decimal = Field(default=0, ge=0, le=100, decimal_places=2)
+    per_channel_cap_pct: Decimal = Field(
+        default=Decimal("60.00"),
+        gt=Decimal("0.00"),
+        le=Decimal("100.00"),
+        decimal_places=2,
+    )
+    min_channel_floor_pct: Decimal = Field(
+        default=Decimal("0.00"),
+        ge=Decimal("0.00"),
+        le=Decimal("100.00"),
+        decimal_places=2,
+    )
     blocked_claims: list[str] = Field(default_factory=list, max_length=500)
     requires_approval_above_usd: Money | None = None
 
@@ -56,7 +69,7 @@ class LaunchApprovalInput(Input):
     expected_review_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
-def launch_scope(conn: Connection, brand_id: UUID, plan_id: UUID) -> dict[str, Any]:
+def launch_scope(conn: Connection[Any], brand_id: UUID, plan_id: UUID) -> dict[str, Any]:
     """Resolve actual selected accounts; a plan revision never revokes a consumed grant."""
     plan = one(
         conn, "SELECT * FROM plan WHERE brand_id=%s AND id=%s", (brand_id, plan_id)
@@ -65,7 +78,7 @@ def launch_scope(conn: Connection, brand_id: UUID, plan_id: UUID) -> dict[str, A
     manifest = one(
         conn, "SELECT campaign_review_manifest(%s,%s) AS document", (brand_id, plan_id)
     )["document"]
-    rows = conn.execute(
+    rows: Any = conn.execute(
         """SELECT a.channel,c.id AS connection_id,c.external_ad_account_id,
         c.external_account_name,c.health,c.verified_at,c.token_expires_at,c.authorization_generation,
         g.authorized_at,g.authorization_id
@@ -102,7 +115,7 @@ def launch_scope(conn: Connection, brand_id: UUID, plan_id: UUID) -> dict[str, A
 
 
 def issue_launch_authorization(
-    conn: Connection,
+    conn: Connection[Any],
     events: EventRegistry,
     signer: ApprovalSigner,
     brand_id: UUID,
@@ -113,7 +126,7 @@ def issue_launch_authorization(
     """Sign exactly the first-launch scope the authenticated human reviewed."""
     brand = locked_brand(conn, brand_id)
     seat = require_role(conn, brand_id, {"owner", "admin", "client_approver"})
-    previous = conn.execute(
+    previous: Any = conn.execute(
         "SELECT * FROM launch_authorization WHERE brand_id=%s AND request_key=%s",
         (brand_id, data.request_key),
     ).fetchone()
@@ -130,7 +143,7 @@ def issue_launch_authorization(
                 "This approval key belongs to another review.",
                 409,
             )
-        consumed = conn.execute(
+        consumed: Any = conn.execute(
             "SELECT g.connection_id FROM channel_launch_grant g JOIN channel_connection c "
             "ON c.id=g.connection_id AND c.brand_id=g.brand_id "
             "AND c.authorization_generation=g.authorization_generation WHERE authorization_id=%s",
@@ -293,7 +306,7 @@ def issue_launch_authorization(
 
 
 def consume_launch_authorization(
-    conn: Connection,
+    conn: Connection[Any],
     keys: dict[str, bytes],
     brand_id: UUID,
     authorization_id: UUID,
@@ -326,7 +339,7 @@ def consume_launch_authorization(
             "Launch authorization does not match its signed record.",
             403,
         )
-    existing = conn.execute(
+    existing: Any = conn.execute(
         "SELECT connection_id FROM channel_launch_grant WHERE authorization_id=%s AND brand_id=%s",
         (authorization_id, brand_id),
     ).fetchall()
@@ -382,7 +395,7 @@ def consume_launch_authorization(
             WHERE id=%s""",
             (brand_id,),
         )
-        action_row = conn.execute(
+        action_row: Any = conn.execute(
             """INSERT INTO action(
                 brand_id, actor_kind, action_type, target_kind, target_id, diff,
                 rationale, revert_path
@@ -425,3 +438,4 @@ def consume_launch_authorization(
                 },
             )
     return {"authorization_id": authorization_id, "consumed": True, "replayed": False}
+

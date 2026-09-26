@@ -10,6 +10,7 @@ import threading
 import time
 from email.message import EmailMessage
 from pathlib import Path
+from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
@@ -54,15 +55,16 @@ def deliver_mail(item: dict, config: dict) -> None:
         client.send_message(message)
 
 
-def consume_once(conn: psycopg.Connection, config: dict) -> int:
+def consume_once(conn: psycopg.Connection[Any], config: dict) -> int:
     """Each effect and durable receipt commit together; locked work is reclaimed on disconnect."""
     with conn.transaction():
         conn.execute("SELECT adjutant.reap_abandoned_jobs()")
-        count = conn.execute(
+        count_row: Any = conn.execute(
             "SELECT adjutant.consume_activity_batch(100) AS n"
-        ).fetchone()["n"]
+        ).fetchone()
+        count = count_row["n"] if count_row else 0
     with conn.transaction():
-        item = conn.execute("""SELECT * FROM adjutant.mail_outbox
+        item: Any = conn.execute("""SELECT * FROM adjutant.mail_outbox
             WHERE delivered_at IS NULL AND attempts<8 AND next_attempt_at<=now()
             ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED""").fetchone()
         if item:

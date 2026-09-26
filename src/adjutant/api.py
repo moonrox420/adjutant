@@ -1,7 +1,7 @@
 import logging
 import secrets
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -140,7 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     dummy_password = password_hash(secrets.token_urlsafe(32))
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         db.open()
         app.state.db = db
         app.state.config = config
@@ -191,10 +191,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         started = time.monotonic()
         response = None
         try:
+            allowed_origins = {config.public_origin}
+            if "localhost" in config.public_origin:
+                allowed_origins.add(config.public_origin.replace("localhost", "127.0.0.1"))
+            elif "127.0.0.1" in config.public_origin:
+                allowed_origins.add(config.public_origin.replace("127.0.0.1", "localhost"))
+            req_origin = request.headers.get("origin")
             invalid_origin = request.method not in {"GET", "HEAD", "OPTIONS"} and (
                 request.headers.get("x-adjutant-client") != "console"
-                or request.headers.get("origin", config.public_origin)
-                != config.public_origin
+                or (req_origin is not None and req_origin not in allowed_origins)
             )
             if invalid_origin:
                 response = JSONResponse(
@@ -555,7 +560,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     Jsonb(payload.metadata),
                 ),
             ).fetchone()
-            return row
+            if not row:
+                raise DomainError("DatabaseError", "Failed to create access application.", 500)
+            return dict(row)
 
     @app.patch("/api/brands/{brand_id}/access-applications/{application_id}")
     def update_access_application(
@@ -593,13 +600,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if updates:
                 updates.append("updated_at = now()")
                 params.extend([application_id, brand_id])
-                row = conn.execute(
+                row = one(
+                    conn,
                     f"UPDATE platform_access_application SET {', '.join(updates)} "
                     "WHERE id=%s AND brand_id=%s RETURNING *",
                     tuple(params),
-                ).fetchone()
-                return row
-            return app_row
+                )
+                return dict(row)
+            return dict(app_row)
 
     @app.post("/api/brands/{brand_id}/audit-export")
     def audit_export(

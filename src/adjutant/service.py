@@ -25,7 +25,7 @@ RESTRICTED = {
 
 
 def audit(
-    conn: Connection,
+    conn: Connection[Any],
     events: EventRegistry,
     brand_id: UUID,
     action: str,
@@ -70,11 +70,11 @@ def audit(
     return row["id"]
 
 
-def locked_brand(conn: Connection, brand_id: UUID) -> dict[str, Any]:
+def locked_brand(conn: Connection[Any], brand_id: UUID) -> dict[str, Any]:
     return one(conn, "SELECT * FROM brand WHERE id=%s FOR UPDATE", (brand_id,))
 
 
-def generation_gate(conn: Connection, brand: dict[str, Any]) -> None:
+def generation_gate(conn: Connection[Any], brand: dict[str, Any]) -> None:
     if brand["restricted_flags"] or not brand["campaigns_enabled"]:
         raise DomainError(
             "VerticalBlocked", "Campaign creation is blocked for this vertical."
@@ -89,7 +89,7 @@ def generation_gate(conn: Connection, brand: dict[str, Any]) -> None:
         )
 
 
-def validate_plan(conn: Connection, brand_id: UUID, plan: PlanInput) -> None:
+def validate_plan(conn: Connection[Any], brand_id: UUID, plan: PlanInput) -> None:
     ceiling = one(
         conn,
         "SELECT * FROM budget_ceiling WHERE brand_id=%s AND scope_kind='brand'",
@@ -117,7 +117,7 @@ def validate_plan(conn: Connection, brand_id: UUID, plan: PlanInput) -> None:
                 "UnsupportedObjective",
                 f"{allocation.channel} does not support {plan.objective} in the registry.",
             )
-        limits = conn.execute(
+        limits: Any = conn.execute(
             """SELECT * FROM budget_ceiling WHERE brand_id=%s
                                AND scope_kind='channel' AND scope_ref=%s""",
             (brand_id, allocation.channel),
@@ -134,7 +134,7 @@ def validate_plan(conn: Connection, brand_id: UUID, plan: PlanInput) -> None:
 
 
 def persist_plan(
-    conn: Connection,
+    conn: Connection[Any],
     events: EventRegistry,
     brand_id: UUID,
     data: PlanInput,
@@ -247,7 +247,7 @@ def check_plan_integrity(plan: dict[str, Any]) -> PlanInput:
 
 
 def request_approval(
-    conn: Connection,
+    conn: Connection[Any],
     events: EventRegistry,
     brand_id: UUID,
     plan_id: UUID,
@@ -327,7 +327,7 @@ def request_approval(
 
 
 def decide(
-    conn: Connection,
+    conn: Connection[Any],
     events: EventRegistry,
     signer: ApprovalSigner,
     brand_id: UUID,
@@ -451,7 +451,7 @@ def decide(
 
 
 def issue_token(
-    conn: Connection,
+    conn: Connection[Any],
     events: EventRegistry,
     signer: ApprovalSigner,
     request: dict[str, Any],

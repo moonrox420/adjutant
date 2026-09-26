@@ -27,7 +27,13 @@ adjutant = ["event_registry.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "scripts", "tests"]
+
+[tool.pyright]
+include = ["src", "scripts", "tests"]
+extraPaths = ["src", "scripts", "tests"]
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false
 
 [tool.ruff]
 line-length = 100

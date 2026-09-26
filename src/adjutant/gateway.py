@@ -45,7 +45,7 @@ class SpendAuthority:
             raise ValueError("A nonempty trusted Ed25519 public-key ring is required")
         self.trusted_keys = dict(trusted_keys)
 
-    def validate(self, conn: Connection, intent: SpendIntent) -> dict[str, Any]:
+    def validate(self, conn: Connection[Any], intent: SpendIntent) -> dict[str, Any]:
         """Lock brand before token, matching stop operations and serializing authority changes."""
         conn.execute(
             "SELECT lock_spend_authority(%s,%s)", (intent.brand_id, intent.token_id)
@@ -196,7 +196,7 @@ class SpendAuthority:
                 "Cumulative commitments exceed the signed approval cap.",
                 403,
             )
-        ceilings = conn.execute(
+        ceilings: Any = conn.execute(
             """SELECT * FROM budget_ceiling WHERE brand_id=%s
             AND (scope_kind='brand' OR (scope_kind='channel' AND scope_ref=%s))""",
             (intent.brand_id, intent.channel),
@@ -234,7 +234,7 @@ class SpendAuthority:
             "idempotency_key": intent.idempotency_key,
         }
 
-    def reserve(self, conn: Connection, intent: SpendIntent) -> dict[str, Any]:
+    def reserve(self, conn: Connection[Any], intent: SpendIntent) -> dict[str, Any]:
         """Reserve in the caller's transaction; replays never allocate another commitment."""
         result = self.validate(conn, intent)
         row = one(

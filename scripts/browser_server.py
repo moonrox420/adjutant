@@ -39,12 +39,15 @@ Path(".local/browser-generation-user.json").write_text(
 stop_identity = seed_identity(admin_url)
 with psycopg.connect(admin_url) as conn:
     conn.execute("SET search_path=adjutant,public")
-    stop_brand = conn.execute(
+    brand_row = conn.execute(
         "INSERT INTO brand(account_id,display_name,website_url,vertical) "
         "VALUES(%s,'Remote pause test inventory','https://example.com','home_services') "
         "RETURNING id",
         (stop_identity["account_id"],),
-    ).fetchone()[0]
+    ).fetchone()
+    if not brand_row:
+        raise RuntimeError("Failed to insert stop brand")
+    stop_brand = brand_row[0]
     conn.execute(
         "INSERT INTO guardrail(brand_id,monthly_spend_cap_usd,daily_spend_cap_usd) "
         "VALUES(%s,3000,100)",
@@ -53,11 +56,14 @@ with psycopg.connect(admin_url) as conn:
     for (channel,) in conn.execute(
         "SELECT unnest(enum_range(NULL::channel))::text"
     ).fetchall():
-        connection = conn.execute(
+        conn_row = conn.execute(
             "INSERT INTO channel_connection(brand_id,channel,external_ad_account_id,selected) "
             "VALUES(%s,%s,'browser-test-account',true) RETURNING id",
             (stop_brand, channel),
-        ).fetchone()[0]
+        ).fetchone()
+        if not conn_row:
+            continue
+        connection = conn_row[0]
         conn.execute(
             "INSERT INTO campaign_object(brand_id,connection_id,channel,level,native_id,state) "
             "VALUES(%s,%s,%s,'campaign','browser-test-campaign','active')",

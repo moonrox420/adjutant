@@ -25,7 +25,7 @@ def migrate(url: str) -> None:
                 if prior[0] != checksum:
                     raise RuntimeError(f"Applied migration changed: {path.name}")
                 continue
-            conn.execute(content.decode("utf-8-sig"))
+            conn.execute(content)
             conn.execute(
                 "INSERT INTO public.adjutant_migration(name,checksum) VALUES(%s,%s)",
                 (path.name, checksum),

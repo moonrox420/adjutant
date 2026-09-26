@@ -52,8 +52,9 @@ async def generate_copy(config: Settings, context: dict) -> AdCopyBundle:
                 "model": config.ollama_model,
                 "context": context,
             }
-            child.stdin.write((json.dumps(data, default=str) + "\n").encode())
-            child.stdin.flush()
+            if child.stdin:
+                child.stdin.write((json.dumps(data, default=str) + "\n").encode())
+                child.stdin.flush()
             async with asyncio.timeout(250):
                 while child.poll() is None:
                     if os.fstat(output.fileno()).st_size > 1024 * 1024:
@@ -83,7 +84,8 @@ async def generate_copy(config: Settings, context: dict) -> AdCopyBundle:
             ) from exc
         finally:
             terminate_owned(child)
-            child.stdin.close()
+            if child.stdin:
+                child.stdin.close()
 
 
 def main() -> None:

@@ -5,6 +5,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -22,14 +23,14 @@ from adjutant.service import locked_brand
 logger = logging.getLogger(__name__)
 
 
-def enqueue_stop(conn: Connection, brand_id: UUID, actor_id: UUID) -> UUID:
+def enqueue_stop(conn: Connection[Any], brand_id: UUID, actor_id: UUID) -> UUID:
     """Snapshot managed roots and descendants atomically with the brand's kill switch."""
     run_id = one(
         conn,
         "INSERT INTO remote_stop_run(brand_id,requested_by) VALUES(%s,%s) RETURNING id",
         (brand_id, actor_id),
     )["id"]
-    objects = conn.execute(
+    objects: Any = conn.execute(
         "SELECT o.*,c.external_ad_account_id FROM campaign_object o JOIN channel_connection c "
         "ON c.id=o.connection_id AND c.brand_id=o.brand_id WHERE o.brand_id=%s "
         "AND o.state NOT IN ('deleted','archived')",
@@ -274,10 +275,11 @@ def execute_stop(
     """A session advisory lock prevents duplicate workers and releases on process death."""
     deadline = time.monotonic() + 45
     with db.pool.connection() as lock:
-        acquired = lock.execute(
+        lock_row: Any = lock.execute(
             "SELECT pg_try_advisory_lock(hashtextextended(%s,28)) AS acquired",
             (str(run_id),),
-        ).fetchone()["acquired"]
+        ).fetchone()
+        acquired = lock_row["acquired"] if lock_row else False
         if not acquired:
             return
         try:
@@ -290,7 +292,7 @@ def execute_stop(
                 conn.execute(
                     "UPDATE remote_stop_run SET state='running' WHERE id=%s", (run_id,)
                 )
-                items = conn.execute(
+                items: Any = conn.execute(
                     "SELECT i.*,o.native_payload FROM remote_stop_item i JOIN campaign_object "
                     "o ON o.id=i.campaign_object_id WHERE i.run_id=%s AND i.state='pending'",
                     (run_id,),

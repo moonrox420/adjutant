@@ -9,6 +9,8 @@ from uuid import UUID
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
+from adjutant.errors import DomainError
+
 
 @dataclass(frozen=True)
 class FatigueSignals:
@@ -44,7 +46,7 @@ def detect_fatigue(
 
 
 def record_finding(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     kind: str,
     subject_id: UUID,
@@ -53,21 +55,23 @@ def record_finding(
 ) -> UUID:
     """Persist a diagnosis finding enforcing the database check constraint on fatigue signals."""
     sig_list = signals or []
-    row = conn.execute(
+    row: Any = conn.execute(
         """INSERT INTO finding(brand_id, kind, signals, subject_id, details)
         VALUES (%s, %s, %s, %s, %s) RETURNING id""",
         (brand_id, kind, sig_list, subject_id, Jsonb(details or {})),
     ).fetchone()
+    if row is None:
+        raise DomainError("DatabaseError", "Failed to record finding.", 500)
     return row["id"]
 
 
 def diagnose_campaign_objects(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
 ) -> list[dict[str, Any]]:
     """Scan active campaign objects for fatigue and winners."""
     findings = []
-    objects = conn.execute(
+    objects: Any = conn.execute(
         """SELECT co.id, co.channel, co.native_id, co.state,
                   co.created_at, co.daily_budget_usd
         FROM campaign_object co
@@ -76,7 +80,7 @@ def diagnose_campaign_objects(
     ).fetchall()
 
     for obj in objects:
-        metrics = conn.execute(
+        metrics: Any = conn.execute(
             """SELECT
                 sum(impressions) AS total_impressions,
                 sum(clicks) AS total_clicks,
@@ -89,7 +93,7 @@ def diagnose_campaign_objects(
             (brand_id, obj["id"]),
         ).fetchone()
 
-        prior_metrics = conn.execute(
+        prior_metrics: Any = conn.execute(
             """SELECT
                 sum(impressions) AS prior_impressions,
                 sum(clicks) AS prior_clicks,
@@ -114,10 +118,10 @@ def diagnose_campaign_objects(
         ctr = clicks / impressions if impressions > 0 else Decimal("0.0")
         cpa = spend / conversions if conversions > 0 else Decimal("9999.0")
 
-        prior_imp = Decimal(str(prior_metrics["prior_impressions"] or 0))
-        prior_clicks = Decimal(str(prior_metrics["prior_clicks"] or 0))
-        prior_spend = Decimal(str(prior_metrics["prior_spend"] or 0))
-        prior_conv = Decimal(str(prior_metrics["prior_conversions"] or 0))
+        prior_imp = Decimal(str(prior_metrics["prior_impressions"] or 0)) if prior_metrics else Decimal("0")
+        prior_clicks = Decimal(str(prior_metrics["prior_clicks"] or 0)) if prior_metrics else Decimal("0")
+        prior_spend = Decimal(str(prior_metrics["prior_spend"] or 0)) if prior_metrics else Decimal("0")
+        prior_conv = Decimal(str(prior_metrics["prior_conversions"] or 0)) if prior_metrics else Decimal("0")
 
         prior_ctr = prior_clicks / prior_imp if prior_imp > 0 else ctr
         prior_cpa = prior_spend / prior_conv if prior_conv > 0 else cpa
@@ -128,15 +132,17 @@ def diagnose_campaign_objects(
         created_at = obj.get("created_at")
         half_life_exceeded = False
         if created_at:
-            now_dt = conn.execute("SELECT now()").fetchone()["now"]
-            half_life_exceeded = bool(created_at < (now_dt - timedelta(days=10)))
+            now_row: Any = conn.execute("SELECT now()").fetchone()
+            now_dt = now_row["now"] if now_row else None
+            if now_dt:
+                half_life_exceeded = created_at < (now_dt - timedelta(days=10))
 
         # Evaluate fatigue signals
         signals = FatigueSignals(
-            frequency_above_3=bool(frequency > Decimal("3.0")),
-            ctr_declining_15pct=bool(ctr_drop >= Decimal("0.15")),
-            cpa_rising_20pct=bool(cpa_rise >= Decimal("0.20")),
-            impressions_declining_bid_stable=bool(
+            frequency_above_3=frequency > Decimal("3.0"),
+            ctr_declining_15pct=ctr_drop >= Decimal("0.15"),
+            cpa_rising_20pct=cpa_rise >= Decimal("0.20"),
+            impressions_declining_bid_stable=(
                 impressions < prior_imp and prior_imp > 0
             ),
             half_life_exceeded=half_life_exceeded,

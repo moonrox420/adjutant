@@ -7,9 +7,10 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Literal
+from typing import IO, Any, Literal
 from uuid import UUID
 
+from psycopg import Connection
 from pydantic import ValidationError
 
 from adjutant.db import Database, Principal, one
@@ -36,7 +37,7 @@ def child_environment() -> dict[str, str]:
     return env
 
 
-def launch(module: str, output: object) -> subprocess.Popen:
+def launch(module: str, output: IO[Any] | int | None) -> subprocess.Popen:
     return subprocess.Popen(
         [sys.executable, "-m", module],
         stdin=subprocess.PIPE,
@@ -58,7 +59,7 @@ def terminate_owned(process: subprocess.Popen) -> int:
     return process.wait(timeout=3)
 
 
-def lock_active_session(conn: object, token_hash: str) -> None:
+def lock_active_session(conn: Connection[Any], token_hash: str) -> None:
     if not one(conn, "SELECT lock_session(%s) AS valid", (token_hash,))["valid"]:
         raise DomainError("Unauthorized", "Your session ended. Sign in again.", 401)
 
@@ -84,22 +85,23 @@ def generate_in_process(
                     "UPDATE agent_run SET worker_pid=%s,worker_heartbeat_at=now() WHERE id=%s",
                     (process.pid, run),
                 )
-            process.stdin.write(
-                (
-                    json.dumps(
-                        {
-                            "url": url,
-                            "model": model,
-                            "context": context,
-                            "provider": provider,
-                            "api_key": api_key,
-                        },
-                        default=str,
-                    )
-                    + "\n"
-                ).encode()
-            )
-            process.stdin.flush()
+            if process.stdin:
+                process.stdin.write(
+                    (
+                        json.dumps(
+                            {
+                                "url": url,
+                                "model": model,
+                                "context": context,
+                                "provider": provider,
+                                "api_key": api_key,
+                            },
+                            default=str,
+                        )
+                        + "\n"
+                    ).encode()
+                )
+                process.stdin.flush()
             while True:
                 with db.transaction(actor) as conn:
                     state = one(
@@ -171,7 +173,8 @@ def generate_in_process(
                 ) from exc
         finally:
             code = terminate_owned(process)
-            process.stdin.close()
+            if process.stdin:
+                process.stdin.close()
             with db.transaction(actor) as conn:
                 conn.execute(
                     """UPDATE agent_run SET worker_exit_code=%s,

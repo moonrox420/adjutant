@@ -3,6 +3,7 @@
 import json
 import time
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from psycopg import Connection
@@ -19,7 +20,7 @@ def credential_name(channel: str, kind: str) -> str:
 
 
 def read_credential(
-    conn: Connection, store: CredentialStore, brand_id: UUID, channel: str, kind: str
+    conn: Connection[Any], store: CredentialStore, brand_id: UUID, channel: str, kind: str
 ) -> dict:
     name = credential_name(channel, kind)
     if not conn.execute(
@@ -41,7 +42,7 @@ def read_credential(
 
 
 def write_credential(
-    conn: Connection,
+    conn: Connection[Any],
     store: CredentialStore,
     brand_id: UUID,
     channel: str,
@@ -52,7 +53,7 @@ def write_credential(
 
 
 def authorization_for(
-    conn: Connection,
+    conn: Connection[Any],
     config: Settings,
     brand_id: UUID,
     channel: str,
@@ -85,7 +86,7 @@ def authorization_for(
 
 
 def invalidate_connection(
-    conn: Connection, brand_id: UUID, connection_id: UUID, reason: str
+    conn: Connection[Any], brand_id: UUID, connection_id: UUID, reason: str
 ) -> None:
     """A remote authorization failure revokes both displayed access and launch generation."""
     conn.execute(
@@ -93,3 +94,4 @@ def invalidate_connection(
         "health_detail=%s WHERE id=%s AND brand_id=%s",
         (reason, connection_id, brand_id),
     )
+

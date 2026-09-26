@@ -118,9 +118,11 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
         f"postgresql://adjutant_admin:{quote(database_password)}@127.0.0.1:{db_port}"
     )
     with psycopg.connect(server + "/postgres", autocommit=True) as conn:
+        data_dir_row = conn.execute("SHOW data_directory").fetchone()
+        if not data_dir_row:
+            raise RuntimeError("Could not determine database data directory")
         if (
-            conn.execute("SHOW data_directory")
-            .fetchone()[0]
+            str(data_dir_row[0])
             .replace("\\", "/")
             .rstrip("/")
             .casefold()
@@ -140,21 +142,26 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
             "SELECT id FROM app_user WHERE email='owner@adjutant.local'"
         ).fetchone()
         if owner is None:
-            owner = conn.execute(
+            owner_row = conn.execute(
                 "INSERT INTO app_user(email,full_name,email_verified_at) "
                 "VALUES('owner@adjutant.local','Workspace owner',now()) RETURNING id"
             ).fetchone()
-            account = conn.execute(
+            if not owner_row:
+                raise RuntimeError("Failed to create workspace owner")
+            account_row = conn.execute(
                 "INSERT INTO account(account_type,display_name) "
                 "VALUES('business','My business') RETURNING id"
-            ).fetchone()[0]
+            ).fetchone()
+            if not account_row:
+                raise RuntimeError("Failed to create workspace account")
+            account = account_row[0]
             conn.execute(
                 "INSERT INTO local_credential VALUES(%s,%s)",
-                (owner[0], password_hash(owner_password)),
+                (owner_row[0], password_hash(owner_password)),
             )
             conn.execute(
                 "INSERT INTO seat(account_id,user_id,role,accepted_at) VALUES(%s,%s,'owner',now())",
-                (account, owner[0]),
+                (account, owner_row[0]),
             )
     config_path = state / "runtime.json"
     config = {

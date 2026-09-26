@@ -13,10 +13,16 @@ from urllib.parse import quote
 import psycopg
 from psycopg import sql
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from migrate import migrate
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
+from migrate import migrate  # noqa: E402
 
-from adjutant.security import ApprovalSigner, generate_signing_key, password_hash
+from adjutant.security import (  # noqa: E402
+    ApprovalSigner,
+    generate_signing_key,
+    password_hash,
+)
 
 
 def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
@@ -258,16 +264,22 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
             "SELECT id FROM app_user WHERE email=%s", (email,)
         ).fetchone()
         if existing is None:
-            user = conn.execute(
+            user_row = conn.execute(
                 "INSERT INTO app_user(email,full_name,email_verified_at) "
                 "VALUES(%s,%s,now()) RETURNING id",
                 (email, "Workspace owner"),
-            ).fetchone()[0]
-            account = conn.execute(
+            ).fetchone()
+            if not user_row:
+                raise RuntimeError("Failed to create workspace owner")
+            user = user_row[0]
+            account_row = conn.execute(
                 """INSERT INTO account(account_type,display_name)
                                     VALUES(%s,'My workspace') RETURNING id""",
                 (account_type,),
-            ).fetchone()[0]
+            ).fetchone()
+            if not account_row:
+                raise RuntimeError("Failed to create workspace account")
+            account = account_row[0]
             conn.execute(
                 "INSERT INTO local_credential VALUES(%s,%s)",
                 (user, password_hash(password)),

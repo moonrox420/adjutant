@@ -25,15 +25,21 @@ def seed_identity(admin_url: str) -> dict[str, str]:
     email, password = f"canary-{uuid4()}@adjutant.test", secrets.token_urlsafe(24)
     with psycopg.connect(admin_url) as conn:
         conn.execute("SET search_path=adjutant,public")
-        user = conn.execute(
+        user_row = conn.execute(
             "INSERT INTO app_user(email,full_name,email_verified_at) "
             "VALUES(%s,'Test operator',now()) RETURNING id",
             (email,),
-        ).fetchone()[0]
-        account = conn.execute(
+        ).fetchone()
+        if not user_row:
+            raise RuntimeError("Failed to seed user")
+        user = user_row[0]
+        account_row = conn.execute(
             """INSERT INTO account(account_type,display_name)
                                   VALUES('agency','Canary workspace') RETURNING id"""
-        ).fetchone()[0]
+        ).fetchone()
+        if not account_row:
+            raise RuntimeError("Failed to seed account")
+        account = account_row[0]
         conn.execute(
             "INSERT INTO local_credential VALUES(%s,%s)",
             (user, password_hash(password)),

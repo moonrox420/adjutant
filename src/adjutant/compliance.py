@@ -109,7 +109,7 @@ def verify_claim_substantiation(
 
 
 def route_policy_rejection(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     channel: str,
     campaign_object_id: UUID,
@@ -125,7 +125,7 @@ def route_policy_rejection(
         "policy_code", "GENERIC_POLICY_VIOLATION"
     )
 
-    escalation_id = conn.execute(
+    escalation_row: Any = conn.execute(
         """INSERT INTO escalation(
             brand_id, trigger_type, scope_kind, scope_id, context, state
         ) VALUES (
@@ -144,7 +144,10 @@ def route_policy_rejection(
                 }
             ),
         ),
-    ).fetchone()["id"]
+    ).fetchone()
+    if not escalation_row:
+        raise RuntimeError("Failed to create policy rejection escalation record")
+    escalation_id: UUID = escalation_row["id"]
 
     # Mark object as policy_rejected in DB to prevent runner from cycling
     conn.execute(
@@ -156,14 +159,14 @@ def route_policy_rejection(
 
 
 def generate_signed_compliance_export(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     start_time: datetime,
     end_time: datetime,
     signer: ApprovalSigner | None = None,
 ) -> dict[str, Any]:
     """S13.4: Generate byte-identical signed compliance audit export for a fixed time window."""
-    actions = conn.execute(
+    actions: Any = conn.execute(
         """SELECT id, executed_at, actor_kind, action_type, target_kind, target_id,
                   channel, diff, rationale, revert_path
         FROM action
@@ -174,7 +177,7 @@ def generate_signed_compliance_export(
         (brand_id, start_time, end_time),
     ).fetchall()
 
-    decisions = conn.execute(
+    decisions: Any = conn.execute(
         """SELECT id, finding_id, kind, target_id, channel, params, state,
                   rejection_reason, executed_at
         FROM autonomous_decision

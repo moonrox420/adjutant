@@ -1,20 +1,19 @@
-"""Controlled HTTP provider for browser tests; never used by the application launcher."""
-
 import json
 import select
 import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 MODEL = "browser-lifecycle-model"
 
 
 @contextmanager
-def browser_inference(marker: Path) -> Iterator[str]:
+def browser_inference(marker: Path) -> Generator[str, None, None]:
     """Hold a real worker HTTP request until disconnect, shutdown, or a bounded timeout."""
     stopped = threading.Event()
     marker.write_text("{}", encoding="utf-8")
@@ -70,7 +69,7 @@ def browser_inference(marker: Path) -> Iterator[str]:
             if not stopped.is_set():
                 self.send_error(504, "Controlled inference deadline reached")
 
-        def log_message(self, *_: object) -> None:
+        def log_message(self, format: str, *args: Any) -> None:
             """The marker records the fixture's lifecycle without logging prompt contents."""
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)

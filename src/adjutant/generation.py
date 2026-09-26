@@ -170,6 +170,7 @@ class OllamaPlanner:
             timeout=httpx.Timeout(timeout_seconds, connect=5), trust_env=False
         ) as client:
             for attempt in range(1, max_attempts + 1):
+                content = ""
                 try:
                     response = client.post(
                         f"{self.base_url}/api/chat",

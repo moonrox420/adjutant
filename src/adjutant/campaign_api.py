@@ -1,5 +1,3 @@
-"""Authenticated URL-to-ad generation and revisioned Ad Studio persistence."""
-
 import base64
 import logging
 import re
@@ -7,6 +5,7 @@ from collections.abc import Callable
 from typing import Annotated, Any
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, Depends, Request
 from psycopg.types.json import Jsonb
 from starlette.concurrency import run_in_threadpool
@@ -66,7 +65,9 @@ def scene_graph(document: dict[str, Any], image_key: str) -> dict[str, Any]:
     }
 
 
-def draft_response(row: dict, storage: ObjectStore, conn=None) -> dict:
+def draft_response(
+    row: dict, storage: ObjectStore, conn: psycopg.Connection[Any] | None = None
+) -> dict:
     concepts = []
     if conn is not None and row.get("job_id"):
         concepts = conn.execute(

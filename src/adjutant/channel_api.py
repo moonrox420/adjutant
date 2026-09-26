@@ -1,11 +1,10 @@
-"""Tenant-scoped OAuth consent, encrypted credentials, and verified account selection."""
-
 import hashlib
 import secrets
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from psycopg.types.json import Jsonb
@@ -64,13 +63,23 @@ def channel_router(
             f"{config.public_origin}/api/brands/{brand_id}/channels/{channel}/callback"
         )
 
-    def read(conn, brand_id: UUID, channel: str, kind: str) -> dict:
+    def read(
+        conn: psycopg.Connection[Any], brand_id: UUID, channel: str, kind: str
+    ) -> dict:
         return read_credential(conn, store, brand_id, channel, kind)
 
-    def write(conn, brand_id: UUID, channel: str, kind: str, value: dict) -> None:
+    def write(
+        conn: psycopg.Connection[Any],
+        brand_id: UUID,
+        channel: str,
+        kind: str,
+        value: dict,
+    ) -> None:
         write_credential(conn, store, brand_id, channel, kind, value)
 
-    def authorization_for(conn, brand_id: UUID, channel: str) -> tuple[dict, dict]:
+    def authorization_for(
+        conn: psycopg.Connection[Any], brand_id: UUID, channel: str
+    ) -> tuple[dict, dict]:
         return channel_authorization(conn, config, brand_id, channel)
 
     def record_error(
@@ -461,7 +470,7 @@ def channel_router(
         return {
             "disconnected": True,
             **result,
-            "message": "Stored tokens were deleted. " + result["message"],
+            "message": f"Stored tokens were deleted. {result.get('message', '')}",
             "documentation": provider.documentation,
         }
 

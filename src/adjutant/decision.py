@@ -8,10 +8,11 @@ from psycopg import Connection
 from psycopg.types.json import Jsonb
 
 from adjutant.db import one
+from adjutant.errors import DomainError
 
 
 def record_escalation(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     trigger_type: str,
     scope_kind: str,
@@ -19,16 +20,18 @@ def record_escalation(
     context: dict[str, Any] | None = None,
 ) -> UUID:
     """Record an escalation halting autonomous action on the affected scope only."""
-    row = conn.execute(
+    row: Any = conn.execute(
         """INSERT INTO escalation(brand_id, trigger_type, scope_kind, scope_id, context, state)
         VALUES (%s, %s, %s, %s, %s, 'open') RETURNING id""",
         (brand_id, trigger_type, scope_kind, scope_id, Jsonb(context or {})),
     ).fetchone()
+    if row is None:
+        raise DomainError("DatabaseError", "Failed to record escalation.", 500)
     return row["id"]
 
 
 def is_scope_halted(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     channel: str | None = None,
     object_id: UUID | None = None,
@@ -56,7 +59,7 @@ def is_scope_halted(
 
 
 def evaluate_guardrails(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     candidate: dict[str, Any],
 ) -> dict[str, Any]:
@@ -110,15 +113,12 @@ def evaluate_guardrails(
                 "reason": f"Breaches daily_spend_cap_usd of {daily_cap}.",
                 "params": params,
             }
-        current_total_daily = Decimal(
-            str(
-                conn.execute(
-                    "SELECT COALESCE(sum(daily_budget_usd), 0) AS total FROM campaign_object "
-                    "WHERE brand_id=%s AND state='active' AND level IN ('campaign', 'ad')",
-                    (brand_id,),
-                ).fetchone()["total"]
-            )
-        )
+        total_row: Any = conn.execute(
+            "SELECT COALESCE(sum(daily_budget_usd), 0) AS total FROM campaign_object "
+            "WHERE brand_id=%s AND state='active' AND level IN ('campaign', 'ad')",
+            (brand_id,),
+        ).fetchone()
+        current_total_daily = Decimal(str(total_row["total"])) if total_row else Decimal("0.00")
         delta = raw_proposed - raw_current
         if kind == "reallocate_budget" and params.get("source_campaign_id"):
             # Reallocation moves budget between campaigns; net addition to total account spend is 0
@@ -191,11 +191,12 @@ def evaluate_guardrails(
 
     # Hard guardrail: max_new_ads_per_day
     if kind == "refresh_creative":
-        ads_today = conn.execute(
+        ads_row: Any = conn.execute(
             """SELECT count(*) AS n FROM campaign_object
             WHERE brand_id=%s AND level='ad' AND created_at >= now() - interval '24 hours'""",
             (brand_id,),
-        ).fetchone()["n"]
+        ).fetchone()
+        ads_today = ads_row["n"] if ads_row else 0
         if ads_today >= limits["max_new_ads_per_day"]:
             return {
                 "approved": False,

@@ -22,12 +22,12 @@ class BulkOperationResult:
 
 
 def verify_client_approver_brand_access(
-    conn: Connection,
+    conn: Connection[Any],
     user_id: UUID,
     target_brand_id: UUID,
 ) -> bool:
     """S12.1: A client approver can approve only their own brand and read nothing else."""
-    seats = conn.execute(
+    seats: Any = conn.execute(
         """SELECT role, brand_id, account_id FROM seat
         WHERE user_id=%s AND revoked_at IS NULL""",
         (user_id,),
@@ -61,7 +61,7 @@ def verify_client_approver_brand_access(
 
 
 def execute_bulk_brand_operation(
-    conn: Connection,
+    conn: Connection[Any],
     account_id: UUID,
     brand_ids: list[UUID],
     operation_kind: str,
@@ -76,7 +76,7 @@ def execute_bulk_brand_operation(
 
     for brand_id in brand_ids:
         # Verify brand belongs to account
-        brand = conn.execute(
+        brand: Any = conn.execute(
             "SELECT id, status FROM brand WHERE id=%s AND account_id=%s",
             (brand_id, account_id),
         ).fetchone()
@@ -91,8 +91,8 @@ def execute_bulk_brand_operation(
             continue
 
         try:
-            # Use savepoint so failure on one brand rolls back ONLY that brand's mutation
-            with conn.savepoint():
+            # Use nested transaction (savepoint) so failure on one brand rolls back ONLY that brand's mutation
+            with conn.transaction():
                 if operation_kind == "set_monthly_ceiling":
                     new_monthly = Decimal(str(params["monthly_usd_max"]))
                     new_daily = Decimal(
@@ -153,13 +153,13 @@ def execute_bulk_brand_operation(
 
 
 def compute_cross_client_rollup(
-    conn: Connection,
+    conn: Connection[Any],
     account_id: UUID,
     start_date: str,
     end_date: str,
 ) -> dict[str, Any]:
     """S12.2: Cross-client rollups never mix comparability classes without explicit annotation."""
-    facts = conn.execute(
+    facts: Any = conn.execute(
         """SELECT
             mn.brand_id,
             b.display_name AS brand_name,
@@ -202,8 +202,12 @@ def compute_cross_client_rollup(
         spend_facts = [item for item in group if item["metric_key"] == "spend"]
         conv_facts = [item for item in group if item["metric_key"] == "conversions"]
 
-        total_spend = sum(Decimal(str(x["metric_value"])) for x in spend_facts)
-        total_conv = sum(Decimal(str(x["metric_value"])) for x in conv_facts)
+        total_spend = sum(
+            (Decimal(str(x["metric_value"])) for x in spend_facts), Decimal("0.00")
+        )
+        total_conv = sum(
+            (Decimal(str(x["metric_value"])) for x in conv_facts), Decimal("0.00")
+        )
         blended_cpa = (total_spend / total_conv) if total_conv > 0 else Decimal("0.00")
 
         rollup_by_class[comp_class] = {
@@ -237,3 +241,4 @@ def compute_cross_client_rollup(
             for k, v in brand_summaries.items()
         },
     }
+

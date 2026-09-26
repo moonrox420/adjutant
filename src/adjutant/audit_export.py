@@ -32,7 +32,7 @@ class AuditWindow(BaseModel):
 
 
 def signed_export(
-    conn: Connection, signer: ApprovalSigner, brand_id: UUID, window: AuditWindow
+    conn: Connection[Any], signer: ApprovalSigner, brand_id: UUID, window: AuditWindow
 ) -> dict[str, Any]:
     """Sign the exact ledger snapshot; fixed windows and unchanged rows produce identical bytes."""
     one(conn, "SELECT id FROM brand WHERE id=%s", (brand_id,))
