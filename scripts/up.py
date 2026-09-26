@@ -162,6 +162,7 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
         owner = conn.execute(
             "SELECT id FROM app_user WHERE email='owner@adjutant.local'"
         ).fetchone()
+
         if owner is None:
             owner_row = conn.execute(
                 "INSERT INTO app_user(email,full_name,email_verified_at) "

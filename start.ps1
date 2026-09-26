@@ -43,7 +43,7 @@ if ($pgBin) {
 }
 
 # Helper: safely kill only Adjutant processes bound to a specific port
-function Kill-PortListener([int]$Port) {
+function Stop-PortListener([int]$Port) {
     $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
     foreach ($conn in $conns) {
         try {
@@ -77,28 +77,28 @@ function Test-WebHealth {
 # 4. Start Approval Service (Port 8003)
 if ($Restart -or -not (Test-ServiceHealth 'http://127.0.0.1:8003/healthz' 'service' 'adjutant-approval')) {
     Write-Host ">>> Starting Approval Service (Port 8003)..." -ForegroundColor Yellow
-    Kill-PortListener 8003
+    Stop-PortListener 8003
     Start-Process -FilePath $pythonExe -ArgumentList @('-m','uvicorn','adjutant.approval_api:create_app','--factory','--app-dir','src','--host','127.0.0.1','--port','8003') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $projectRoot '.local/approval.stdout.log') -RedirectStandardError (Join-Path $projectRoot '.local/approval.stderr.log')
 }
 
 # 5. Start Launch Gateway (Port 8002)
 if ($Restart -or -not (Test-ServiceHealth 'http://127.0.0.1:8002/healthz' 'service' 'adjutant-gateway')) {
     Write-Host ">>> Starting Launch Gateway (Port 8002)..." -ForegroundColor Yellow
-    Kill-PortListener 8002
+    Stop-PortListener 8002
     Start-Process -FilePath $pythonExe -ArgumentList @('-m','uvicorn','adjutant.gateway_api:create_app','--factory','--app-dir','src','--host','127.0.0.1','--port','8002') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $projectRoot '.local/gateway.stdout.log') -RedirectStandardError (Join-Path $projectRoot '.local/gateway.stderr.log')
 }
 
 # 6. Start Core Backend API (Port 8000)
 if ($Restart -or -not (Test-ServiceHealth 'http://127.0.0.1:8000/healthz' 'service' 'adjutant-core')) {
     Write-Host ">>> Starting Core Backend API (Port 8000)..." -ForegroundColor Yellow
-    Kill-PortListener 8000
+    Stop-PortListener 8000
     Start-Process -FilePath $pythonExe -ArgumentList @('-m','uvicorn','adjutant.api:create_app','--factory','--app-dir','src','--host','127.0.0.1','--port','8000') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $projectRoot '.local/api.stdout.log') -RedirectStandardError (Join-Path $projectRoot '.local/api.stderr.log')
 }
 
 # 7. Start Web Console (Port 3000)
 if ($Restart -or -not (Test-WebHealth)) {
     Write-Host ">>> Starting Web Console (Port 3000)..." -ForegroundColor Yellow
-    Kill-PortListener 3000
+    Stop-PortListener 3000
     $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
     $nextBin = Join-Path $projectRoot 'web\node_modules\next\dist\bin\next'
     if ($nodeExe -and (Test-Path $nextBin)) {
