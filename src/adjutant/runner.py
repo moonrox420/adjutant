@@ -187,10 +187,10 @@ def run_tick(
                     """INSERT INTO action(
                         brand_id, actor_kind, action_type, target_kind, target_id,
                         channel, target_native_id, diff, rationale, token_id, revert_path,
-                        executed_at
+                        usd_impact, executed_at
                     ) VALUES (
                         %s, 'system', 'creative_swap', 'campaign_object', %s,
-                        %s, %s, %s, %s, %s, %s, clock_timestamp()
+                        %s, %s, %s, %s, %s, %s, %s, clock_timestamp()
                     ) RETURNING id""",
                     (
                         brand_id,
@@ -214,6 +214,7 @@ def run_tick(
                                 "before_state": "deleted",
                             }
                         ),
+                        fatigued_obj["daily_budget_usd"],
                     ),
                 )
 
@@ -265,10 +266,10 @@ def run_tick(
                 action_row: Any = conn.execute(
                     """INSERT INTO action(
                         brand_id, actor_kind, action_type, target_kind, target_id,
-                        channel, diff, rationale, token_id, revert_path
+                        channel, diff, rationale, token_id, revert_path, usd_impact
                     ) VALUES (
                         %s, 'system', 'budget_set', 'campaign_object', %s,
-                        %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s
                     ) RETURNING id""",
                     (
                         brand_id,
@@ -290,6 +291,7 @@ def run_tick(
                                 "before_state": "active",
                             }
                         ),
+                        new_budget,
                     ),
                 ).fetchone()
                 action_id = action_row["id"] if action_row else None
