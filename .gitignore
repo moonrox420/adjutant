@@ -16,6 +16,3 @@ node_modules/
 test-results/
 playwright-report/
 BUILD_STATUS.md
-tests/
-migrations/
-GEMINI.md

@@ -27,6 +27,8 @@ from adjutant.storage import ObjectStore
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap import (  # noqa: E402
+    ensure_cluster_roles,
+    provision_approval,
     provision_gateway,
     provision_gateway_files,
     provision_runtime,
@@ -44,12 +46,36 @@ def database_urls():
     admin = url_file.read_text().strip()
     if admin.rsplit("/", 1)[-1] != "adjutant_test":
         pytest.fail("Tests require the dedicated adjutant_test database")
+    app_pwd = (ROOT / ".local/app.password").read_text().strip()
+    worker_pwd = (ROOT / ".local/worker.password").read_text().strip()
+    gw_pwd = (
+        (ROOT / ".local/gateway.password").read_text().strip()
+        if (ROOT / ".local/gateway.password").exists()
+        else "test-gw-password"
+    )
+    appr_pwd = (
+        (ROOT / ".local/approval.password").read_text().strip()
+        if (ROOT / ".local/approval.password").exists()
+        else "test-approval-password"
+    )
+    with psycopg.connect(admin, autocommit=True) as conn:
+        ensure_cluster_roles(
+            conn,
+            {
+                "adjutant_app": app_pwd,
+                "adjutant_worker": worker_pwd,
+                "adjutant_gateway": gw_pwd,
+                "adjutant_approval": appr_pwd,
+            },
+        )
     migrate(admin)
-    password = (ROOT / ".local/app.password").read_text().strip()
     with psycopg.connect(admin) as conn:
-        provision_runtime(conn, password)
+        provision_runtime(conn, app_pwd)
+        provision_worker(conn, worker_pwd)
+        provision_gateway(conn, gw_pwd)
+        provision_approval(conn, appr_pwd)
     host = admin.split("@", 1)[1]
-    return admin, f"postgresql://adjutant_app:{quote(password)}@{host}"
+    return admin, f"postgresql://adjutant_app:{quote(app_pwd)}@{host}"
 
 
 @pytest.fixture

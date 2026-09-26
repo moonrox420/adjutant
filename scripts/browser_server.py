@@ -6,8 +6,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 import psycopg
-import uvicorn
-from bootstrap import provision_runtime, provision_worker
+from bootstrap import (
+    ensure_cluster_roles,
+    provision_approval,
+    provision_gateway,
+    provision_runtime,
+    provision_worker,
+)
 from browser_inference import MODEL, browser_inference
 from browser_studio_fixture import seed_concepts
 from live_canary import create_app, seed_identity, test_settings
@@ -22,11 +27,34 @@ os.chdir(root)
 admin_url = Path(".local/test-admin.url").read_text().strip()
 if admin_url.rsplit("/", 1)[-1] != "adjutant_test":
     raise RuntimeError("Browser tests require the dedicated test database")
-migrate(admin_url)
+app_password = Path(".local/app.password").read_text().strip()
 worker_password = Path(".local/worker.password").read_text().strip()
+gateway_password = (
+    Path(".local/gateway.password").read_text().strip()
+    if Path(".local/gateway.password").exists()
+    else "browser-test-gateway-password"
+)
+approval_password = (
+    Path(".local/approval.password").read_text().strip()
+    if Path(".local/approval.password").exists()
+    else "browser-test-approval-password"
+)
+with psycopg.connect(admin_url, autocommit=True) as conn:
+    ensure_cluster_roles(
+        conn,
+        {
+            "adjutant_app": app_password,
+            "adjutant_worker": worker_password,
+            "adjutant_gateway": gateway_password,
+            "adjutant_approval": approval_password,
+        },
+    )
+migrate(admin_url)
 with psycopg.connect(admin_url) as conn:
-    provision_runtime(conn, Path(".local/app.password").read_text().strip())
+    provision_runtime(conn, app_password)
     provision_worker(conn, worker_password)
+    provision_gateway(conn, gateway_password)
+    provision_approval(conn, approval_password)
 identity = seed_identity(Path(".local/test-admin.url").read_text().strip())
 Path(".local/browser-user.json").write_text(json.dumps(identity))
 generation_identity = seed_identity(admin_url)

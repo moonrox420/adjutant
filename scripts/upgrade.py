@@ -5,6 +5,7 @@ from urllib.parse import quote
 
 import psycopg
 from bootstrap import (
+    ensure_cluster_roles,
     provision_approval,
     provision_approval_files,
     provision_gateway,
@@ -25,9 +26,19 @@ def upgrade() -> None:
         raise ValueError("Workspace upgrades require the adjutant database")
     app_password = (local / "app.password").read_text(encoding="utf-8").strip()
     worker_password = (local / "worker.password").read_text(encoding="utf-8").strip()
-    migrate(admin_url)
     gateway_password = provision_gateway_files(local)
     approval_password = provision_approval_files(local)
+    with psycopg.connect(admin_url, autocommit=True) as conn:
+        ensure_cluster_roles(
+            conn,
+            {
+                "adjutant_app": app_password,
+                "adjutant_worker": worker_password,
+                "adjutant_gateway": gateway_password,
+                "adjutant_approval": approval_password,
+            },
+        )
+    migrate(admin_url)
     with psycopg.connect(admin_url) as conn:
         provision_runtime(conn, app_password)
         provision_worker(conn, worker_password)

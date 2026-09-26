@@ -66,7 +66,13 @@ def ensure_environment() -> None:
 
 def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
     import psycopg
-    from bootstrap import provision_runtime
+    from bootstrap import (
+        ensure_cluster_roles,
+        provision_approval,
+        provision_gateway,
+        provision_runtime,
+        provision_worker,
+    )
     from migrate import migrate
 
     from adjutant.credentials import provision_master_key
@@ -77,6 +83,9 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
     state.mkdir(parents=True, exist_ok=True)
     database_password = secret_file(state / "postgres.password")
     app_password = secret_file(state / "app.password")
+    worker_password = secret_file(state / "worker.password")
+    gateway_password = secret_file(state / "gateway.password")
+    approval_password = secret_file(state / "approval.password")
     owner_password = secret_file(state / "owner.password")
     data = state / "postgres"
     initdb = postgres_binary("initdb")
@@ -133,11 +142,23 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
             "SELECT 1 FROM pg_database WHERE datname='adjutant'"
         ).fetchone():
             conn.execute("CREATE DATABASE adjutant")
+        ensure_cluster_roles(
+            conn,
+            {
+                "adjutant_app": app_password,
+                "adjutant_worker": worker_password,
+                "adjutant_gateway": gateway_password,
+                "adjutant_approval": approval_password,
+            },
+        )
     admin_url = server + "/adjutant"
     migrate(admin_url)
     provision_master_key(state / "tenant-master.key")
     with psycopg.connect(admin_url) as conn:
         provision_runtime(conn, app_password)
+        provision_worker(conn, worker_password)
+        provision_gateway(conn, gateway_password)
+        provision_approval(conn, approval_password)
         owner = conn.execute(
             "SELECT id FROM app_user WHERE email='owner@adjutant.local'"
         ).fetchone()

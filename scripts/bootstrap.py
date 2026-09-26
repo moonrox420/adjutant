@@ -241,6 +241,21 @@ def append_private_file(path: Path, content: str) -> None:
         os.fsync(handle.fileno())
 
 
+def ensure_cluster_roles(
+    conn: psycopg.Connection, role_passwords: dict[str, str]
+) -> None:
+    """Ensure all required database roles exist in the cluster prior to running migrations."""
+    for role_name, password in role_passwords.items():
+        if not conn.execute(
+            "SELECT 1 FROM pg_roles WHERE rolname=%s", (role_name,)
+        ).fetchone():
+            conn.execute(
+                sql.SQL(
+                    "CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
+                ).format(sql.Identifier(role_name), sql.Literal(password))
+            )
+
+
 def bootstrap(email: str, password: str, account_type: str) -> None:
     root = Path(__file__).resolve().parents[1]
     os.chdir(root)
@@ -248,16 +263,7 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
     local.mkdir(exist_ok=True, mode=0o700)
     admin_password = (local / "postgres.password").read_text().strip()
     server = f"postgresql://adjutant_admin:{quote(admin_password)}@127.0.0.1:55439"
-    with psycopg.connect(server + "/postgres", autocommit=True) as conn:
-        for name in ("adjutant", "adjutant_test"):
-            if not conn.execute(
-                "SELECT 1 FROM pg_database WHERE datname=%s", (name,)
-            ).fetchone():
-                conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-    admin_url = server + "/adjutant"
-    write_private_file(local / "admin.url", admin_url)
-    write_private_file(local / "test-admin.url", server + "/adjutant_test")
-    migrate(admin_url)
+
     key_path = local / "approval.key"
     if not key_path.exists():
         generate_signing_key(key_path)
@@ -271,6 +277,26 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
     if not worker_password_file.exists():
         write_private_file(worker_password_file, secrets.token_urlsafe(32))
     worker_password = worker_password_file.read_text().strip()
+
+    role_passwords = {
+        "adjutant_app": app_password,
+        "adjutant_worker": worker_password,
+        "adjutant_gateway": gateway_password,
+        "adjutant_approval": approval_password,
+    }
+
+    with psycopg.connect(server + "/postgres", autocommit=True) as conn:
+        for name in ("adjutant", "adjutant_test"):
+            if not conn.execute(
+                "SELECT 1 FROM pg_database WHERE datname=%s", (name,)
+            ).fetchone():
+                conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+        ensure_cluster_roles(conn, role_passwords)
+
+    admin_url = server + "/adjutant"
+    write_private_file(local / "admin.url", admin_url)
+    write_private_file(local / "test-admin.url", server + "/adjutant_test")
+    migrate(admin_url)
     with psycopg.connect(admin_url) as conn:
         provision_runtime(conn, app_password)
         provision_worker(conn, worker_password)
