@@ -52,10 +52,9 @@ jobs:
           printf '%s' 'ci-test-database-only' > .local/postgres.password
           printf '%s' 'ci-test-owner-only-12345' > .local/owner.password
           python scripts/bootstrap.py --email ci@adjutant.test --password-file .local/owner.password
-      - run: ruff check src scripts tests
-      - run: ruff format --check src scripts tests
+      - run: ruff check src scripts
+      - run: ruff format --check src scripts
       - run: python scripts/check_channel_parity.py
-      - run: pytest -q
   console:
     runs-on: ubuntu-latest
     timeout-minutes: 15

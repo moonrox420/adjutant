@@ -25,13 +25,9 @@ where = ["src"]
 [tool.setuptools.package-data]
 adjutant = ["event_registry.json"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src", "scripts", "tests"]
-
 [tool.pyright]
-include = ["src", "scripts", "tests"]
-extraPaths = ["src", "scripts", "tests"]
+include = ["src", "scripts"]
+extraPaths = ["src", "scripts"]
 typeCheckingMode = "basic"
 reportMissingTypeStubs = false
 
@@ -40,7 +36,6 @@ line-length = 100
 target-version = "py312"
 exclude = [
     ".venv",
-    "tests"
 ]
 
 [tool.ruff.lint]

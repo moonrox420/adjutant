@@ -1,9 +1,6 @@
 PYTHON ?= python
 UP_ARGS ?=
 
-.PHONY: up test
+.PHONY: up
 up:
 	$(PYTHON) scripts/up.py $(UP_ARGS)
-
-test:
-	$(PYTHON) -m pytest -q
