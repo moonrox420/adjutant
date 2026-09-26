@@ -27,9 +27,8 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
             raise RuntimeError("User not found")
         user = user_row["id"]
         brand_row: Any = conn.execute(
-            "INSERT INTO brand(account_id,display_name,website_url,vertical,campaigns_enabled,"
-            "brand_graph_confirmed_at) "
-            "VALUES(%s,'Concept browser fixture','https://example.com','home_services',true,now()) "
+            "INSERT INTO brand(account_id,display_name,website_url,vertical,campaigns_enabled) "
+            "VALUES(%s,'Concept browser fixture','https://example.com','home_services',true) "
             "RETURNING id",
             (identity["account_id"],),
         ).fetchone()
