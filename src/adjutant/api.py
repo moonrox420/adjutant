@@ -168,7 +168,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth_router(db, config))
     app.include_router(account_router(db, principal))
-    app.include_router(campaign_build_router(db, principal))
+    app.include_router(campaign_build_router(db, config, principal))
     app.include_router(campaign_router(db, config, storage, principal))
     app.include_router(studio_operations_router(db, config, storage, events, principal))
     app.include_router(channel_router(db, config, events, principal))
@@ -193,8 +193,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             elif "127.0.0.1" in config.public_origin:
                 allowed_origins.add(config.public_origin.replace("127.0.0.1", "localhost"))
             req_origin = request.headers.get("origin")
+            has_cookie = bool(request.cookies.get("adjutant_session"))
             invalid_origin = request.method not in {"GET", "HEAD", "OPTIONS"} and (
                 request.headers.get("x-adjutant-client") != "console"
+                or (has_cookie and (req_origin is None or req_origin not in allowed_origins))
                 or (req_origin is not None and req_origin not in allowed_origins)
             )
             if invalid_origin:
@@ -236,6 +238,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; frame-ancestors 'none'"
             )
