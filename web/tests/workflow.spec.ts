@@ -100,16 +100,32 @@ test("brand, guardrails, and first-launch review persist without a review queue"
     },
   );
   expect(edited.ok()).toBe(true);
-  await page.getByRole("button", { name: "Review first-launch scope" }).click();
-  await expect(
-    page.getByRole("button", { name: "Reload the current plan" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", {
-      name: "Authorize first launch within these guardrails",
-    }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "Reload the current plan" }).click();
+
+  const currentScope = await (
+    await page.request.get(
+      `/api/brands/${reviewedBrand.id}/plans/${draft.id}/launch-scope`,
+    )
+  ).json();
+  expect(currentScope.plan_hash).not.toBe(draft.plan_hash);
+  const staleApproval = await page.request.post(
+    `/api/brands/${reviewedBrand.id}/plans/${draft.id}/authorize-launch`,
+    {
+      headers: {
+        "X-Adjutant-Client": "console",
+        Origin: "http://127.0.0.1:3001",
+      },
+      data: {
+        request_key: crypto.randomUUID(),
+        expected_hash: draft.plan_hash,
+        expected_review_hash: currentScope.review_hash,
+        expected_guardrail_version: currentScope.guardrails.version,
+      },
+    },
+  );
+  expect(staleApproval.status()).toBe(409);
+  expect((await staleApproval.json()).error.code).toBe("ReviewChanged");
+
+  await page.reload();
   await page
     .getByRole("button", { name: "Campaign plans", exact: true })
     .click();
