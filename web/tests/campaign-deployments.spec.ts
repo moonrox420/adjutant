@@ -17,7 +17,10 @@ test("campaign setup queues and cancels a durable build through actual APIs", as
   await page.getByRole("button", { name: "Sign in →", exact: true }).click();
   await expect(page.locator(".account-menu")).toBeVisible();
   const prefix = `/api/brands/${user.brand_id}`;
-  const headers = { "X-Adjutant-Client": "console" };
+  const headers = {
+    "X-Adjutant-Client": "console",
+    Origin: "http://127.0.0.1:3001",
+  };
   const response = await context.request.post(`${prefix}/plans`, {
     headers,
     data: {
