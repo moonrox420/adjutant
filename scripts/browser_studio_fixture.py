@@ -131,7 +131,8 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
                 ),
             ).fetchone()
             if row:
-                persist_render(conn, storage, brand, dict(row) if isinstance(row, dict) else row, "1:1")
+                render_data = dict(row) if isinstance(row, dict) else row
+                persist_render(conn, storage, brand, render_data, "1:1")
         conn.execute(
             "UPDATE studio_job SET state='completed',finished_at=now() WHERE id=%s",
             (root,),

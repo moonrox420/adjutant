@@ -75,7 +75,9 @@ class Database:
         )
 
 
-def one(conn: Connection[Any], sql: Any, params: tuple[Any, ...] | list[Any] = ()) -> dict[str, Any]:
+def one(
+    conn: Connection[Any], sql: Any, params: tuple[Any, ...] | list[Any] = ()
+) -> dict[str, Any]:
     row: Any = conn.execute(sql, params).fetchone()
     if row is None:
         raise DomainError("NotFound", "The requested record is not available.", 404)

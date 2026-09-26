@@ -1,9 +1,11 @@
-"""Comprehensive verification of Slice 8: Autonomous loop, fatigue detection, winners, guardrails, and escalations."""
+"""Comprehensive verification of Slice 8: Autonomous loop, fatigue detection,
+winners, guardrails, and escalations."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+import psycopg
 import pytest
 
 from adjutant.decision import evaluate_guardrails, is_scope_halted, record_escalation
@@ -124,7 +126,8 @@ def setup_active_brand(admin, brand):
         (brand,),
     )
     conn_id = admin.execute(
-        "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "
+        "INSERT INTO channel_connection("
+        "brand_id, channel, external_ad_account_id, selected, verified_at) "
         "VALUES(%s, 'meta', 'act_runner_01', true, now()) RETURNING id",
         (brand,),
     ).fetchone()["id"]
@@ -150,7 +153,9 @@ def test_loop_runs_unattended_for_active_brand(admin, brand, client):
 
 
 def test_fatigued_ad_replaced_first_then_paused_zero_gap(admin, brand, client):
-    """S8.2: A fatigued ad is detected, a replacement is generated and launched, and the fatigued ad is paused — in that order, with no gap where the brand has no live creative."""
+    """S8.2: A fatigued ad is detected, a replacement is generated and launched,
+    and the fatigued ad is paused — in that order, with no gap where the brand has
+    no live creative."""
     conn_id = setup_active_brand(admin, brand)
     campaign = admin.execute(
         "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state) "
@@ -159,8 +164,11 @@ def test_fatigued_ad_replaced_first_then_paused_zero_gap(admin, brand, client):
     ).fetchone()["id"]
     creative_id = create_test_creative(admin, brand)
     fatigued_ad = admin.execute(
-        "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state, parent_id, daily_budget_usd, creative_id, created_at) "
-        "VALUES(%s, %s, 'meta', 'ad', 'ad_fatigued_01', 'active', %s, 50.00, %s, now() - interval '15 days') RETURNING id",
+        "INSERT INTO campaign_object("
+        "brand_id, connection_id, channel, level, native_id, state, parent_id, "
+        "daily_budget_usd, creative_id, created_at) "
+        "VALUES(%s, %s, 'meta', 'ad', 'ad_fatigued_01', 'active', %s, 50.00, %s, "
+        "now() - interval '15 days') RETURNING id",
         (brand, conn_id, campaign, creative_id),
     ).fetchone()["id"]
 
@@ -220,7 +228,8 @@ def test_fatigued_ad_replaced_first_then_paused_zero_gap(admin, brand, client):
 
     # Verify strict ordering in actions ledger: creative_swap was recorded before pause
     actions = admin.execute(
-        "SELECT id, action_type, target_id, executed_at FROM action WHERE brand_id=%s ORDER BY executed_at ASC, id ASC",
+        "SELECT id, action_type, target_id, executed_at FROM action "
+        "WHERE brand_id=%s ORDER BY executed_at ASC, id ASC",
         (brand,),
     ).fetchall()
     action_types = [a["action_type"] for a in actions]
@@ -231,7 +240,8 @@ def test_fatigued_ad_replaced_first_then_paused_zero_gap(admin, brand, client):
 
 def test_two_signal_fatigue_condition_does_not_trigger_refresh(admin, brand, client):
     """S8.3: A two-signal fatigue condition does NOT trigger a refresh. Tested explicitly."""
-    # 2 signals only: Frequency > 3.0 and CTR drop >= 15%, but CPA did NOT rise, half-life not exceeded
+    # 2 signals only: Frequency > 3.0 and CTR drop >= 15%, but CPA did NOT rise,
+    # half-life not exceeded
     signals_2 = FatigueSignals(
         frequency_above_3=True,
         ctr_declining_15pct=True,
@@ -242,9 +252,10 @@ def test_two_signal_fatigue_condition_does_not_trigger_refresh(admin, brand, cli
     assert len(signals_2.active_signals()) == 2
     assert detect_fatigue(signals_2) is None
 
-    # Database level check: attempting to insert finding with only 2 signals violates check constraint
+    # Database level check: attempting to insert finding with only 2 signals
+    # violates check constraint
     obj_id = uuid4()
-    with pytest.raises(Exception):
+    with pytest.raises(psycopg.Error):
         record_finding(
             admin,
             UUID(brand),
@@ -270,7 +281,8 @@ def test_two_signal_fatigue_condition_does_not_trigger_refresh(admin, brand, cli
 
 
 def test_guardrail_breach_rejected_and_recorded_never_executed(admin, brand):
-    """S8.4: A decision that would breach any guardrail is rejected and recorded, never executed. Tested for guardrails."""
+    """S8.4: A decision that would breach any guardrail is rejected and recorded,
+    never executed. Tested for guardrails."""
     conn_id = setup_active_brand(admin, brand)
     obj_id = admin.execute(
         "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state) "
@@ -315,7 +327,8 @@ def test_guardrail_breach_rejected_and_recorded_never_executed(admin, brand):
 
 
 def test_escalation_triggers_fire_and_halt_affected_scope_only(admin, brand):
-    """S8.5: Every escalation trigger in §2 fires its escalation and halts autonomous action on that scope only, leaving the rest of the account running."""
+    """S8.5: Every escalation trigger in §2 fires its escalation and halts autonomous
+    action on that scope only, leaving the rest of the account running."""
     conn_id = setup_active_brand(admin, brand)
     obj1 = admin.execute(
         "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state) "
@@ -417,10 +430,12 @@ def test_budget_never_moves_across_mismatched_comparability_classes(admin, brand
 def test_budget_increase_exceeding_max_daily_spend_increase_clamped_and_logged(
     admin, brand
 ):
-    """S8.7: A budget increase exceeding max_daily_spend_increase_pct is clamped, not rejected, and the clamp is logged."""
+    """S8.7: A budget increase exceeding max_daily_spend_increase_pct is clamped,
+    not rejected, and the clamp is logged."""
     conn_id = setup_active_brand(admin, brand)
     obj_id = admin.execute(
-        "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
+        "INSERT INTO campaign_object("
+        "brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
         "VALUES(%s, %s, 'meta', 'campaign', 'camp_clamp_01', 'active', 100.00) RETURNING id",
         (brand, conn_id),
     ).fetchone()["id"]
@@ -461,8 +476,11 @@ def test_crashed_tick_resume_does_not_double_execute_actions(admin, brand, clien
     ).fetchone()["id"]
     creative_id = create_test_creative(admin, brand)
     fatigued_ad = admin.execute(
-        "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state, parent_id, daily_budget_usd, creative_id, created_at) "
-        "VALUES(%s, %s, 'meta', 'ad', 'ad_crash_01', 'active', %s, 50.00, %s, now() - interval '15 days') RETURNING id",
+        "INSERT INTO campaign_object("
+        "brand_id, connection_id, channel, level, native_id, state, parent_id, "
+        "daily_budget_usd, creative_id, created_at) "
+        "VALUES(%s, %s, 'meta', 'ad', 'ad_crash_01', 'active', %s, 50.00, %s, "
+        "now() - interval '15 days') RETURNING id",
         (brand, conn_id, campaign, creative_id),
     ).fetchone()["id"]
 
@@ -525,23 +543,28 @@ def test_crashed_tick_resume_does_not_double_execute_actions(admin, brand, clien
 
 
 def test_cross_channel_budget_reallocation_under_comparability(admin, brand):
-    """S9.4: Autonomous cross-channel reallocation reallocates budget between Meta and Google Ads based on measured performance (S8 comparability rules hold across channels)."""
+    """S9.4: Autonomous cross-channel reallocation reallocates budget between Meta
+    and Google Ads based on measured performance (S8 comparability rules hold across channels)."""
     meta_conn = setup_active_brand(admin, brand)
     google_conn = admin.execute(
-        "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "
+        "INSERT INTO channel_connection("
+        "brand_id, channel, external_ad_account_id, selected, verified_at) "
         "VALUES(%s, 'google_ads', '1234567890', true, now()) RETURNING id",
         (brand,),
     ).fetchone()["id"]
 
     meta_camp = admin.execute(
-        "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
+        "INSERT INTO campaign_object("
+        "brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
         "VALUES(%s, %s, 'meta', 'campaign', 'meta_camp_cross_01', 'active', 100.00) RETURNING id",
         (brand, meta_conn),
     ).fetchone()["id"]
 
     google_camp = admin.execute(
-        "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
-        "VALUES(%s, %s, 'google_ads', 'campaign', 'google_camp_cross_01', 'active', 100.00) RETURNING id",
+        "INSERT INTO campaign_object("
+        "brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
+        "VALUES(%s, %s, 'google_ads', 'campaign', 'google_camp_cross_01', 'active', 100.00) "
+        "RETURNING id",
         (brand, google_conn),
     ).fetchone()["id"]
 
@@ -549,7 +572,8 @@ def test_cross_channel_budget_reallocation_under_comparability(admin, brand):
         "UPDATE guardrail SET daily_spend_cap_usd=500.00 WHERE brand_id=%s", (brand,)
     )
 
-    # 1. Attempt cross-channel reallocation across mismatched comparability classes: MUST BE REJECTED
+    # 1. Attempt cross-channel reallocation across mismatched comparability classes:
+    # MUST BE REJECTED
     mismatched_cand = {
         "kind": "reallocate_budget",
         "channel": "google_ads",

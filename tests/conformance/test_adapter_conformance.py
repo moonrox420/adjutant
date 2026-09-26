@@ -16,6 +16,7 @@ import pytest
 
 from adjutant.adapters.builds import BUILDERS, build_configuration, builder_for
 from adjutant.adapters.campaign_control import CampaignControl, CampaignTarget
+
 from .cassette import Cassette, CassetteTransport
 
 CASSETTES_DIR = Path(__file__).parent / "cassettes"
@@ -25,7 +26,8 @@ SUPPORTED_CHANNELS = list(BUILDERS.keys())
 
 @pytest.mark.parametrize("channel", SUPPORTED_CHANNELS)
 def test_conformance_schema_and_builder_registered(channel):
-    """S9.1: Every adapter must register an executable Builder, Settings Model, and Preflight validator."""
+    """S9.1: Every adapter must register an executable Builder, Settings Model,
+    and Preflight validator."""
     builder_cls, settings_cls, preflight_fn = builder_for(channel)
     assert builder_cls is not None
     assert settings_cls is not None
@@ -42,7 +44,8 @@ def test_conformance_schema_and_builder_registered(channel):
 
 @pytest.mark.parametrize("channel", SUPPORTED_CHANNELS)
 def test_conformance_preflight_validates_objective_and_limits(channel):
-    """S9.1: Preflight validates campaign objective and placement text limits before remote writes."""
+    """S9.1: Preflight validates campaign objective and placement text limits
+    before remote writes."""
     _, _, preflight_fn = builder_for(channel)
 
     # Invalid objective fails preflight
@@ -138,7 +141,8 @@ def test_conformance_campaign_control_pause_and_resume(channel):
 
 @pytest.mark.parametrize("channel", SUPPORTED_CHANNELS)
 def test_conformance_offline_cassette_execution(channel):
-    """S9.5: Adapter builds execute in CI against recorded cassettes with zero live account touches."""
+    """S9.5: Adapter builds execute in CI against recorded cassettes with zero
+    live account touches."""
 
     async def _run():
         cassette_path = CASSETTES_DIR / f"{channel}.json"

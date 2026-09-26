@@ -91,7 +91,8 @@ def execute_bulk_brand_operation(
             continue
 
         try:
-            # Use nested transaction (savepoint) so failure on one brand rolls back ONLY that brand's mutation
+            # Use nested transaction (savepoint) so failure on one brand rolls back
+            # ONLY that brand's mutation
             with conn.transaction():
                 if operation_kind == "set_monthly_ceiling":
                     new_monthly = Decimal(str(params["monthly_usd_max"]))

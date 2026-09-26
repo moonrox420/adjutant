@@ -100,7 +100,8 @@ def test_brand_activation_and_revert(
 
     # Find the brand_activate action
     action = admin.execute(
-        "SELECT * FROM action WHERE brand_id=%s AND action_type='brand_activate' ORDER BY executed_at DESC LIMIT 1",
+        "SELECT * FROM action WHERE brand_id=%s AND action_type='brand_activate' "
+        "ORDER BY executed_at DESC LIMIT 1",
         (brand,),
     ).fetchone()
     assert action is not None
@@ -149,7 +150,8 @@ def test_ceiling_update_and_revert(client, admin, brand):
     """Test modifying brand ceiling and reverting it back to previous limits."""
     # Get initial ceiling from budget_ceiling table
     b_init = admin.execute(
-        "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling WHERE brand_id=%s AND scope_kind='brand'",
+        "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling "
+        "WHERE brand_id=%s AND scope_kind='brand'",
         (brand,),
     ).fetchone()
     old_monthly = Decimal(str(b_init["monthly_usd_max"]))
@@ -166,7 +168,8 @@ def test_ceiling_update_and_revert(client, admin, brand):
 
     # Verify updated ceiling
     b_new = admin.execute(
-        "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling WHERE brand_id=%s AND scope_kind='brand'",
+        "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling "
+        "WHERE brand_id=%s AND scope_kind='brand'",
         (brand,),
     ).fetchone()
     assert b_new["monthly_usd_max"] == new_monthly
@@ -174,7 +177,8 @@ def test_ceiling_update_and_revert(client, admin, brand):
 
     # Find the ceiling_change action
     action = admin.execute(
-        "SELECT * FROM action WHERE brand_id=%s AND action_type='ceiling_change' ORDER BY executed_at DESC LIMIT 1",
+        "SELECT * FROM action WHERE brand_id=%s AND action_type='ceiling_change' "
+        "ORDER BY executed_at DESC LIMIT 1",
         (brand,),
     ).fetchone()
     assert action is not None
@@ -189,7 +193,8 @@ def test_ceiling_update_and_revert(client, admin, brand):
 
     # Verify ceilings are restored to old values
     b_restored = admin.execute(
-        "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling WHERE brand_id=%s AND scope_kind='brand'",
+        "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling "
+        "WHERE brand_id=%s AND scope_kind='brand'",
         (brand,),
     ).fetchone()
     assert b_restored["monthly_usd_max"] == old_monthly
@@ -214,7 +219,8 @@ def test_plan_restore_revert(client, admin, confirmed_brand, plan, plan_input):
 
     # Find the plan_edit action with revert_path
     action = admin.execute(
-        "SELECT * FROM action WHERE brand_id=%s AND action_type='plan_edit' AND revert_path IS NOT NULL ORDER BY executed_at DESC LIMIT 1",
+        "SELECT * FROM action WHERE brand_id=%s AND action_type='plan_edit' "
+        "AND revert_path IS NOT NULL ORDER BY executed_at DESC LIMIT 1",
         (confirmed_brand,),
     ).fetchone()
     assert action is not None
@@ -229,7 +235,8 @@ def test_plan_restore_revert(client, admin, confirmed_brand, plan, plan_input):
 
     # Verify plan name is restored in DB
     restored_plan = admin.execute(
-        "SELECT name, document FROM (SELECT name, plan_document as document FROM plan WHERE id=%s) sub",
+        "SELECT name, document FROM (SELECT name, plan_document as document "
+        "FROM plan WHERE id=%s) sub",
         (plan["id"],),
     ).fetchone()
     assert restored_plan["name"] == plan_input["name"]

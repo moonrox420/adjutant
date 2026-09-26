@@ -214,12 +214,19 @@ export function CampaignDeployments({
           {build.error_message && (
             <p className="message error">{build.error_message}</p>
           )}
-          {build.provider_errors.length > 0 && <details>
-            <summary>Provider rejection history</summary>
-            <ul>{build.provider_errors.map((error, index) => <li key={`${error.occurred_at}:${index}`}>
-              {when(error.occurred_at)} · {error.raw_code}: {error.raw_message}
-            </li>)}</ul>
-          </details>}
+          {build.provider_errors.length > 0 && (
+            <details>
+              <summary>Provider rejection history</summary>
+              <ul>
+                {build.provider_errors.map((error, index) => (
+                  <li key={`${error.occurred_at}:${index}`}>
+                    {when(error.occurred_at)} · {error.raw_code}:{" "}
+                    {error.raw_message}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           <ul>
             {build.objects.map((object) => (
               <li key={object.id}>

@@ -1,4 +1,5 @@
-"""Test suite for S7: Honest measurement, attribution normalization, and comparability enforcement."""
+"""Test suite for S7: Honest measurement, attribution normalization,
+and comparability enforcement."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -29,9 +30,11 @@ def test_comparability_class_determination():
 
 
 def test_metrics_land_hourly_no_duplicates_on_replay(admin, brand):
-    """S7.1: Metrics land hourly with no duplicates across re-runs, verified by replaying a sync window."""
+    """S7.1: Metrics land hourly with no duplicates across re-runs,
+    verified by replaying a sync window."""
     conn_id = admin.execute(
-        "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "
+        "INSERT INTO channel_connection("
+        "brand_id, channel, external_ad_account_id, selected, verified_at) "
         "VALUES(%s, 'meta', 'act_101', true, now()) RETURNING id",
         (brand,),
     ).fetchone()["id"]
@@ -96,7 +99,8 @@ def test_every_fact_carries_attribution_window_conversion_event_and_view_policy(
 ):
     """S7.2: Every fact carries attribution window, conversion event, and view-through policy."""
     conn_id = admin.execute(
-        "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "
+        "INSERT INTO channel_connection("
+        "brand_id, channel, external_ad_account_id, selected, verified_at) "
         "VALUES(%s, 'google_ads', 'act_102', true, now()) RETURNING id",
         (brand,),
     ).fetchone()["id"]
@@ -139,7 +143,8 @@ def test_every_fact_carries_attribution_window_conversion_event_and_view_policy(
 
 
 def test_sum_metrics_across_different_comparability_classes_raises():
-    """S7.3: Attempting to sum metrics across different comparability classes raises rather than returning a number."""
+    """S7.3: Attempting to sum metrics across different comparability classes raises
+    rather than returning a number."""
     direct_fact = {
         "metric_value": Decimal("100.00"),
         "comparability": "direct",
@@ -176,15 +181,16 @@ def test_sum_metrics_across_different_comparability_classes_raises():
 def test_48_hour_outage_backfills_completely_without_duplicates(admin, brand):
     """S7.4: A 48-hour outage backfills completely on recovery without duplicating facts."""
     conn_id = admin.execute(
-        "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "
+        "INSERT INTO channel_connection("
+        "brand_id, channel, external_ad_account_id, selected, verified_at) "
         "VALUES(%s, 'tiktok', 'act_103', true, now()) RETURNING id",
         (brand,),
     ).fetchone()["id"]
-    campaign_id = admin.execute(
+    admin.execute(
         "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state) "
         "VALUES(%s, %s, 'tiktok', 'campaign', '103', 'active') RETURNING id",
         (brand, conn_id),
-    ).fetchone()["id"]
+    )
 
     now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=UTC)
     outage_start = now - timedelta(hours=48)
@@ -243,9 +249,11 @@ def test_48_hour_outage_backfills_completely_without_duplicates(admin, brand):
 
 
 def test_restating_late_conversions_preserves_history(admin, brand):
-    """S7.5: Restating late conversions updates the fact without corrupting the history of what was known when."""
+    """S7.5: Restating late conversions updates the fact without corrupting the
+    history of what was known when."""
     conn_id = admin.execute(
-        "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "
+        "INSERT INTO channel_connection("
+        "brand_id, channel, external_ad_account_id, selected, verified_at) "
         "VALUES(%s, 'linkedin', 'act_104', true, now()) RETURNING id",
         (brand,),
     ).fetchone()["id"]

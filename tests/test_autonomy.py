@@ -1,30 +1,20 @@
 """Real PostgreSQL and real HTTP between the application, signer, and gateway."""
 
-import io
-import socket
-import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import httpx
 import psycopg
 import pytest
-import uvicorn
-from bootstrap import provision_gateway, provision_gateway_files
-from PIL import Image
 from psycopg.types.json import Jsonb
 
 from adjutant.approval_client import approval_request
 from adjutant.autonomy import consume_launch_authorization
-from adjutant.campaign_api import scene_graph
 from adjutant.db import Database
 from adjutant.errors import DomainError
-from adjutant.gateway_api import GatewaySettings, create_app
-from adjutant.security import ApprovalSigner, digest
+from adjutant.security import ApprovalSigner
 from adjutant.storage import ObjectStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -827,7 +817,8 @@ def test_negative_suite_cross_brand_token_fails_closed(
 def test_negative_suite_token_store_outage_fails_closed(
     client, brand, plan, selected_account
 ):
-    """S5.6 & S5.7: When the token store/gateway is unreachable, preflight/launch denies rather than permits."""
+    """S5.6 & S5.7: When the token store/gateway is unreachable, preflight/launch
+    denies rather than permits."""
     # Point gateway_url to an unreachable address
     client.app.state.config.gateway_url = "http://127.0.0.1:59999"
     preflight_res = client.post(f"/api/brands/{brand}/plans/{plan['id']}/preflight")

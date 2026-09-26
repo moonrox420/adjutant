@@ -4,12 +4,10 @@ hook variants, and fallback.
 
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
 from psycopg import Connection
-from psycopg.types.json import Jsonb
 
 from adjutant.errors import DomainError
 
@@ -275,6 +273,7 @@ def render_video_timeline(
 
     raise DomainError(
         "NotImplemented",
-        "Direct MP4 video synthesis is not implemented; use static image fallbacks and storyboard scripts.",
+        "Direct MP4 video synthesis is not implemented; "
+        "use static image fallbacks and storyboard scripts.",
         501,
     )

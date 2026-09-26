@@ -118,10 +118,26 @@ def diagnose_campaign_objects(
         ctr = clicks / impressions if impressions > 0 else Decimal("0.0")
         cpa = spend / conversions if conversions > 0 else Decimal("9999.0")
 
-        prior_imp = Decimal(str(prior_metrics["prior_impressions"] or 0)) if prior_metrics else Decimal("0")
-        prior_clicks = Decimal(str(prior_metrics["prior_clicks"] or 0)) if prior_metrics else Decimal("0")
-        prior_spend = Decimal(str(prior_metrics["prior_spend"] or 0)) if prior_metrics else Decimal("0")
-        prior_conv = Decimal(str(prior_metrics["prior_conversions"] or 0)) if prior_metrics else Decimal("0")
+        prior_imp = (
+            Decimal(str(prior_metrics["prior_impressions"] or 0))
+            if prior_metrics
+            else Decimal("0")
+        )
+        prior_clicks = (
+            Decimal(str(prior_metrics["prior_clicks"] or 0))
+            if prior_metrics
+            else Decimal("0")
+        )
+        prior_spend = (
+            Decimal(str(prior_metrics["prior_spend"] or 0))
+            if prior_metrics
+            else Decimal("0")
+        )
+        prior_conv = (
+            Decimal(str(prior_metrics["prior_conversions"] or 0))
+            if prior_metrics
+            else Decimal("0")
+        )
 
         prior_ctr = prior_clicks / prior_imp if prior_imp > 0 else ctr
         prior_cpa = prior_spend / prior_conv if prior_conv > 0 else cpa

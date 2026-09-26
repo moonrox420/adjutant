@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import psycopg
+import uvicorn
 from bootstrap import (
     ensure_cluster_roles,
     provision_approval,

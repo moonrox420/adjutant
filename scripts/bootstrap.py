@@ -61,6 +61,7 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
         "plan",
         "plan_allocation",
         "budget_ceiling",
+        "guardrail",
         "brand_kill_switch",
         "approval_request",
         "creative_concept",
@@ -70,6 +71,11 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
         "compliance_record",
         "compliance_check",
         "agent_run",
+        "brand_context",
+        "studio_draft",
+        "studio_rendition",
+        "studio_plan_creative",
+        "studio_job",
     ]
     conn.execute(
         sql.SQL("GRANT INSERT,UPDATE ON {} TO adjutant_app").format(

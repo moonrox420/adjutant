@@ -92,7 +92,11 @@ export function parseDeployments(value: unknown) {
       verified_at: nullableText(row.verified_at),
       provider_errors: list(row.provider_errors).map((value) => {
         const error = record(value);
-        return {raw_code: nullableText(error.raw_code), raw_message: text(error.raw_message), occurred_at: text(error.occurred_at)};
+        return {
+          raw_code: nullableText(error.raw_code),
+          raw_message: text(error.raw_message),
+          occurred_at: text(error.occurred_at),
+        };
       }),
       objects: list(row.objects).map((value) => {
         const object = record(value);

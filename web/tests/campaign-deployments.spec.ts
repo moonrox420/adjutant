@@ -52,14 +52,12 @@ test("campaign setup queues and cancels a durable build through actual APIs", as
   await page
     .getByRole("button", { name: "Campaign plans", exact: true })
     .click();
-  const card = page
-    .locator("article.plan-card")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Browser paused deployment",
-        exact: true,
-      }),
-    });
+  const card = page.locator("article.plan-card").filter({
+    has: page.getByRole("heading", {
+      name: "Browser paused deployment",
+      exact: true,
+    }),
+  });
   await card
     .getByText("Build and verify paused campaigns", { exact: true })
     .click();

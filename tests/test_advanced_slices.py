@@ -178,9 +178,13 @@ def test_ai_disclosure_layer_application():
     """S13.1: AI disclosure layer applied at render time."""
     scene_graph = {"layers": [{"id": "img", "type": "image"}]}
     eu_graph = apply_ai_disclosure(scene_graph, "EU", "meta")
-    assert any(l.get("id") == "compliance_ai_disclosure" for l in eu_graph["layers"])
+    assert any(
+        layer.get("id") == "compliance_ai_disclosure" for layer in eu_graph["layers"]
+    )
     disclosure_layer = next(
-        l for l in eu_graph["layers"] if l["id"] == "compliance_ai_disclosure"
+        layer
+        for layer in eu_graph["layers"]
+        if layer["id"] == "compliance_ai_disclosure"
     )
     assert "EU AI Act" in disclosure_layer["text"]
 

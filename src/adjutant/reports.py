@@ -118,7 +118,8 @@ def generate_weekly_result_summary(
     total_actions = sum(action_counts.values())
     if total_actions > 0:
         autonomous_work_summary = (
-            f"Adjutant recorded {total_actions} actions this week: refreshed {refreshes} worn-out ads, "
+            f"Adjutant recorded {total_actions} actions this week: "
+            f"refreshed {refreshes} worn-out ads, "
             f"adjusted budget {budget_shifts} times toward high-converting placements, "
             f"and paused {pauses} inefficient ads."
         )

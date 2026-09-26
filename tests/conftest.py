@@ -17,10 +17,11 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from adjutant.api import create_app
+from adjutant.campaign_api import scene_graph
 from adjutant.config import Settings
 from adjutant.credentials import provision_master_key
-from adjutant.campaign_api import scene_graph
-from adjutant.gateway_api import GatewaySettings, create_app as create_gateway_app
+from adjutant.gateway_api import GatewaySettings
+from adjutant.gateway_api import create_app as create_gateway_app
 from adjutant.security import digest, password_hash
 from adjutant.storage import ObjectStore
 

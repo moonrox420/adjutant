@@ -1,4 +1,5 @@
-"""S4.3 and S4.4 verification: dynamic capability registry limits and field-specific preflight rejection."""
+"""S4.3 and S4.4 verification: dynamic capability registry limits and
+field-specific preflight rejection."""
 
 from adjutant.adapters.meta_build import load_placement_spec_limits, preflight
 
@@ -131,7 +132,8 @@ def test_meta_preflight_specific_character_limit_violations():
 
 
 def test_placement_spec_limits_loaded_from_data_registry(admin):
-    """S4.4: The capability registry is data, and limits are read from placement_spec rather than hardcoded."""
+    """S4.4: The capability registry is data, and limits are read from placement_spec
+    rather than hardcoded."""
     limits = load_placement_spec_limits(admin, "meta", "meta.facebook_feed.square")
     assert limits["headline"] == 40
     assert limits["primary_text"] == 125
@@ -174,7 +176,8 @@ def test_placement_spec_limits_loaded_from_data_registry(admin):
 def test_deployment_preflight_reports_character_limits(
     client, admin, brand, plan, selected_account
 ):
-    """S4.3/S4.4: deployment_preflight endpoint checks creative copy against placement_spec registry limits."""
+    """S4.3/S4.4: deployment_preflight endpoint checks creative copy against
+    placement_spec registry limits."""
     preflight_res = client.post(f"/api/brands/{brand}/plans/{plan['id']}/preflight")
     assert preflight_res.status_code == 200, preflight_res.text
     data = preflight_res.json()

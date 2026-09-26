@@ -48,7 +48,8 @@ def test_parity_matrix_endpoint_returns_all_ten_channels(client, admin, brand):
 def test_access_application_lifecycle_and_tenant_isolation(
     client, admin, brand, database_urls
 ):
-    """S10.4: Access application status is tracked and visible, with filing dates and current state."""
+    """S10.4: Access application status is tracked and visible, with filing dates
+    and current state."""
     brand_id = brand
 
     # 1. File access application for Meta Advanced Access
@@ -131,7 +132,8 @@ def test_access_application_lifecycle_and_tenant_isolation(
 
 
 def test_reallocation_across_all_connected_channels(admin, brand):
-    """S10.3: The running loop reallocates across all connected channels according to comparability rules."""
+    """S10.3: The running loop reallocates across all connected channels according
+    to comparability rules."""
     channels = [
         "meta",
         "google_ads",
@@ -152,12 +154,14 @@ def test_reallocation_across_all_connected_channels(admin, brand):
     campaigns = {}
     for ch in channels:
         conn_id = admin.execute(
-            "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "
+            "INSERT INTO channel_connection("
+            "brand_id, channel, external_ad_account_id, selected, verified_at) "
             "VALUES(%s, %s, %s, true, now()) RETURNING id",
             (brand, ch, f"act_{ch}_001"),
         ).fetchone()["id"]
         camp_id = admin.execute(
-            "INSERT INTO campaign_object(brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
+            "INSERT INTO campaign_object("
+            "brand_id, connection_id, channel, level, native_id, state, daily_budget_usd) "
             "VALUES(%s, %s, %s, 'campaign', %s, 'active', 50.00) RETURNING id",
             (brand, conn_id, ch, f"camp_{ch}_native"),
         ).fetchone()["id"]
