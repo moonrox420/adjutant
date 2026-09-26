@@ -34,9 +34,7 @@ def lines_for(text: str, size: int, width: int) -> list[str]:
     current = ""
     for word in text.split():
         if font.getlength(word) > width:
-            raise DomainError(
-                "TextOverflow", "An unbroken word exceeds the text safe area.", 422
-            )
+            raise DomainError("TextOverflow", "An unbroken word exceeds the text safe area.", 422)
         candidate = f"{current} {word}".strip()
         if font.getlength(candidate) > width:
             lines.append(current)
@@ -143,11 +141,7 @@ def render_ad(document: dict, background: bytes, aspect_ratio: str) -> RenderedA
     canvas.save(output, format="PNG", optimize=True)
     luminance = sum(
         weight
-        * (
-            ((value / 255 + 0.055) / 1.055) ** 2.4
-            if value / 255 > 0.04045
-            else value / 255 / 12.92
-        )
+        * (((value / 255 + 0.055) / 1.055) ** 2.4 if value / 255 > 0.04045 else value / 255 / 12.92)
         for value, weight in zip((20, 43, 34), (0.2126, 0.7152, 0.0722), strict=True)
     )
     return RenderedAd(

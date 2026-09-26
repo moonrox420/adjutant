@@ -50,9 +50,7 @@ def create_subscription(
     """Create or update account subscription with flat-tier pricing."""
     tier = BILLING_TIERS.get(tier_id)
     if not tier:
-        raise DomainError(
-            "InvalidTier", f"Billing tier '{tier_id}' does not exist.", 400
-        )
+        raise DomainError("InvalidTier", f"Billing tier '{tier_id}' does not exist.", 400)
 
     now = datetime.now(UTC)
     period_end = now + timedelta(days=30)
@@ -123,8 +121,7 @@ def handle_billing_failure(
         "status": "dunning",
         "grace_period_end": grace_period_end.isoformat(),
         "warning": (
-            "Payment failed. Campaigns will remain running for 5 days "
-            "before pause on cancellation."
+            "Payment failed. Campaigns will remain running for 5 days before pause on cancellation."
         ),
     }
 
@@ -162,9 +159,7 @@ def cancel_subscription(
             "SELECT user_id FROM seat WHERE account_id=%s AND role='owner' LIMIT 1",
             (account_id,),
         ).fetchone()
-        effective_actor = (
-            actor_id or (owner_row["user_id"] if owner_row else account_id)
-        )
+        effective_actor = actor_id or (owner_row["user_id"] if owner_row else account_id)
 
         for b in brands:
             brand_id = b["id"]
@@ -183,4 +178,3 @@ def cancel_subscription(
         "paused_brand_ids": paused_brands,
         "stop_run_ids": stop_run_ids,
     }
-

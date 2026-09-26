@@ -19,9 +19,7 @@ class ConsumerSupervisor:
     def __init__(self, config: Settings) -> None:
         self.config = config
         self.stop_event = threading.Event()
-        self.thread = threading.Thread(
-            target=self.run, name="consumer-supervisor", daemon=True
-        )
+        self.thread = threading.Thread(target=self.run, name="consumer-supervisor", daemon=True)
         self.process: subprocess.Popen | None = None
 
     def start(self) -> None:
@@ -32,9 +30,7 @@ class ConsumerSupervisor:
                 role = conn.execute("""SELECT rolsuper,rolbypassrls FROM pg_roles
                                        WHERE rolname=current_user""").fetchone()
                 if role is None or role[0] or role[1]:
-                    raise RuntimeError(
-                        "Consumer role must not be superuser or bypass row security"
-                    )
+                    raise RuntimeError("Consumer role must not be superuser or bypass row security")
             self.thread.start()
 
     def close(self) -> None:
@@ -42,9 +38,7 @@ class ConsumerSupervisor:
         if self.thread.is_alive():
             self.thread.join(timeout=15)
         if self.thread.is_alive():
-            raise RuntimeError(
-                "Consumer supervisor did not shut down within its deadline"
-            )
+            raise RuntimeError("Consumer supervisor did not shut down within its deadline")
 
     def run(self) -> None:
         config = self.config
@@ -88,9 +82,7 @@ class ConsumerSupervisor:
                                 (instance,),
                             ).fetchone()
                             if not healthy or not healthy[0]:
-                                logger.error(
-                                    "Consumer heartbeat expired: instance=%s", instance
-                                )
+                                logger.error("Consumer heartbeat expired: instance=%s", instance)
                                 break
                             checked = time.monotonic()
                     code = terminate_owned(process)
@@ -108,4 +100,3 @@ class ConsumerSupervisor:
                         process.stdin.close()
                 self.process = None
             self.stop_event.wait(1)
-

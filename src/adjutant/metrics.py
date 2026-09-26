@@ -50,9 +50,7 @@ def determine_comparability_class(
     return "caveated"
 
 
-def get_channel_watermark(
-    conn: Connection[Any], brand_id: UUID, channel: str
-) -> datetime | None:
+def get_channel_watermark(conn: Connection[Any], brand_id: UUID, channel: str) -> datetime | None:
     """Read the latest metric sync watermark for a channel."""
     row: Any = conn.execute(
         "SELECT watermark FROM metric_sync_watermark WHERE brand_id=%s AND channel=%s",
@@ -85,9 +83,7 @@ def compute_sync_windows(
     if last_watermark is None:
         start = now - timedelta(hours=max_lookback_hours)
     else:
-        start = last_watermark.astimezone(UTC).replace(
-            minute=0, second=0, microsecond=0
-        )
+        start = last_watermark.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
         if start < now - timedelta(hours=max_lookback_hours):
             start = now - timedelta(hours=max_lookback_hours)
 
@@ -111,9 +107,7 @@ def record_metric_facts(
 
     inserted_or_updated = 0
     for fact in facts:
-        date_hour = fact.date_hour.astimezone(UTC).replace(
-            minute=0, second=0, microsecond=0
-        )
+        date_hour = fact.date_hour.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
         existing: Any = conn.execute(
             """SELECT conversions, conversion_value_usd
             FROM metric_fact_raw
@@ -260,30 +254,26 @@ def aggregate_metric_sum(
         raise DomainError(
             "IncomparableMetrics",
             f"Attempting to sum metrics across different comparability classes "
-            f"({sorted(classes)}) is strictly prohibited. Blended cross-channel aggregations "
+            f"({sorted(x for x in classes if x is not None)}) is strictly prohibited. Blended cross-channel aggregations "
             "require unified methodology.",
             422,
         )
 
-    windows = {
-        f.get("attribution_window") for f in facts if f.get("attribution_window")
-    }
+    windows = {f.get("attribution_window") for f in facts if f.get("attribution_window")}
     if len(windows) > 1:
         raise DomainError(
             "IncomparableMetrics",
             f"Attempting to sum metrics across mismatched attribution windows "
-            f"({sorted(windows)}) is strictly prohibited.",
+            f"({sorted(x for x in windows if x is not None)}) is strictly prohibited.",
             422,
         )
 
-    policies = {
-        f.get("view_through_policy") for f in facts if f.get("view_through_policy")
-    }
+    policies = {f.get("view_through_policy") for f in facts if f.get("view_through_policy")}
     if len(policies) > 1:
         raise DomainError(
             "IncomparableMetrics",
             f"Attempting to sum metrics across mismatched view-through policies "
-            f"({sorted(policies)}) is strictly prohibited.",
+            f"({sorted(x for x in policies if x is not None)}) is strictly prohibited.",
             422,
         )
 

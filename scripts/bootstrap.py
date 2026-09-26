@@ -27,13 +27,11 @@ from adjutant.security import (  # noqa: E402
 
 def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
     """Apply the same runtime grants in development, tests, and deployments."""
-    if not conn.execute(
-        "SELECT 1 FROM pg_roles WHERE rolname='adjutant_app'"
-    ).fetchone():
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_app'").fetchone():
         conn.execute(
-            sql.SQL(
-                "CREATE ROLE adjutant_app LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
-            ).format(sql.Literal(app_password))
+            sql.SQL("CREATE ROLE adjutant_app LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS").format(
+                sql.Literal(app_password)
+            )
         )
     conn.execute("SET search_path=adjutant,public")
     conn.execute("GRANT USAGE ON SCHEMA adjutant TO adjutant_app")
@@ -42,17 +40,11 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
         "REVOKE ALL ON local_credential,auth_session,login_attempt,account_token,mail_outbox "
         "FROM adjutant_app"
     )
-    conn.execute(
-        "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA adjutant TO adjutant_app"
-    )
+    conn.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA adjutant TO adjutant_app")
     conn.execute("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA adjutant TO adjutant_app")
-    conn.execute(
-        "REVOKE EXECUTE ON FUNCTION consume_activity_batch(integer) FROM adjutant_app"
-    )
+    conn.execute("REVOKE EXECUTE ON FUNCTION consume_activity_batch(integer) FROM adjutant_app")
     conn.execute("REVOKE EXECUTE ON FUNCTION reap_abandoned_jobs() FROM adjutant_app")
-    conn.execute(
-        "REVOKE EXECUTE ON FUNCTION lock_spend_authority(uuid,uuid) FROM adjutant_app"
-    )
+    conn.execute("REVOKE EXECUTE ON FUNCTION lock_spend_authority(uuid,uuid) FROM adjutant_app")
     writable = [
         "brand",
         "brand_graph_assertion",
@@ -85,13 +77,9 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
     conn.execute("GRANT DELETE ON plan_allocation TO adjutant_app")
     conn.execute("GRANT INSERT ON action,event_outbox,website_evidence TO adjutant_app")
     conn.execute("GRANT UPDATE(reverted_by_action_id) ON action TO adjutant_app")
-    conn.execute(
-        "GRANT UPDATE(status, activated_at, campaigns_enabled) ON brand TO adjutant_app"
-    )
+    conn.execute("GRANT UPDATE(status, activated_at, campaigns_enabled) ON brand TO adjutant_app")
     conn.execute("REVOKE INSERT,UPDATE ON approval_token FROM adjutant_app")
-    conn.execute(
-        "GRANT UPDATE(voided_at,voided_reason) ON approval_token TO adjutant_app"
-    )
+    conn.execute("GRANT UPDATE(voided_at,voided_reason) ON approval_token TO adjutant_app")
     conn.execute(
         "REVOKE INSERT, UPDATE, DELETE ON launch_authorization, channel_launch_grant "
         "FROM adjutant_app"
@@ -101,9 +89,7 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
 
 def provision_approval(conn: psycopg.Connection, password: str) -> None:
     """Permit issuance only through the dedicated, RLS-bound approval identity."""
-    if not conn.execute(
-        "SELECT 1 FROM pg_roles WHERE rolname='adjutant_approval'"
-    ).fetchone():
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_approval'").fetchone():
         conn.execute(
             sql.SQL(
                 "CREATE ROLE adjutant_approval LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
@@ -138,34 +124,26 @@ def provision_approval_files(local: Path) -> str:
 
 def provision_worker(conn: psycopg.Connection, worker_password: str) -> None:
     """The delivery role cannot read credentials, sessions, or raw brand tables."""
-    if not conn.execute(
-        "SELECT 1 FROM pg_roles WHERE rolname='adjutant_worker'"
-    ).fetchone():
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_worker'").fetchone():
         conn.execute(
-            sql.SQL(
-                "CREATE ROLE adjutant_worker LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
-            ).format(sql.Literal(worker_password))
+            sql.SQL("CREATE ROLE adjutant_worker LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS").format(
+                sql.Literal(worker_password)
+            )
         )
     conn.execute("REVOKE ALL ON ALL TABLES IN SCHEMA adjutant FROM adjutant_worker")
     conn.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA adjutant FROM adjutant_worker")
     conn.execute("GRANT USAGE ON SCHEMA adjutant TO adjutant_worker")
     conn.execute("GRANT SELECT,UPDATE ON adjutant.mail_outbox TO adjutant_worker")
-    conn.execute(
-        "GRANT SELECT,INSERT,UPDATE ON adjutant.consumer_process TO adjutant_worker"
-    )
+    conn.execute("GRANT SELECT,INSERT,UPDATE ON adjutant.consumer_process TO adjutant_worker")
     conn.execute(
         "GRANT EXECUTE ON FUNCTION adjutant.consume_activity_batch(integer) TO adjutant_worker"
     )
-    conn.execute(
-        "GRANT EXECUTE ON FUNCTION adjutant.reap_abandoned_jobs() TO adjutant_worker"
-    )
+    conn.execute("GRANT EXECUTE ON FUNCTION adjutant.reap_abandoned_jobs() TO adjutant_worker")
 
 
 def provision_gateway(conn: psycopg.Connection, password: str) -> None:
     """Grant verification reads and append-only reservations, without approval issuance rights."""
-    if not conn.execute(
-        "SELECT 1 FROM pg_roles WHERE rolname='adjutant_gateway'"
-    ).fetchone():
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='adjutant_gateway'").fetchone():
         conn.execute(
             sql.SQL(
                 "CREATE ROLE adjutant_gateway LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
@@ -178,9 +156,7 @@ def provision_gateway(conn: psycopg.Connection, password: str) -> None:
         adjutant.approval_request,adjutant.plan,adjutant.plan_allocation,
         adjutant.brand_kill_switch,adjutant.budget_ceiling,adjutant.approval_token_consumption
         TO adjutant_gateway""")
-    conn.execute(
-        "GRANT INSERT ON adjutant.approval_token_consumption TO adjutant_gateway"
-    )
+    conn.execute("GRANT INSERT ON adjutant.approval_token_consumption TO adjutant_gateway")
     conn.execute(
         "GRANT SELECT ON adjutant.guardrail,adjutant.channel_connection,"
         "adjutant.launch_authorization,adjutant.channel_launch_grant,"
@@ -200,17 +176,11 @@ def provision_gateway(conn: psycopg.Connection, password: str) -> None:
         "GRANT UPDATE(status, activated_at, campaigns_enabled) "
         "ON adjutant.brand TO adjutant_gateway"
     )
-    conn.execute(
-        "GRANT INSERT ON adjutant.action,adjutant.event_outbox TO adjutant_gateway"
-    )
+    conn.execute("GRANT INSERT ON adjutant.action,adjutant.event_outbox TO adjutant_gateway")
     conn.execute("GRANT SELECT(id) ON adjutant.action TO adjutant_gateway")
-    conn.execute(
-        "GRANT UPDATE(reverted_by_action_id) ON adjutant.action TO adjutant_gateway"
-    )
+    conn.execute("GRANT UPDATE(reverted_by_action_id) ON adjutant.action TO adjutant_gateway")
     conn.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA adjutant TO adjutant_gateway")
-    conn.execute(
-        "GRANT EXECUTE ON FUNCTION adjutant.lock_runner_brand(uuid) TO adjutant_gateway"
-    )
+    conn.execute("GRANT EXECUTE ON FUNCTION adjutant.lock_runner_brand(uuid) TO adjutant_gateway")
     conn.execute("""GRANT EXECUTE ON FUNCTION adjutant.current_brand_ids(),
         adjutant.lock_spend_authority(uuid,uuid) TO adjutant_gateway""")
 
@@ -247,18 +217,14 @@ def append_private_file(path: Path, content: str) -> None:
         os.fsync(handle.fileno())
 
 
-def ensure_cluster_roles(
-    conn: psycopg.Connection, role_passwords: dict[str, str]
-) -> None:
+def ensure_cluster_roles(conn: psycopg.Connection, role_passwords: dict[str, str]) -> None:
     """Ensure all required database roles exist in the cluster prior to running migrations."""
     for role_name, password in role_passwords.items():
-        if not conn.execute(
-            "SELECT 1 FROM pg_roles WHERE rolname=%s", (role_name,)
-        ).fetchone():
+        if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (role_name,)).fetchone():
             conn.execute(
-                sql.SQL(
-                    "CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS"
-                ).format(sql.Identifier(role_name), sql.Literal(password))
+                sql.SQL("CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS").format(
+                    sql.Identifier(role_name), sql.Literal(password)
+                )
             )
 
 
@@ -293,9 +259,7 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
 
     with psycopg.connect(server + "/postgres", autocommit=True) as conn:
         for name in ("adjutant", "adjutant_test"):
-            if not conn.execute(
-                "SELECT 1 FROM pg_database WHERE datname=%s", (name,)
-            ).fetchone():
+            if not conn.execute("SELECT 1 FROM pg_database WHERE datname=%s", (name,)).fetchone():
                 conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
         ensure_cluster_roles(conn, role_passwords)
 
@@ -308,9 +272,7 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
         provision_worker(conn, worker_password)
         provision_gateway(conn, gateway_password)
         provision_approval(conn, approval_password)
-        existing = conn.execute(
-            "SELECT id FROM app_user WHERE email=%s", (email,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM app_user WHERE email=%s", (email,)).fetchone()
         if existing is None:
             user_row = conn.execute(
                 "INSERT INTO app_user(email,full_name,email_verified_at) "
@@ -338,14 +300,10 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
                          VALUES(%s,%s,'owner',now(),10000,300000)""",
                 (account, user),
             )
-            print(
-                "Created workspace owner. No sample campaigns or performance data were inserted."
-            )
+            print("Created workspace owner. No sample campaigns or performance data were inserted.")
         else:
             print("Owner already exists; password and account data were preserved.")
-    app_url = (
-        f"postgresql://adjutant_app:{quote(app_password)}@127.0.0.1:55439/adjutant"
-    )
+    app_url = f"postgresql://adjutant_app:{quote(app_password)}@127.0.0.1:55439/adjutant"
     env_file = root / ".env"
     if not env_file.exists():
         write_private_file(
@@ -377,9 +335,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--email", required=True)
     parser.add_argument("--password-file", type=Path)
-    parser.add_argument(
-        "--account-type", choices=["business", "agency"], default="business"
-    )
+    parser.add_argument("--account-type", choices=["business", "agency"], default="business")
     args = parser.parse_args()
     password = (
         args.password_file.read_text().strip()

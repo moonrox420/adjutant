@@ -43,10 +43,7 @@ def enqueue_stop(conn: Connection[Any], brand_id: UUID, actor_id: UUID) -> UUID:
         visited = {obj["id"]}
         while root["level"] != "campaign" and root["parent_id"] in by_id:
             parent = by_id[root["parent_id"]]
-            if (
-                parent["id"] in visited
-                or parent["connection_id"] != obj["connection_id"]
-            ):
+            if parent["id"] in visited or parent["connection_id"] != obj["connection_id"]:
                 break
             visited.add(parent["id"])
             root = parent
@@ -101,8 +98,7 @@ def stop_report(db: Database, actor: Principal, brand_id: UUID, run_id: UUID) ->
         "run": run,
         "items": items,
         "scope": "managed_campaigns",
-        "remote_pause_verified": bool(items)
-        and all(i["state"] == "verified" for i in items),
+        "remote_pause_verified": bool(items) and all(i["state"] == "verified" for i in items),
     }
 
 
@@ -112,10 +108,7 @@ def wait_for_stop(
     deadline = time.monotonic() + timeout
     while True:
         report = stop_report(db, actor, brand_id, run_id)
-        if (
-            report["run"]["state"] not in {"queued", "running"}
-            or time.monotonic() >= deadline
-        ):
+        if report["run"]["state"] not in {"queued", "running"} or time.monotonic() >= deadline:
             return report
         time.sleep(0.1)
 
@@ -262,9 +255,7 @@ async def pause_items(
                     "Pause failed before remote verification. Inspect service logs and retry.",
                     502,
                 )
-            await asyncio.to_thread(
-                record_result, db, events, brand_id, item, result, error
-            )
+            await asyncio.to_thread(record_result, db, events, brand_id, item, result, error)
 
         await asyncio.gather(*(pause_one(item) for item in items))
 
@@ -284,14 +275,10 @@ def execute_stop(
             return
         try:
             with db.transaction(extra_brand=brand_id) as conn:
-                run = one(
-                    conn, "SELECT state FROM remote_stop_run WHERE id=%s", (run_id,)
-                )
+                run = one(conn, "SELECT state FROM remote_stop_run WHERE id=%s", (run_id,))
                 if run["state"] not in {"queued", "running"}:
                     return
-                conn.execute(
-                    "UPDATE remote_stop_run SET state='running' WHERE id=%s", (run_id,)
-                )
+                conn.execute("UPDATE remote_stop_run SET state='running' WHERE id=%s", (run_id,))
                 items: Any = conn.execute(
                     "SELECT i.*,o.native_payload FROM remote_stop_item i JOIN campaign_object "
                     "o ON o.id=i.campaign_object_id WHERE i.run_id=%s AND i.state='pending'",
@@ -322,11 +309,7 @@ def execute_stop(
                             (brand_id, item["channel"]),
                         )
                         metadata = next(
-                            (
-                                a
-                                for a in auth["accounts"]
-                                if a["id"] == item["account_id"]
-                            ),
+                            (a for a in auth["accounts"] if a["id"] == item["account_id"]),
                             {},
                         )
                         credentials[connection_id] = (app, token, metadata)
@@ -335,16 +318,10 @@ def execute_stop(
             pending = []
             for item in items:
                 if item["connection_id"] in errors:
-                    record_result(
-                        db, events, brand_id, item, None, errors[item["connection_id"]]
-                    )
+                    record_result(db, events, brand_id, item, None, errors[item["connection_id"]])
                 else:
                     pending.append(item)
-            asyncio.run(
-                pause_items(
-                    db, config, events, brand_id, pending, credentials, deadline
-                )
-            )
+            asyncio.run(pause_items(db, config, events, brand_id, pending, credentials, deadline))
             with db.transaction(extra_brand=brand_id) as conn:
                 conn.execute(
                     "UPDATE remote_stop_run SET state=CASE WHEN EXISTS(SELECT 1 FROM "
@@ -372,9 +349,7 @@ def execute_stop(
                     (run_id,),
                 )
         finally:
-            lock.execute(
-                "SELECT pg_advisory_unlock(hashtextextended(%s,28))", (str(run_id),)
-            )
+            lock.execute("SELECT pg_advisory_unlock(hashtextextended(%s,28))", (str(run_id),))
 
 
 class RemoteStopRunner:
@@ -383,9 +358,7 @@ class RemoteStopRunner:
     def __init__(self, db: Database, config: Settings, events: EventRegistry):
         self.db, self.config, self.events = db, config, events
         self.stop = threading.Event()
-        self.thread = threading.Thread(
-            target=self.run, name="remote-stop-runner", daemon=True
-        )
+        self.thread = threading.Thread(target=self.run, name="remote-stop-runner", daemon=True)
 
     def start(self) -> None:
         self.thread.start()
@@ -398,14 +371,10 @@ class RemoteStopRunner:
         self.stop.set()
         self.thread.join(timeout=55)
         if self.thread.is_alive():
-            raise RuntimeError(
-                "Remote stop worker has not finished its bounded shutdown"
-            )
+            raise RuntimeError("Remote stop worker has not finished its bounded shutdown")
 
     def run(self) -> None:
-        with ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="remote-stop"
-        ) as pool:
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="remote-stop") as pool:
             active = {}
             while not self.stop.is_set():
                 for key, future in list(active.items()):
@@ -423,9 +392,7 @@ class RemoteStopRunner:
                         del active[key]
                 try:
                     with self.db.transaction() as conn:
-                        rows = conn.execute(
-                            "SELECT * FROM runnable_remote_stops()"
-                        ).fetchall()
+                        rows = conn.execute("SELECT * FROM runnable_remote_stops()").fetchall()
                     for row in rows:
                         if len(active) >= 2:
                             break

@@ -33,9 +33,7 @@ class MetaBuildSettings(Input):
 
     @model_validator(mode="after")
     def validate_targeting(self):
-        self.countries = sorted(
-            set(country.strip().upper() for country in self.countries)
-        )
+        self.countries = sorted(set(country.strip().upper() for country in self.countries))
         if any(
             len(country) != 2 or not country.isascii() or not country.isalpha()
             for country in self.countries
@@ -75,21 +73,15 @@ def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list
     settings = MetaBuildSettings.model_validate(document["settings"])
     failures = []
     if document["objective"] not in {"awareness", "traffic", "leads", "sales"}:
-        failures.append(
-            "This Meta image campaign requires awareness, traffic, leads, or sales."
-        )
+        failures.append("This Meta image campaign requires awareness, traffic, leads, or sales.")
     if document["objective"] in {"leads", "sales"} and not settings.pixel_id:
-        failures.append(
-            "Website conversion campaigns require an authorized Meta Pixel ID."
-        )
+        failures.append("Website conversion campaigns require an authorized Meta Pixel ID.")
     if document["objective"] == "sales" and settings.conversion_event != "PURCHASE":
         failures.append("Sales campaigns require the Purchase conversion event.")
     if document["objective"] == "leads" and settings.conversion_event != "LEAD":
         failures.append("Lead campaigns require the Lead conversion event.")
     if not document["creatives"]:
-        failures.append(
-            "Attach at least one validated square image creative to the plan."
-        )
+        failures.append("Attach at least one validated square image creative to the plan.")
     limits = text_limits or {"headline": 40, "primary_text": 125, "description": 30}
     for creative in document["creatives"]:
         copy = creative["copy"].get("meta", {})
@@ -187,9 +179,7 @@ class MetaBuilder:
                 params={"fields": fields, "limit": 100, **params},
             )
             batch = body.get("data")
-            if not isinstance(batch, list) or any(
-                not isinstance(row, dict) for row in batch
-            ):
+            if not isinstance(batch, list) or any(not isinstance(row, dict) for row in batch):
                 raise DomainError(
                     "ProviderResponseInvalid",
                     "Meta returned an invalid object list.",
@@ -233,21 +223,13 @@ class MetaBuilder:
             identity = str(matches[0]["id"])
         if not identity:
             encoded = {
-                name: (
-                    json.dumps(value)
-                    if isinstance(value, (dict, list, bool))
-                    else str(value)
-                )
+                name: (json.dumps(value) if isinstance(value, (dict, list, bool)) else str(value))
                 for name, value in payload.items()
             }
-            result = await self.request(
-                "POST", f"act_{self.account}/{edge}", data=encoded
-            )
+            result = await self.request("POST", f"act_{self.account}/{edge}", data=encoded)
             identity = str(result.get("id", ""))
             numeric(identity)
-            await asyncio.to_thread(
-                self.finish, key, identity, {"create_response": result}
-            )
+            await asyncio.to_thread(self.finish, key, identity, {"create_response": result})
         row = await self.request("GET", numeric(identity), params={"fields": fields})
         if (
             str(row.get("id")) != identity
@@ -336,9 +318,7 @@ class MetaBuilder:
                     502,
                 )
             identity = row["hash"]
-            await asyncio.to_thread(
-                self.finish, key, identity, {"create_response": row}
-            )
+            await asyncio.to_thread(self.finish, key, identity, {"create_response": row})
         images = await self.collection(
             "adimages", "hash,name,width,height", hashes=json.dumps([identity])
         )
@@ -361,10 +341,7 @@ class MetaBuilder:
             f"act_{self.account}",
             params={"fields": "account_id,account_status,currency"},
         )
-        if (
-            str(account.get("account_id")) != self.account
-            or account.get("account_status") != 1
-        ):
+        if str(account.get("account_id")) != self.account or account.get("account_status") != 1:
             raise DomainError(
                 "AccountUnavailable",
                 "Meta account is not authorized for advertising.",

@@ -47,9 +47,7 @@ class OllamaPlanner:
             or target.fragment
             or target.path
         ):
-            raise ValueError(
-                "Ollama URL must be an HTTP(S) origin without credentials or a path"
-            )
+            raise ValueError("Ollama URL must be an HTTP(S) origin without credentials or a path")
 
     def _headers(self) -> dict[str, str]:
         if self.provider == "cloud":
@@ -63,9 +61,7 @@ class OllamaPlanner:
         return {}
 
     def _http_error(self, exc: httpx.HTTPError) -> DomainError:
-        status = (
-            exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-        )
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
         if status in {401, 403}:
             return DomainError(
                 "ModelAccessDenied",
@@ -98,10 +94,7 @@ class OllamaPlanner:
             if not isinstance(catalog, list) or any(
                 not isinstance(item, dict)
                 or not isinstance(item.get("name"), str)
-                or (
-                    "capabilities" in item
-                    and not isinstance(item["capabilities"], list)
-                )
+                or ("capabilities" in item and not isinstance(item["capabilities"], list))
                 for item in catalog
             ):
                 raise ValueError("Invalid model catalog")
@@ -131,9 +124,7 @@ class OllamaPlanner:
             "Allocations must sum exactly to monthly_budget_usd. Money fields are decimal strings "
             "with two decimal places. This is a draft for human review; never claim it is live."
         )
-        return GenerationResult(
-            *self.generate_document(model, context, PlanInput, system)
-        )
+        return GenerationResult(*self.generate_document(model, context, PlanInput, system))
 
     def generate_document(
         self,
@@ -226,7 +217,7 @@ class OllamaPlanner:
                                         "field": ".".join(map(str, issue["loc"])),
                                         "current_characters": len(issue["input"]),
                                         "rewrite_target_characters": max(
-                                            1, int(issue["ctx"]["max_length"] * 0.65)
+                                            1, int((issue.get("ctx") or {}).get("max_length", 1) * 0.65)
                                         ),
                                     }
                                     for issue in exc.errors()

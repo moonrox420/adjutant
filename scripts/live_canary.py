@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import psycopg
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from test_approval_server import approval_test_server
@@ -59,7 +60,9 @@ def test_settings(origin: str = "http://localhost:3000") -> Settings:
     key_path = Path(".local/browser-tenant-master.key")
     provision_master_key(key_path)
     return Settings(
-        database_url=f"postgresql://adjutant_app:{quote(password)}@{admin_url.split('@')[1]}",
+        database_url=SecretStr(
+            f"postgresql://adjutant_app:{quote(password)}@{admin_url.split('@')[1]}"
+        ),
         public_origin=origin,
         worker_database_url=None,
         credential_master_key_path=key_path,
@@ -68,9 +71,7 @@ def test_settings(origin: str = "http://localhost:3000") -> Settings:
 
 def run(model: str) -> None:
     identity = seed_identity(Path(".local/test-admin.url").read_text().strip())
-    with approval_test_server(
-        Path(".local/test-admin.url").read_text().strip()
-    ) as approval_url:
+    with approval_test_server(Path(".local/test-admin.url").read_text().strip()) as approval_url:
         config = test_settings()
         config.approval_url = approval_url
         run_workflow(identity, config, model)
@@ -119,9 +120,7 @@ def run_workflow(identity: dict[str, str], config: Settings, model: str) -> None
             },
         )
         if response.status_code != 201:
-            raise RuntimeError(
-                f"Live generation failed: {response.status_code} {response.text}"
-            )
+            raise RuntimeError(f"Live generation failed: {response.status_code} {response.text}")
         plan = response.json()
         submission = client.post(
             f"/api/brands/{brand}/plans/{plan['id']}/submit",

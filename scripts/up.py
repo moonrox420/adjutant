@@ -33,9 +33,7 @@ def postgres_binary(name: str) -> str:
         binary = directory / (f"{name}.exe" if os.name == "nt" else name)
         if binary.is_file():
             return str(binary)
-    raise RuntimeError(
-        "PostgreSQL 18 with pgvector is required; add its bin directory to PATH"
-    )
+    raise RuntimeError("PostgreSQL 18 with pgvector is required; add its bin directory to PATH")
 
 
 def secret_file(path: Path) -> str:
@@ -52,16 +50,12 @@ def secret_file(path: Path) -> str:
 def ensure_environment() -> None:
     if sys.prefix != sys.base_prefix:
         return
-    python = (
-        ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    )
+    python = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if not python.is_file():
         run([sys.executable, "-m", "venv", str(ROOT / ".venv")])
         run([str(python), "-m", "pip", "install", "-r", "requirements.lock"])
     if Path(sys.executable).absolute() != python.absolute():
-        raise SystemExit(
-            subprocess.call([str(python), str(Path(__file__)), *sys.argv[1:]])
-        )
+        raise SystemExit(subprocess.call([str(python), str(Path(__file__)), *sys.argv[1:]]))
 
 
 def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
@@ -123,24 +117,17 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
                 "start",
             ]
         )
-    server = (
-        f"postgresql://adjutant_admin:{quote(database_password)}@127.0.0.1:{db_port}"
-    )
+    server = f"postgresql://adjutant_admin:{quote(database_password)}@127.0.0.1:{db_port}"
     with psycopg.connect(server + "/postgres", autocommit=True) as conn:
         data_dir_row = conn.execute("SHOW data_directory").fetchone()
         if not data_dir_row:
             raise RuntimeError("Could not determine database data directory")
         if (
-            str(data_dir_row[0])
-            .replace("\\", "/")
-            .rstrip("/")
-            .casefold()
+            str(data_dir_row[0]).replace("\\", "/").rstrip("/").casefold()
             != str(data).replace("\\", "/").casefold()
         ):
             raise RuntimeError("Database port belongs to a different cluster")
-        if not conn.execute(
-            "SELECT 1 FROM pg_database WHERE datname='adjutant'"
-        ).fetchone():
+        if not conn.execute("SELECT 1 FROM pg_database WHERE datname='adjutant'").fetchone():
             conn.execute("CREATE DATABASE adjutant")
         ensure_cluster_roles(
             conn,
@@ -212,20 +199,14 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         while True:
             if process.poll() is not None:
-                raise RuntimeError(
-                    f"HTTP service exited with code {process.returncode}"
-                )
+                raise RuntimeError(f"HTTP service exited with code {process.returncode}")
             try:
-                with opener.open(
-                    f"http://127.0.0.1:{port}/readyz", timeout=1
-                ) as response:
+                with opener.open(f"http://127.0.0.1:{port}/readyz", timeout=1) as response:
                     if response.status == 200:
                         break
             except (urllib.error.URLError, TimeoutError):
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(
-                        "HTTP service failed its readiness deadline"
-                    ) from None
+                    raise RuntimeError("HTTP service failed its readiness deadline") from None
                 time.sleep(0.2)
         print(f"Adjutant S0 ready at http://127.0.0.1:{port}/docs", flush=True)
         print(
@@ -255,9 +236,7 @@ def main() -> None:
     parser.add_argument("--state-directory", type=Path, default=ROOT / ".local/runner")
     parser.add_argument("--port", type=int, default=8010)
     parser.add_argument("--db-port", type=int, default=55440)
-    parser.add_argument(
-        "--check", action="store_true", help="Run the S0 HTTP smoke test and stop"
-    )
+    parser.add_argument("--check", action="store_true", help="Run the S0 HTTP smoke test and stop")
     args = parser.parse_args()
     ensure_environment()
     sys.path.insert(0, str(ROOT / "src"))
@@ -268,9 +247,7 @@ def main() -> None:
     finally:
         data = args.state_directory.resolve() / "postgres"
         if args.check and (data / "postmaster.pid").exists():
-            run(
-                [postgres_binary("pg_ctl"), "-D", str(data), "-m", "fast", "-w", "stop"]
-            )
+            run([postgres_binary("pg_ctl"), "-D", str(data), "-m", "fast", "-w", "stop"])
 
 
 if __name__ == "__main__":

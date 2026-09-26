@@ -53,14 +53,12 @@ class JsonFormatter(logging.Formatter):
 def configure_logging() -> None:
     for name in ("httpx", "uvicorn.access"):
         external = logging.getLogger(name)
-        if not any(
-            isinstance(item, CredentialQueryFilter) for item in external.filters
-        ):
+        if not any(isinstance(item, CredentialQueryFilter) for item in external.filters):
             external.addFilter(CredentialQueryFilter())
     logger = logging.getLogger("adjutant")
     if not any(getattr(handler, "adjutant_json", False) for handler in logger.handlers):
         handler = logging.StreamHandler()
         handler.setFormatter(JsonFormatter())
-        handler.adjutant_json = True
+        setattr(handler, "adjutant_json", True)
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)

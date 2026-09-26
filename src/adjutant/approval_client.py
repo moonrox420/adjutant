@@ -29,23 +29,17 @@ def decide_remotely(
         "rejected",
         "changes_requested",
     }:
-        raise DomainError(
-            "ApprovalUnavailable", "Approval service returned an invalid state.", 503
-        )
+        raise DomainError("ApprovalUnavailable", "Approval service returned an invalid state.", 503)
     return body
 
 
-def approval_request(
-    config: Settings, path: str, payload: dict[str, Any]
-) -> dict[str, Any]:
+def approval_request(config: Settings, path: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Send a bounded authenticated request to the configured approval origin only."""
     try:
         secret = config.approval_service_secret_path.read_text(encoding="utf-8").strip()
         if len(secret) < 32:
             raise ValueError("Invalid service credential")
-        with httpx.Client(
-            timeout=15, trust_env=False, follow_redirects=False
-        ) as client:
+        with httpx.Client(timeout=15, trust_env=False, follow_redirects=False) as client:
             response = client.post(
                 config.approval_url.rstrip("/") + path,
                 headers={"Authorization": f"Bearer {secret}"},

@@ -47,9 +47,7 @@ class SpendAuthority:
 
     def validate(self, conn: Connection[Any], intent: SpendIntent) -> dict[str, Any]:
         """Lock brand before token, matching stop operations and serializing authority changes."""
-        conn.execute(
-            "SELECT lock_spend_authority(%s,%s)", (intent.brand_id, intent.token_id)
-        )
+        conn.execute("SELECT lock_spend_authority(%s,%s)", (intent.brand_id, intent.token_id))
         brand = one(conn, "SELECT * FROM brand WHERE id=%s", (intent.brand_id,))
         token = one(
             conn,
@@ -58,14 +56,10 @@ class SpendAuthority:
         )
         key = self.trusted_keys.get(token["signing_key_id"])
         if key is None:
-            raise DomainError(
-                "UnknownSigningKey", "Approval uses an untrusted signing key.", 403
-            )
+            raise DomainError("UnknownSigningKey", "Approval uses an untrusted signing key.", 403)
         claims = token["signed_claims"]
         if not isinstance(claims, dict):
-            raise DomainError(
-                "InvalidSignature", "Approval has no verifiable signed claims.", 403
-            )
+            raise DomainError("InvalidSignature", "Approval has no verifiable signed claims.", 403)
         verify_claims(key, claims, bytes(token["signature"]))
         expected = {
             "tok": str(token["id"]),
@@ -87,20 +81,11 @@ class SpendAuthority:
         if token["voided_at"] or token["expires_at"] <= datetime.now(UTC):
             raise DomainError("TokenExpired", "Approval expired or was voided.", 403)
         if int(token["expires_at"].timestamp()) != claims["exp"]:
-            raise DomainError(
-                "ClaimMismatch", "Approval expiry does not match its signature.", 403
-            )
-        if (
-            int(token["issued_at"].timestamp()) != claims["iat"]
-            or token["subject_type"] != "plan"
-        ):
-            raise DomainError(
-                "ClaimMismatch", "Approval issuance or subject type is invalid.", 403
-            )
+            raise DomainError("ClaimMismatch", "Approval expiry does not match its signature.", 403)
+        if int(token["issued_at"].timestamp()) != claims["iat"] or token["subject_type"] != "plan":
+            raise DomainError("ClaimMismatch", "Approval issuance or subject type is invalid.", 403)
         if intent.subject_hash != claims["sub_hash"]:
-            raise DomainError(
-                "SubjectChanged", "The requested revision is not approved.", 403
-            )
+            raise DomainError("SubjectChanged", "The requested revision is not approved.", 403)
         if (
             f"channel:{intent.channel}" not in claims["scopes"]
             or f"op:{intent.operation}" not in claims["scopes"]
@@ -119,17 +104,13 @@ class SpendAuthority:
             plan["plan_hash"] != intent.subject_hash
             or digest(plan["plan_document"]) != intent.subject_hash
         ):
-            raise DomainError(
-                "SubjectChanged", "Approved plan content has changed.", 403
-            )
+            raise DomainError("SubjectChanged", "Approved plan content has changed.", 403)
         if digest(intent.payload) != intent.subject_hash:
             raise DomainError(
                 "PayloadChanged", "The operation payload is not the approved plan.", 403
             )
         if plan["state"] not in {"approved", "deploying", "live"}:
-            raise DomainError(
-                "ApprovalRequired", "This plan is not approved for deployment.", 403
-            )
+            raise DomainError("ApprovalRequired", "This plan is not approved for deployment.", 403)
         request = one(
             conn,
             "SELECT state FROM approval_request WHERE id=%s",
@@ -142,9 +123,7 @@ class SpendAuthority:
             or not brand["campaigns_enabled"]
             or brand["restricted_flags"]
         ):
-            raise DomainError(
-                "BrandNotReady", "The brand is not cleared for campaigns.", 403
-            )
+            raise DomainError("BrandNotReady", "The brand is not cleared for campaigns.", 403)
         if conn.execute(
             "SELECT 1 FROM brand_kill_switch WHERE brand_id=%s AND released_at IS NULL",
             (intent.brand_id,),

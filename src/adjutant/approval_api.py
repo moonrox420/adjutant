@@ -34,7 +34,7 @@ class ApprovalSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ADJUTANT_APPROVAL_", env_file=".env", extra="ignore"
     )
-    database_url: SecretStr
+    database_url: SecretStr = SecretStr("")
     signing_key_path: Path = Path(".local/approval.key")
     service_secret_path: Path = Path(".local/approval-service.secret")
     registry_path: Path = Path(__file__).with_name("event_registry.json")
@@ -75,35 +75,23 @@ def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
             with db.transaction() as conn:
                 role_row: Any = conn.execute("SELECT current_user AS name").fetchone()
                 if not role_row or role_row["name"] != "adjutant_approval":
-                    raise RuntimeError(
-                        "Approval service requires the adjutant_approval role"
-                    )
+                    raise RuntimeError("Approval service requires the adjutant_approval role")
             yield
         finally:
             db.pool.close()
 
-    app = FastAPI(
-        title="Adjutant approvals", lifespan=lifespan, docs_url=None, redoc_url=None
-    )
+    app = FastAPI(title="Adjutant approvals", lifespan=lifespan, docs_url=None, redoc_url=None)
 
     def authenticate(authorization: Annotated[str | None, Header()] = None) -> None:
-        if not authorization or not hmac.compare_digest(
-            authorization, f"Bearer {secret}"
-        ):
-            raise DomainError(
-                "Unauthorized", "An approval service credential is required.", 401
-            )
+        if not authorization or not hmac.compare_digest(authorization, f"Bearer {secret}"):
+            raise DomainError("Unauthorized", "An approval service credential is required.", 401)
 
     @app.exception_handler(DomainError)
     async def domain_error(request: Any, exc: DomainError) -> JSONResponse:
-        return JSONResponse(
-            {"error": {"code": exc.code, "message": exc.message}}, exc.status
-        )
+        return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, exc.status)
 
     @app.exception_handler(RequestValidationError)
-    async def invalid_request(
-        request: Any, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def invalid_request(request: Any, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(
             {
                 "error": {
@@ -158,9 +146,7 @@ def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
                 body.decision,
             )
 
-    @app.post(
-        "/internal/brands/{brand_id}/audit-export", dependencies=[Depends(authenticate)]
-    )
+    @app.post("/internal/brands/{brand_id}/audit-export", dependencies=[Depends(authenticate)])
     def export(brand_id: UUID, body: AuditExportRequest) -> dict[str, Any]:
         token_hash = session_digest(body.session.get_secret_value())
         actor = db.authenticate(token_hash)

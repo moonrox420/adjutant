@@ -107,10 +107,9 @@ def studio_operations_router(
     authenticate: Callable[[Request], Principal],
 ):
     router = APIRouter(prefix="/api/brands/{brand_id}", tags=["studio-operations"])
-    actor_type = Annotated[Principal, Depends(authenticate)]
 
     @router.get("/visual-provider")
-    def provider_status(brand_id: UUID, actor: actor_type) -> dict:
+    def provider_status(brand_id: UUID, actor: Principal = Depends(authenticate)) -> dict:
         with db.transaction(actor) as conn:
             one(conn, "SELECT id FROM brand WHERE id=%s", (brand_id,))
             provider = visual_generator(conn, brand_id, config)
@@ -128,7 +127,9 @@ def studio_operations_router(
 
     @router.put("/visual-provider")
     def configure_provider(
-        brand_id: UUID, data: VisualConfiguration, actor: actor_type
+        brand_id: UUID,
+        data: VisualConfiguration,
+        actor: Principal = Depends(authenticate),
     ) -> dict:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
@@ -147,9 +148,7 @@ def studio_operations_router(
                     else config.gemini_api_key.get_secret_value()
                 )
             if not key:
-                raise DomainError(
-                    "GeminiNotConfigured", "Enter your Gemini API key.", 422
-                )
+                raise DomainError("GeminiNotConfigured", "Enter your Gemini API key.", 422)
             store.write(
                 conn,
                 brand_id,
@@ -169,7 +168,7 @@ def studio_operations_router(
         return {"credentials_saved": True, "model": data.model, "sdk_supported": True}
 
     @router.get("/understanding")
-    def understanding(brand_id: UUID, actor: actor_type) -> dict | None:
+    def understanding(brand_id: UUID, actor: Principal = Depends(authenticate)) -> dict | None:
         with db.transaction(actor) as conn:
             one(conn, "SELECT id FROM brand WHERE id=%s", (brand_id,))
             return conn.execute(
@@ -180,7 +179,9 @@ def studio_operations_router(
 
     @router.put("/understanding")
     def edit_understanding(
-        brand_id: UUID, data: ContextEdit, actor: actor_type
+        brand_id: UUID,
+        data: ContextEdit,
+        actor: Principal = Depends(authenticate),
     ) -> dict:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
@@ -198,9 +199,7 @@ def studio_operations_router(
                 )
             document = data.document.model_dump()
             if previous["document"] == document:
-                return {
-                    k: previous[k] for k in ("id", "version", "document", "source_kind")
-                }
+                return {k: previous[k] for k in ("id", "version", "document", "source_kind")}
             row = one(
                 conn,
                 "INSERT INTO brand_context(brand_id,version,input_hash,source_kind,document) "
@@ -240,7 +239,10 @@ def studio_operations_router(
 
     @router.post("/studio/{draft_id}/render", status_code=201)
     def render_draft(
-        brand_id: UUID, draft_id: UUID, data: RenderInput, actor: actor_type
+        brand_id: UUID,
+        draft_id: UUID,
+        data: RenderInput,
+        actor: Principal = Depends(authenticate),
     ) -> dict:
         with db.transaction(actor) as conn:
             generation_gate(conn, locked_brand(conn, brand_id))
@@ -271,7 +273,7 @@ def studio_operations_router(
         brand_id: UUID,
         rendition_id: UUID,
         extension: Literal["png", "svg"],
-        actor: actor_type,
+        actor: Principal = Depends(authenticate),
     ):
         with db.transaction(actor) as conn:
             row = one(
@@ -290,7 +292,10 @@ def studio_operations_router(
 
     @router.post("/studio/{draft_id}/attach", status_code=201)
     def attach(
-        brand_id: UUID, draft_id: UUID, data: AttachInput, actor: actor_type
+        brand_id: UUID,
+        draft_id: UUID,
+        data: AttachInput,
+        actor: Principal = Depends(authenticate),
     ) -> dict:
         with db.transaction(actor) as conn:
             generation_gate(conn, locked_brand(conn, brand_id))
@@ -320,8 +325,7 @@ def studio_operations_router(
                 (data.plan_id,),
             ).fetchall()
             rendered = {
-                ratio: persist_render(conn, storage, brand_id, row, ratio)
-                for ratio in SIZES
+                ratio: persist_render(conn, storage, brand_id, row, ratio) for ratio in SIZES
             }
             for spec in specs:
                 ratio = spec["aspect_ratio"]
@@ -340,10 +344,8 @@ def studio_operations_router(
                     if (
                         layer["x"] < insets.get("left", 0)
                         or layer["y"] < insets.get("top", 0)
-                        or layer["x"] + layer["width"]
-                        > result["width"] - insets.get("right", 0)
-                        or layer["y"] + layer["height"]
-                        > result["height"] - insets.get("bottom", 0)
+                        or layer["x"] + layer["width"] > result["width"] - insets.get("right", 0)
+                        or layer["y"] + layer["height"] > result["height"] - insets.get("bottom", 0)
                     ):
                         raise DomainError(
                             "PlacementSafeArea",
@@ -361,9 +363,9 @@ def studio_operations_router(
                     )
                 for field, limit in spec["text_limits"].items():
                     key = "primary_text" if field == "primary" else field
-                    if key in row["document"]["meta"] and len(
-                        row["document"]["meta"][key]
-                    ) > int(limit):
+                    if key in row["document"]["meta"] and len(row["document"]["meta"][key]) > int(
+                        limit
+                    ):
                         raise DomainError(
                             "PlacementTextLimit",
                             f"{spec['placement_key']}: {key} exceeds {limit} characters.",

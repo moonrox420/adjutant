@@ -76,9 +76,7 @@ def locked_brand(conn: Connection[Any], brand_id: UUID) -> dict[str, Any]:
 
 def generation_gate(conn: Connection[Any], brand: dict[str, Any]) -> None:
     if brand["restricted_flags"] or not brand["campaigns_enabled"]:
-        raise DomainError(
-            "VerticalBlocked", "Campaign creation is blocked for this vertical."
-        )
+        raise DomainError("VerticalBlocked", "Campaign creation is blocked for this vertical.")
     if conn.execute(
         "SELECT 1 FROM brand_kill_switch WHERE brand_id=%s AND released_at IS NULL",
         (brand["id"],),
@@ -142,9 +140,7 @@ def persist_plan(
 ) -> dict[str, Any]:
     validate_plan(conn, brand_id, data)
     document = data.model_dump(mode="json")
-    document["revision"] = (
-        existing["plan_document"].get("revision", 1) + 1 if existing else 1
-    )
+    document["revision"] = existing["plan_document"].get("revision", 1) + 1 if existing else 1
     plan_hash = digest(document)
     params = (
         data.name,
@@ -240,9 +236,7 @@ def check_plan_integrity(plan: dict[str, Any]) -> PlanInput:
             "rationale",
         )
     ):
-        raise DomainError(
-            "SubjectHashMismatch", "Plan fields no longer match the signed document."
-        )
+        raise DomainError("SubjectHashMismatch", "Plan fields no longer match the signed document.")
     return data
 
 
@@ -263,9 +257,7 @@ def request_approval(
         (plan_id, brand_id),
     )
     if plan["plan_hash"] != expected_hash:
-        raise DomainError(
-            "SubjectChanged", "The plan changed. Reload it before submitting."
-        )
+        raise DomainError("SubjectChanged", "The plan changed. Reload it before submitting.")
     if plan["state"] != "draft":
         raise DomainError("InvalidTransition", "Only a draft plan can enter review.")
     if conn.execute(
@@ -343,27 +335,17 @@ def decide(
     )
     stage = request["state"]
     if stage not in {"pending_internal", "pending_client"}:
-        raise DomainError(
-            "InvalidTransition", "This approval is no longer awaiting a decision."
-        )
+        raise DomainError("InvalidTransition", "This approval is no longer awaiting a decision.")
     if request["subject_type"] != "plan":
-        raise DomainError(
-            "InvalidSubject", "This endpoint reviews campaign plans only."
-        )
+        raise DomainError("InvalidSubject", "This endpoint reviews campaign plans only.")
     roles = {"client_approver"} if stage == "pending_client" else APPROVE_ROLES
     seat = require_role(conn, brand_id, roles)
     now = datetime.now(UTC)
     if request["expires_at"] <= now:
-        raise DomainError(
-            "ApprovalExpired", "This request expired. Edit and resubmit the plan."
-        )
-    plan = one(
-        conn, "SELECT * FROM plan WHERE id=%s FOR UPDATE", (request["subject_id"],)
-    )
+        raise DomainError("ApprovalExpired", "This request expired. Edit and resubmit the plan.")
+    plan = one(conn, "SELECT * FROM plan WHERE id=%s FOR UPDATE", (request["subject_id"],))
     if not plan["plan_hash"] == request["subject_hash"] == decision.expected_hash:
-        raise DomainError(
-            "SubjectChanged", "The plan changed. Review its current revision."
-        )
+        raise DomainError("SubjectChanged", "The plan changed. Review its current revision.")
     if decision.decision == "approved":
         generation_gate(conn, brand)
         data = check_plan_integrity(plan)
@@ -419,11 +401,7 @@ def decide(
             "UPDATE plan SET state=%s WHERE id=%s",
             ("rejected" if next_state == "rejected" else "draft", plan["id"]),
         )
-        action = (
-            "approval_reject"
-            if next_state == "rejected"
-            else "approval_request_changes"
-        )
+        action = "approval_reject" if next_state == "rejected" else "approval_request_changes"
     audit(
         conn,
         events,
@@ -461,14 +439,8 @@ def issue_token(
 ) -> UUID:
     token_id = uuid4()
     brand_id = request["brand_id"]
-    expires = min(request["expires_at"], now + timedelta(hours=72)).replace(
-        microsecond=0
-    )
-    chain = (
-        [request["internal_approver_id"], actor]
-        if request["internal_approver_id"]
-        else [actor]
-    )
+    expires = min(request["expires_at"], now + timedelta(hours=72)).replace(microsecond=0)
+    chain = [request["internal_approver_id"], actor] if request["internal_approver_id"] else [actor]
     scopes = [f"channel:{a.channel}" for a in data.allocations] + ["op:create"]
     claims = {
         "tok": str(token_id),

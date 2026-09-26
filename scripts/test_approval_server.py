@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 import psycopg
 import uvicorn
+from pydantic import SecretStr
 from bootstrap import provision_approval, provision_approval_files
 
 from adjutant.approval_api import ApprovalSettings, create_app
@@ -25,7 +26,9 @@ def approval_test_server(admin_url: str) -> Generator[str, None, None]:
     with psycopg.connect(admin_url) as conn:
         provision_approval(conn, password)
     settings = ApprovalSettings(
-        database_url=f"postgresql://adjutant_approval:{quote(password)}@{admin_url.split('@')[1]}",
+        database_url=SecretStr(
+            f"postgresql://adjutant_approval:{quote(password)}@{admin_url.split('@')[1]}"
+        ),
         signing_key_path=root / ".local/approval.key",
         service_secret_path=root / ".local/approval-service.secret",
     )

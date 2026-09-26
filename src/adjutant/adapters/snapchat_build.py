@@ -20,9 +20,7 @@ SNAPCHAT_API_ORIGIN = "https://adsapi.snapchat.com/v1"
 def identifier(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_-]", "", value)
     if not cleaned:
-        raise DomainError(
-            "InvalidRemoteIdentity", "The platform requires a valid identity.", 422
-        )
+        raise DomainError("InvalidRemoteIdentity", "The platform requires a valid identity.", 422)
     return cleaned
 
 
@@ -36,9 +34,7 @@ class SnapchatBuildSettings(Input):
 
     @model_validator(mode="after")
     def validate_settings(self):
-        self.countries = sorted(
-            set(country.strip().upper() for country in self.countries)
-        )
+        self.countries = sorted(set(country.strip().upper() for country in self.countries))
         if any(
             len(country) != 2 or not country.isascii() or not country.isalpha()
             for country in self.countries
@@ -84,9 +80,7 @@ def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list
         for field, maximum in limits.items():
             val = copy.get(field)
             if not isinstance(val, str) or len(val.strip()) == 0:
-                failures.append(
-                    f"Creative {cid} is missing required Snapchat field '{field}'."
-                )
+                failures.append(f"Creative {cid} is missing required Snapchat field '{field}'.")
             elif len(val) > maximum:
                 failures.append(
                     f"Creative {cid} field '{field}' length {len(val)} "
@@ -125,9 +119,7 @@ class SnapchatBuilder:
         try:
             response = await self.client.request(method, url, headers=headers, **kwargs)
         except httpx.HTTPError as exc:
-            raise DomainError(
-                "ProviderStateUncertain", "Snapchat did not respond.", 503
-            ) from exc
+            raise DomainError("ProviderStateUncertain", "Snapchat did not respond.", 503) from exc
 
         try:
             body = response.json() if response.content else {}
@@ -151,9 +143,7 @@ class SnapchatBuilder:
                 if response.status_code in {401, 403}
                 else "PlatformRequestRejected"
             )
-            raise ProviderRejection(
-                err_code, str(response.status_code), scrubbed_msg, "Snapchat"
-            )
+            raise ProviderRejection(err_code, str(response.status_code), scrubbed_msg, "Snapchat")
         return body
 
     async def build(self, document: dict, idem_key: str) -> list[dict]:
@@ -198,9 +188,7 @@ class SnapchatBuilder:
                 "name": f"{prefix} campaign",
                 "status": "PAUSED",
             }
-            await asyncio.to_thread(
-                self.finish, campaign_key, campaign_id, campaign_remote
-            )
+            await asyncio.to_thread(self.finish, campaign_key, campaign_id, campaign_remote)
         else:
             campaign_remote = {
                 "id": campaign_id,
@@ -210,9 +198,7 @@ class SnapchatBuilder:
 
         # 2. Ad Squad (Maps to Ad Group level)
         group_key = "ad_group"
-        step_group = await asyncio.to_thread(
-            self.begin, group_key, {"name": f"{prefix} ad set"}
-        )
+        step_group = await asyncio.to_thread(self.begin, group_key, {"name": f"{prefix} ad set"})
         group_id = step_group.get("native_id")
         if not group_id:
             res_group = await self.request(
@@ -271,9 +257,7 @@ class SnapchatBuilder:
         for creative in document["creatives"]:
             cid = creative["id"]
             ad_key = f"ad:{cid}"
-            step_ad = await asyncio.to_thread(
-                self.begin, ad_key, {"name": f"{prefix} ad {cid}"}
-            )
+            step_ad = await asyncio.to_thread(self.begin, ad_key, {"name": f"{prefix} ad {cid}"})
             ad_id = step_ad.get("native_id")
             if not ad_id:
                 res_ad = await self.request(

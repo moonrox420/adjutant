@@ -22,9 +22,7 @@ AMAZON_ADS_API_ORIGIN = "https://advertising-api.amazon.com"
 def identifier(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_-]", "", value)
     if not cleaned:
-        raise DomainError(
-            "InvalidRemoteIdentity", "The platform requires a valid identity.", 422
-        )
+        raise DomainError("InvalidRemoteIdentity", "The platform requires a valid identity.", 422)
     return cleaned
 
 
@@ -38,9 +36,7 @@ class AmazonAdsBuildSettings(Input):
 
     @model_validator(mode="after")
     def validate_settings(self):
-        self.countries = sorted(
-            set(country.strip().upper() for country in self.countries)
-        )
+        self.countries = sorted(set(country.strip().upper() for country in self.countries))
         if any(
             len(country) != 2 or not country.isascii() or not country.isalpha()
             for country in self.countries
@@ -86,9 +82,7 @@ def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list
         for field, maximum in limits.items():
             val = copy.get(field)
             if not isinstance(val, str) or len(val.strip()) == 0:
-                failures.append(
-                    f"Creative {cid} is missing required Amazon Ads field '{field}'."
-                )
+                failures.append(f"Creative {cid} is missing required Amazon Ads field '{field}'.")
             elif len(val) > maximum:
                 failures.append(
                     f"Creative {cid} field '{field}' length {len(val)} "
@@ -132,9 +126,7 @@ class AmazonAdsBuilder:
         try:
             response = await self.client.request(method, url, headers=headers, **kwargs)
         except httpx.HTTPError as exc:
-            raise DomainError(
-                "ProviderStateUncertain", "Amazon Ads did not respond.", 503
-            ) from exc
+            raise DomainError("ProviderStateUncertain", "Amazon Ads did not respond.", 503) from exc
 
         try:
             body = response.json() if response.content else {}
@@ -158,9 +150,7 @@ class AmazonAdsBuilder:
                 if response.status_code in {401, 403}
                 else "PlatformRequestRejected"
             )
-            raise ProviderRejection(
-                err_code, str(response.status_code), scrubbed_msg, "AmazonAds"
-            )
+            raise ProviderRejection(err_code, str(response.status_code), scrubbed_msg, "AmazonAds")
         return body
 
     async def build(self, document: dict, idem_key: str) -> list[dict]:
@@ -194,18 +184,14 @@ class AmazonAdsBuilder:
             )
             c_list = res_camp.get("campaigns", [])
             campaign_id = (
-                str(c_list[0].get("campaignId", "238491029384"))
-                if c_list
-                else "238491029384"
+                str(c_list[0].get("campaignId", "238491029384")) if c_list else "238491029384"
             )
             campaign_remote = {
                 "id": campaign_id,
                 "name": f"{prefix} campaign",
                 "status": "PAUSED",
             }
-            await asyncio.to_thread(
-                self.finish, campaign_key, campaign_id, campaign_remote
-            )
+            await asyncio.to_thread(self.finish, campaign_key, campaign_id, campaign_remote)
         else:
             campaign_remote = {
                 "id": campaign_id,
@@ -215,9 +201,7 @@ class AmazonAdsBuilder:
 
         # 2. Ad Group
         group_key = "ad_group"
-        step_group = await asyncio.to_thread(
-            self.begin, group_key, {"name": f"{prefix} ad set"}
-        )
+        step_group = await asyncio.to_thread(self.begin, group_key, {"name": f"{prefix} ad set"})
         group_id = step_group.get("native_id")
         if not group_id:
             res_group = await self.request(
@@ -235,11 +219,7 @@ class AmazonAdsBuilder:
                 },
             )
             g_list = res_group.get("adGroups", [])
-            group_id = (
-                str(g_list[0].get("adGroupId", "238491029385"))
-                if g_list
-                else "238491029385"
-            )
+            group_id = str(g_list[0].get("adGroupId", "238491029385")) if g_list else "238491029385"
             group_remote = {
                 "id": group_id,
                 "name": f"{prefix} ad set",
@@ -276,9 +256,7 @@ class AmazonAdsBuilder:
         for creative in document["creatives"]:
             cid = creative["id"]
             ad_key = f"ad:{cid}"
-            step_ad = await asyncio.to_thread(
-                self.begin, ad_key, {"name": f"{prefix} ad {cid}"}
-            )
+            step_ad = await asyncio.to_thread(self.begin, ad_key, {"name": f"{prefix} ad {cid}"})
             ad_id = step_ad.get("native_id")
             if not ad_id:
                 res_ad = await self.request(
@@ -296,11 +274,7 @@ class AmazonAdsBuilder:
                     },
                 )
                 a_list = res_ad.get("productAds", [])
-                ad_id = (
-                    str(a_list[0].get("adId", "238491029387"))
-                    if a_list
-                    else "238491029387"
-                )
+                ad_id = str(a_list[0].get("adId", "238491029387")) if a_list else "238491029387"
                 ad_remote = {
                     "id": ad_id,
                     "name": f"{prefix} ad {cid}",

@@ -94,4 +94,3 @@ def invalidate_connection(
         "health_detail=%s WHERE id=%s AND brand_id=%s",
         (reason, connection_id, brand_id),
     )
-

@@ -10,7 +10,7 @@ import threading
 import time
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg.rows import dict_row
@@ -59,9 +59,7 @@ def consume_once(conn: psycopg.Connection[Any], config: dict) -> int:
     """Each effect and durable receipt commit together; locked work is reclaimed on disconnect."""
     with conn.transaction():
         conn.execute("SELECT adjutant.reap_abandoned_jobs()")
-        count_row: Any = conn.execute(
-            "SELECT adjutant.consume_activity_batch(100) AS n"
-        ).fetchone()
+        count_row: Any = conn.execute("SELECT adjutant.consume_activity_batch(100) AS n").fetchone()
         count = count_row["n"] if count_row else 0
     with conn.transaction():
         item: Any = conn.execute("""SELECT * FROM adjutant.mail_outbox
@@ -103,7 +101,7 @@ def main() -> None:
             with psycopg.connect(
                 config["database_url"],
                 autocommit=True,
-                row_factory=dict_row,
+                row_factory=cast(Any, dict_row),
                 connect_timeout=5,
             ) as conn:
                 conn.execute("SET statement_timeout='30s'")

@@ -82,9 +82,7 @@ with psycopg.connect(admin_url) as conn:
         "VALUES(%s,3000,100)",
         (stop_brand,),
     )
-    for (channel,) in conn.execute(
-        "SELECT unnest(enum_range(NULL::channel))::text"
-    ).fetchall():
+    for (channel,) in conn.execute("SELECT unnest(enum_range(NULL::channel))::text").fetchall():
         conn_row = conn.execute(
             "INSERT INTO channel_connection(brand_id,channel,external_ad_account_id,selected) "
             "VALUES(%s,%s,'browser-test-account',true) RETURNING id",
@@ -98,9 +96,7 @@ with psycopg.connect(admin_url) as conn:
             "VALUES(%s,%s,%s,'campaign','browser-test-campaign','active')",
             (stop_brand, connection, channel),
         )
-Path(".local/browser-stop-user.json").write_text(
-    json.dumps(stop_identity), encoding="utf-8"
-)
+Path(".local/browser-stop-user.json").write_text(json.dumps(stop_identity), encoding="utf-8")
 config = test_settings("http://127.0.0.1:3001")
 config.ollama_provider = "local"
 config.workflow_enabled = False
@@ -114,9 +110,7 @@ concept_identity = seed_identity(admin_url)
 concept_identity["brand_id"] = seed_concepts(
     admin_url, concept_identity, ObjectStore(config.object_store_path)
 )
-Path(".local/browser-concepts-user.json").write_text(
-    json.dumps(concept_identity), encoding="utf-8"
-)
+Path(".local/browser-concepts-user.json").write_text(json.dumps(concept_identity), encoding="utf-8")
 with (
     approval_test_server(admin_url) as approval_url,
     browser_inference(root / ".local/browser-inference.json") as inference_url,

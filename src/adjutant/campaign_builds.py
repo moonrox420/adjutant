@@ -93,9 +93,7 @@ def queue_build(
                 409,
             )
         return build_report(conn, brand_id, previous["id"])
-    plan = one(
-        conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id)
-    )
+    plan = one(conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id))
     limits = one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
     account = one(
         conn,
@@ -117,15 +115,11 @@ def queue_build(
     except ValidationError as exc:
         raise DomainError(
             "CampaignSettingsInvalid",
-            "; ".join(
-                f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()
-            ),
+            "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()),
             422,
         ) from exc
     if settings.end_time <= datetime.now(UTC):
-        raise DomainError(
-            "CampaignEndTime", "Campaign end time must be in the future.", 422
-        )
+        raise DomainError("CampaignEndTime", "Campaign end time must be in the future.", 422)
     allocation = one(
         conn,
         "SELECT * FROM plan_allocation WHERE plan_id=%s AND channel=%s",
@@ -238,9 +232,7 @@ class BuildJournal:
                 (native_id, Jsonb(response), verified, self.build_id, key),
             )
             if key == "campaign":
-                build = one(
-                    conn, "SELECT * FROM campaign_build WHERE id=%s", (self.build_id,)
-                )
+                build = one(conn, "SELECT * FROM campaign_build WHERE id=%s", (self.build_id,))
                 intent = one(
                     conn,
                     "SELECT request FROM campaign_build_step WHERE build_id=%s AND step_key=%s",
@@ -283,9 +275,7 @@ async def run_build(
 ) -> None:
     journal = BuildJournal(db, brand_id, build_id, stop)
     with db.transaction(extra_brand=brand_id) as conn:
-        build = one(
-            conn, "SELECT * FROM campaign_build WHERE id=%s FOR UPDATE", (build_id,)
-        )
+        build = one(conn, "SELECT * FROM campaign_build WHERE id=%s FOR UPDATE", (build_id,))
         if build["state"] not in {"queued", "running"}:
             return
         conn.execute(
@@ -383,8 +373,7 @@ async def run_build(
         elif isinstance(exc, psycopg.IntegrityError):
             code, message = (
                 "CampaignGuardrailDenied",
-                exc.diag.message_primary
-                or "Campaign guardrails denied this operation.",
+                exc.diag.message_primary or "Campaign guardrails denied this operation.",
             )
         else:
             logger.error(
@@ -442,9 +431,7 @@ class CampaignBuildRunner:
     ) -> None:
         self.db, self.config, self.storage, self.events = db, config, storage, events
         self.stop = threading.Event()
-        self.thread = threading.Thread(
-            target=self.run, name="campaign-builds", daemon=True
-        )
+        self.thread = threading.Thread(target=self.run, name="campaign-builds", daemon=True)
 
     def start(self) -> None:
         self.thread.start()
@@ -453,9 +440,7 @@ class CampaignBuildRunner:
         self.stop.set()
         self.thread.join(timeout=40)
         if self.thread.is_alive():
-            raise RuntimeError(
-                "Campaign worker did not stop before its shutdown deadline"
-            )
+            raise RuntimeError("Campaign worker did not stop before its shutdown deadline")
 
     def run(self) -> None:
         while not self.stop.is_set():
@@ -505,19 +490,16 @@ class CampaignBuildRunner:
 
 def campaign_build_router(db: Database, principal) -> APIRouter:
     router = APIRouter(prefix="/api/brands/{brand_id}")
-    actor_type = Annotated[Principal, Depends(principal)]
 
     @router.get("/plans/{plan_id}/deployment-options")
-    def options(brand_id: UUID, plan_id: UUID, actor: actor_type):
+    def options(brand_id: UUID, plan_id: UUID, actor: Principal = Depends(principal)):
         with db.transaction(actor) as conn:
             plan = one(
                 conn,
                 "SELECT plan_hash FROM plan WHERE id=%s AND brand_id=%s",
                 (plan_id, brand_id),
             )
-            limits = one(
-                conn, "SELECT version FROM guardrail WHERE brand_id=%s", (brand_id,)
-            )
+            limits = one(conn, "SELECT version FROM guardrail WHERE brand_id=%s", (brand_id,))
             rows = conn.execute(
                 "SELECT a.channel,c.id AS connection_id,c.external_account_name,c.health,"
                 "c.verified_at,c.token_expires_at FROM plan_allocation a "
@@ -530,8 +512,7 @@ def campaign_build_router(db: Database, principal) -> APIRouter:
                 "plan_hash": plan["plan_hash"],
                 "guardrail_version": limits["version"],
                 "channels": [
-                    {**row, "configuration": build_configuration(row["channel"])}
-                    for row in rows
+                    {**row, "configuration": build_configuration(row["channel"])} for row in rows
                 ],
             }
 
@@ -540,7 +521,7 @@ def campaign_build_router(db: Database, principal) -> APIRouter:
         brand_id: UUID,
         plan_id: UUID,
         data: CampaignBuildInput,
-        actor: actor_type,
+        actor: Principal = Depends(principal),
     ):
         try:
             with db.transaction(actor) as conn:
@@ -548,13 +529,12 @@ def campaign_build_router(db: Database, principal) -> APIRouter:
         except psycopg.IntegrityError as exc:
             raise DomainError(
                 "CampaignGuardrailDenied",
-                exc.diag.message_primary
-                or "Campaign creation violates an execution guardrail.",
+                exc.diag.message_primary or "Campaign creation violates an execution guardrail.",
                 409,
             ) from exc
 
     @router.get("/plans/{plan_id}/deployments")
-    def listing(brand_id: UUID, plan_id: UUID, actor: actor_type):
+    def listing(brand_id: UUID, plan_id: UUID, actor: Principal = Depends(principal)):
         with db.transaction(actor) as conn:
             one(
                 conn,
@@ -569,7 +549,12 @@ def campaign_build_router(db: Database, principal) -> APIRouter:
             return [build_report(conn, brand_id, row["id"]) for row in rows]
 
     @router.post("/deployments/{build_id}/{operation}")
-    def operate(brand_id: UUID, build_id: UUID, operation: str, actor: actor_type):
+    def operate(
+        brand_id: UUID,
+        build_id: UUID,
+        operation: str,
+        actor: Principal = Depends(principal),
+    ):
         if operation not in {"cancel", "retry"}:
             raise DomainError("InvalidOperation", "Choose cancel or retry.", 422)
         with db.transaction(actor) as conn:

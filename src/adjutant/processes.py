@@ -117,11 +117,7 @@ def generate_in_process(
                         "UPDATE agent_run SET worker_heartbeat_at=now() WHERE id=%s",
                         (run,),
                     )
-                if (
-                    state["cancel_requested_at"]
-                    or not state["active"]
-                    or state["stopped"]
-                ):
+                if state["cancel_requested_at"] or not state["active"] or state["stopped"]:
                     raise DomainError(
                         "GenerationCancelled",
                         "Generation stopped; no draft was saved.",
@@ -132,9 +128,7 @@ def generate_in_process(
                         "GenerationTimeout", "Generation exceeded its time limit.", 504
                     )
                 if os.fstat(output.fileno()).st_size > 1024 * 1024:
-                    raise DomainError(
-                        "GenerationInvalid", "Model output exceeded its limit.", 422
-                    )
+                    raise DomainError("GenerationInvalid", "Model output exceeded its limit.", 422)
                 if process.poll() is not None:
                     break
                 time.sleep(0.15)

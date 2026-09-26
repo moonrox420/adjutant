@@ -120,9 +120,7 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
                     (job_id,),
                 )
                 if job["cancel_requested_at"]:
-                    raise DomainError(
-                        "GenerationCancelled", "Studio generation cancelled.", 409
-                    )
+                    raise DomainError("GenerationCancelled", "Studio generation cancelled.", 409)
             require_role(conn, data.brand_id, EDIT_ROLES)
             generation_gate(conn, brand)
             image_provider = visual_generator(conn, data.brand_id, config)
@@ -202,9 +200,7 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
             ).fetchone()
         try:
             supplied = data.url_or_prompt.strip()
-            if "://" not in supplied and re.fullmatch(
-                r"[\w.-]+\.[a-zA-Z]{2,}(/\S*)?", supplied
-            ):
+            if "://" not in supplied and re.fullmatch(r"[\w.-]+\.[a-zA-Z]{2,}(/\S*)?", supplied):
                 supplied = "https://" + supplied
             source_url = None
             context_text = supplied
@@ -220,9 +216,7 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
                 "business_context": context_text,
                 "facts": facts,
                 "constraints": constraints,
-                "brand_understanding": (
-                    understanding["document"] if understanding else None
-                ),
+                "brand_understanding": (understanding["document"] if understanding else None),
             }
             fingerprint = digest(context)
             if concept:
@@ -305,9 +299,7 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
                 header, encoded = image_uri.split(",", 1)
                 mime = header.removeprefix("data:").removesuffix(";base64")
                 content = base64.b64decode(encoded, validate=True)
-                checkpoint.update(
-                    image_key=storage.put(data.brand_id, content), image_mime=mime
-                )
+                checkpoint.update(image_key=storage.put(data.brand_id, content), image_mime=mime)
                 with db.transaction(actor) as conn:
                     conn.execute(
                         "UPDATE studio_draft SET work_checkpoint=%s WHERE id=%s",
@@ -445,20 +437,21 @@ def campaign_router(
     authenticate: Callable[[Request], Principal],
 ) -> APIRouter:
     router = APIRouter(tags=["ad-studio"])
-    actor_type = Annotated[Principal, Depends(authenticate)]
     events = EventRegistry(config.registry_path)
 
     generate = studio_generator(db, config, storage)
 
     @router.post("/api/campaigns/generate-quick", status_code=201)
     async def generate_quick(
-        data: QuickGenerateRequest, actor: actor_type, request: Request
+        data: QuickGenerateRequest,
+        request: Request,
+        actor: Principal = Depends(authenticate),
     ) -> dict:
         token_hash = session_digest(request.cookies.get("adjutant_session", ""))
         return await generate(data, actor, token_hash)
 
     @router.get("/api/brands/{brand_id}/studio/latest")
-    def latest(brand_id: UUID, actor: actor_type) -> dict | None:
+    def latest(brand_id: UUID, actor: Principal = Depends(authenticate)) -> dict | None:
         with db.transaction(actor) as conn:
             one(conn, "SELECT id FROM brand WHERE id=%s", (brand_id,))
             row = conn.execute(
@@ -470,7 +463,9 @@ def campaign_router(
             return draft_response(row, storage, conn) if row else None
 
     @router.get("/api/brands/{brand_id}/studio/{draft_id}")
-    def get_draft(brand_id: UUID, draft_id: UUID, actor: actor_type) -> dict:
+    def get_draft(
+        brand_id: UUID, draft_id: UUID, actor: Principal = Depends(authenticate)
+    ) -> dict:
         with db.transaction(actor) as conn:
             row = one(
                 conn,
@@ -481,7 +476,10 @@ def campaign_router(
 
     @router.put("/api/brands/{brand_id}/studio/{draft_id}")
     def edit(
-        brand_id: UUID, draft_id: UUID, data: DraftEdit, actor: actor_type
+        brand_id: UUID,
+        draft_id: UUID,
+        data: DraftEdit,
+        actor: Principal = Depends(authenticate),
     ) -> dict:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)

@@ -20,9 +20,7 @@ ANNOTATIONS = {
 }
 
 
-def numeric_bound(
-    schema: dict, inclusive: str, exclusive: str, direction: int
-) -> tuple:
+def numeric_bound(schema: dict, inclusive: str, exclusive: str, direction: int) -> tuple:
     candidates = []
     if inclusive in schema:
         candidates.append((direction * schema[inclusive], False))
@@ -47,19 +45,13 @@ def schema_changes(old: Any, new: Any, path: str = "payload") -> list[str]:
         )
     errors = []
     handled = set(ANNOTATIONS)
-    handled.update(
-        {"properties", "required", "type", "enum", "additionalProperties", "items"}
-    )
-    old_properties, new_properties = old.get("properties", {}), new.get(
-        "properties", {}
-    )
+    handled.update({"properties", "required", "type", "enum", "additionalProperties", "items"})
+    old_properties, new_properties = old.get("properties", {}), new.get("properties", {})
     for name, schema in old_properties.items():
         if name not in new_properties:
             errors.append(f"{path}.{name}: field removed")
         else:
-            errors.extend(
-                schema_changes(schema, new_properties[name], f"{path}.{name}")
-            )
+            errors.extend(schema_changes(schema, new_properties[name], f"{path}.{name}"))
     for name in set(new.get("required", [])) - set(old.get("required", [])):
         errors.append(f"{path}.{name}: new required field")
     if "type" in new:
@@ -104,14 +96,9 @@ def schema_changes(old: Any, new: Any, path: str = "payload") -> list[str]:
             )
         )
     if "items" in old or "items" in new:
-        errors.extend(
-            schema_changes(old.get("items", True), new.get("items", True), f"{path}[]")
-        )
+        errors.extend(schema_changes(old.get("items", True), new.get("items", True), f"{path}[]"))
     for key in (set(old) | set(new)) - handled:
-        if (
-            key in {"const", "pattern", "format", "multipleOf", "uniqueItems"}
-            and key not in new
-        ):
+        if key in {"const", "pattern", "format", "multipleOf", "uniqueItems"} and key not in new:
             continue
         if old.get(key) != new.get(key):
             errors.append(f"{path}: changed constraint {key} requires a new version")
@@ -143,15 +130,11 @@ def check_registry(previous: dict, current: dict) -> list[str]:
             errors.append(f"{name}: event version decreased")
         if new_version > old_version:
             continue
-        errors.extend(
-            schema_changes(event["payload_schema"], replacement["payload_schema"], name)
-        )
+        errors.extend(schema_changes(event["payload_schema"], replacement["payload_schema"], name))
         if event["topic"] != replacement["topic"]:
             errors.append(f"{name}: topic changed without a new version")
     errors.extend(
-        schema_changes(
-            previous["envelope_schema"], current["envelope_schema"], "envelope"
-        )
+        schema_changes(previous["envelope_schema"], current["envelope_schema"], "envelope")
     )
     return errors
 
@@ -172,16 +155,12 @@ def main() -> None:
             check=False,
         )
         if result.returncode:
-            parser.exit(
-                1, "Cannot read the base event registry; comparison did not run.\n"
-            )
+            parser.exit(1, "Cannot read the base event registry; comparison did not run.\n")
         previous = json.loads(result.stdout.decode("utf-8"))
     errors = check_registry(previous, current)
     if errors:
         parser.exit(1, "Event compatibility failed:\n" + "\n".join(errors) + "\n")
-    print(
-        f"Validated {len(current['events'])} event contracts and backward compatibility."
-    )
+    print(f"Validated {len(current['events'])} event contracts and backward compatibility.")
 
 
 if __name__ == "__main__":

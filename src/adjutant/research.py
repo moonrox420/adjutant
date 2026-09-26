@@ -60,17 +60,13 @@ def public_target(url: str) -> tuple[str, int, str]:
         or parsed.username is not None
         or parsed.password is not None
     ):
-        raise DomainError(
-            "UnsafeWebsite", "Use a public HTTP or HTTPS website URL.", 422
-        )
+        raise DomainError("UnsafeWebsite", "Use a public HTTP or HTTPS website URL.", 422)
     try:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
     except ValueError as exc:
         raise DomainError("UnsafeWebsite", "Website port is invalid.", 422) from exc
     if port != (443 if parsed.scheme == "https" else 80):
-        raise DomainError(
-            "UnsafeWebsite", "Only standard web ports are permitted.", 422
-        )
+        raise DomainError("UnsafeWebsite", "Only standard web ports are permitted.", 422)
     hostname = parsed.hostname.encode("idna").decode("ascii")
     try:
         addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
@@ -80,16 +76,13 @@ def public_target(url: str) -> tuple[str, int, str]:
         ) from exc
     ips: list[str] = list(dict.fromkeys(str(address[4][0]) for address in addresses))
     parsed_ips = [ipaddress.ip_address(ip) for ip in ips]
-    if not ips or any(
-        not ip.is_global or ip.is_multicast or ip.is_reserved for ip in parsed_ips
-    ):
+    if not ips or any(not ip.is_global or ip.is_multicast or ip.is_reserved for ip in parsed_ips):
         raise DomainError(
             "UnsafeWebsite",
             "Private, loopback, and reserved network addresses are blocked.",
             422,
         )
     return hostname, port, ips[0]
-
 
 
 def fetch_website(url: str) -> WebsiteEvidence:
@@ -106,9 +99,7 @@ def fetch_website(url: str) -> WebsiteEvidence:
             sock = socket.create_connection((ip, port), timeout=12)
             if parsed.scheme == "https":
                 try:
-                    sock = ssl.create_default_context().wrap_socket(
-                        sock, server_hostname=hostname
-                    )
+                    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=hostname)
                 except BaseException:
                     sock.close()
                     raise
@@ -134,9 +125,7 @@ def fetch_website(url: str) -> WebsiteEvidence:
                     )
                 destination = urljoin(current, location)
                 if parsed.scheme == "https" and urlsplit(destination).scheme != "https":
-                    raise DomainError(
-                        "UnsafeWebsite", "HTTPS downgrades are blocked.", 422
-                    )
+                    raise DomainError("UnsafeWebsite", "HTTPS downgrades are blocked.", 422)
                 current = destination
                 continue
             if response.status != 200:

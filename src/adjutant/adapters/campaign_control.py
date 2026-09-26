@@ -23,26 +23,20 @@ class CampaignTarget:
 
 def identifier(value: str) -> str:
     if not value or len(value) > 200 or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
-        raise DomainError(
-            "InvalidRemoteIdentity", "The stored platform identity is invalid.", 422
-        )
+        raise DomainError("InvalidRemoteIdentity", "The stored platform identity is invalid.", 422)
     return quote(value, safe="")
 
 
 def numeric(value: str) -> str:
     if not re.fullmatch(r"[0-9]+", value):
-        raise DomainError(
-            "InvalidRemoteIdentity", "The platform requires a numeric identity.", 422
-        )
+        raise DomainError("InvalidRemoteIdentity", "The platform requires a numeric identity.", 422)
     return value
 
 
 class CampaignControl:
     """Only pause is exposed here; resuming must pass the spend gateway independently."""
 
-    def __init__(
-        self, client: httpx.AsyncClient, target: CampaignTarget, app: dict, token: dict
-    ):
+    def __init__(self, client: httpx.AsyncClient, target: CampaignTarget, app: dict, token: dict):
         provider_for(target.channel)
         self.client = client
         self.target = target

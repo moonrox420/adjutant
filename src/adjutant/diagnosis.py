@@ -119,24 +119,16 @@ def diagnose_campaign_objects(
         cpa = spend / conversions if conversions > 0 else Decimal("9999.0")
 
         prior_imp = (
-            Decimal(str(prior_metrics["prior_impressions"] or 0))
-            if prior_metrics
-            else Decimal("0")
+            Decimal(str(prior_metrics["prior_impressions"] or 0)) if prior_metrics else Decimal("0")
         )
         prior_clicks = (
-            Decimal(str(prior_metrics["prior_clicks"] or 0))
-            if prior_metrics
-            else Decimal("0")
+            Decimal(str(prior_metrics["prior_clicks"] or 0)) if prior_metrics else Decimal("0")
         )
         prior_spend = (
-            Decimal(str(prior_metrics["prior_spend"] or 0))
-            if prior_metrics
-            else Decimal("0")
+            Decimal(str(prior_metrics["prior_spend"] or 0)) if prior_metrics else Decimal("0")
         )
         prior_conv = (
-            Decimal(str(prior_metrics["prior_conversions"] or 0))
-            if prior_metrics
-            else Decimal("0")
+            Decimal(str(prior_metrics["prior_conversions"] or 0)) if prior_metrics else Decimal("0")
         )
 
         prior_ctr = prior_clicks / prior_imp if prior_imp > 0 else ctr
@@ -158,9 +150,7 @@ def diagnose_campaign_objects(
             frequency_above_3=frequency > Decimal("3.0"),
             ctr_declining_15pct=ctr_drop >= Decimal("0.15"),
             cpa_rising_20pct=cpa_rise >= Decimal("0.20"),
-            impressions_declining_bid_stable=(
-                impressions < prior_imp and prior_imp > 0
-            ),
+            impressions_declining_bid_stable=(impressions < prior_imp and prior_imp > 0),
             half_life_exceeded=half_life_exceeded,
         )
 

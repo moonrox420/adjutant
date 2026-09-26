@@ -32,21 +32,21 @@ def foundation_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api/brands/{brand_id}", tags=["foundation"])
 
-    actor_type = Annotated[Principal, Depends(authenticate)]
-
     @router.put("/credentials/{name}", status_code=204)
     def write_credential(
         brand_id: UUID,
         name: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_]{0,63}$")],
         data: CredentialInput,
-        actor: actor_type,
+        actor: Principal = Depends(authenticate),
     ) -> None:
         with db.transaction(actor) as conn:
             require_role(conn, brand_id, {"owner", "admin"})
             credentials.write(conn, brand_id, name, data.value.get_secret_value())
 
     @router.post("/workflows", status_code=202)
-    def start_workflow(brand_id: UUID, data: WorkflowInput, actor: actor_type) -> dict:
+    def start_workflow(
+        brand_id: UUID, data: WorkflowInput, actor: Principal = Depends(authenticate)
+    ) -> dict:
         with db.transaction(actor) as conn:
             require_role(conn, brand_id, {"owner", "admin", "buyer"})
             conn.execute(
@@ -68,7 +68,9 @@ def foundation_router(
             return row
 
     @router.get("/workflows/{workflow_id}")
-    def get_workflow(brand_id: UUID, workflow_id: UUID, actor: actor_type) -> dict:
+    def get_workflow(
+        brand_id: UUID, workflow_id: UUID, actor: Principal = Depends(authenticate)
+    ) -> dict:
         with db.transaction(actor) as conn:
             return one(
                 conn,
@@ -77,7 +79,9 @@ def foundation_router(
             )
 
     @router.get("/workflows/{workflow_id}/result")
-    def get_result(brand_id: UUID, workflow_id: UUID, actor: actor_type) -> dict:
+    def get_result(
+        brand_id: UUID, workflow_id: UUID, actor: Principal = Depends(authenticate)
+    ) -> dict:
         with db.transaction(actor) as conn:
             row = one(
                 conn,

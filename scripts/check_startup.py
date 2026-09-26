@@ -4,7 +4,7 @@ import secrets
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import psycopg
@@ -69,22 +69,18 @@ def verify(state: Path, port: int) -> None:
     canary = secrets.token_urlsafe(32)
     request("PUT", f"/api/brands/{brand}/credentials/startup_canary", {"value": canary})
     configuration = json.loads((state / "runtime.json").read_text(encoding="utf-8"))
-    with psycopg.connect(configuration["database_url"], row_factory=dict_row) as conn:
+    with psycopg.connect(configuration["database_url"], row_factory=cast(Any, dict_row)) as conn:
         conn.execute("SET LOCAL search_path=adjutant,public")
         conn.execute("SELECT set_config('app.current_brand_ids',%s,true)", (brand,))
         assert (
-            CredentialStore(state / "tenant-master.key").read(
-                conn, UUID(brand), "startup_canary"
-            )
+            CredentialStore(state / "tenant-master.key").read(conn, UUID(brand), "startup_canary")
             == canary
         )
         secret_row: Any = conn.execute(
             "SELECT ciphertext FROM tenant_secret WHERE brand_id=%s", (brand,)
         ).fetchone()
         assert secret_row is not None
-        ciphertext = (
-            secret_row["ciphertext"] if isinstance(secret_row, dict) else secret_row[0]
-        )
+        ciphertext = secret_row["ciphertext"] if isinstance(secret_row, dict) else secret_row[0]
         assert canary.encode() not in bytes(ciphertext)
     payload = {"request_key": str(uuid4()), "delay_seconds": 1}
     workflow = request("POST", f"/api/brands/{brand}/workflows", payload)
@@ -99,9 +95,7 @@ def verify(state: Path, port: int) -> None:
         if status_res and status_res.get("state") == "completed":
             break
         if time.monotonic() >= deadline:
-            raise AssertionError(
-                "The HTTP-hosted worker did not finish its durable workflow"
-            )
+            raise AssertionError("The HTTP-hosted worker did not finish its durable workflow")
         time.sleep(0.1)
     assert request("GET", path + "/result") == {
         "workflow_id": workflow["id"],

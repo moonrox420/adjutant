@@ -136,13 +136,9 @@ def execute_bulk_brand_operation(
                 succeeded.append(str(brand_id))
 
         except Exception as exc:
-            error_code = (
-                exc.code if isinstance(exc, DomainError) else "BulkOperationFailed"
-            )
+            error_code = exc.code if isinstance(exc, DomainError) else "BulkOperationFailed"
             error_msg = (
-                exc.message
-                if isinstance(exc, DomainError)
-                else "Operation failed for this brand."
+                exc.message if isinstance(exc, DomainError) else "Operation failed for this brand."
             )
             failed.append(
                 {
@@ -211,12 +207,8 @@ def compute_cross_client_rollup(
         spend_facts = [item for item in group if item["metric_key"] == "spend"]
         conv_facts = [item for item in group if item["metric_key"] == "conversions"]
 
-        total_spend = sum(
-            (Decimal(str(x["metric_value"])) for x in spend_facts), Decimal("0.00")
-        )
-        total_conv = sum(
-            (Decimal(str(x["metric_value"])) for x in conv_facts), Decimal("0.00")
-        )
+        total_spend = sum((Decimal(str(x["metric_value"])) for x in spend_facts), Decimal("0.00"))
+        total_conv = sum((Decimal(str(x["metric_value"])) for x in conv_facts), Decimal("0.00"))
         blended_cpa = (total_spend / total_conv) if total_conv > 0 else Decimal("0.00")
 
         rollup_by_class[comp_class] = {
@@ -250,4 +242,3 @@ def compute_cross_client_rollup(
             for k, v in brand_summaries.items()
         },
     }
-

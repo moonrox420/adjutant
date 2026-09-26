@@ -18,9 +18,7 @@ def main() -> None:
         bundle = json.loads(args.export.read_text(encoding="utf-8"))
         keys = {
             name: base64.b64decode(value, validate=True)
-            for name, value in json.loads(
-                args.public_keys.read_text(encoding="utf-8")
-            ).items()
+            for name, value in json.loads(args.public_keys.read_text(encoding="utf-8")).items()
         }
         verify_export(bundle, keys)
     except (OSError, ValueError, AttributeError, DomainError) as exc:

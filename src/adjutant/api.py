@@ -120,14 +120,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     db = Database(config.database_url.get_secret_value())
     storage = ObjectStore(config.object_store_path)
     workflows = WorkflowRunner(db, storage) if config.workflow_enabled else None
-    studio_jobs = (
-        StudioJobRunner(db, config, storage) if config.workflow_enabled else None
-    )
+    studio_jobs = StudioJobRunner(db, config, storage) if config.workflow_enabled else None
     events = EventRegistry(config.registry_path)
     campaign_builds = (
-        CampaignBuildRunner(db, config, storage, events)
-        if config.workflow_enabled
-        else None
+        CampaignBuildRunner(db, config, storage, events) if config.workflow_enabled else None
     )
     remote_stops = RemoteStopRunner(db, config, events)
     planner = OllamaPlanner(config.ollama_url)
@@ -193,13 +189,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             allowed_origins = {config.public_origin}
             if "localhost" in config.public_origin:
-                allowed_origins.add(
-                    config.public_origin.replace("localhost", "127.0.0.1")
-                )
+                allowed_origins.add(config.public_origin.replace("localhost", "127.0.0.1"))
             elif "127.0.0.1" in config.public_origin:
-                allowed_origins.add(
-                    config.public_origin.replace("127.0.0.1", "localhost")
-                )
+                allowed_origins.add(config.public_origin.replace("127.0.0.1", "localhost"))
             req_origin = request.headers.get("origin")
             has_cookie = bool(request.cookies.get("adjutant_session"))
             invalid_origin = request.method not in {"GET", "HEAD", "OPTIONS"} and (
@@ -242,24 +234,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
             trace_id.reset(context)
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        if response is not None:
+            response.headers["X-Request-ID"] = request_id
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        return Response(status_code=500)
 
     @app.exception_handler(DomainError)
     async def domain_error(request: Request, exc: DomainError) -> JSONResponse:
-        return JSONResponse(
-            {"error": {"code": exc.code, "message": exc.message}}, exc.status
-        )
+        return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, exc.status)
 
     @app.exception_handler(RequestValidationError)
-    async def validation_error(
-        request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         messages = []
         for issue in exc.errors():
             field = ".".join(map(str, issue["loc"][1:])).replace("_", " ")
@@ -271,9 +261,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request: Request, exc: psycopg.Error) -> JSONResponse:
-        logger.error(
-            "database.operation_failed", extra={"error_type": type(exc).__name__}
-        )
+        logger.error("database.operation_failed", extra={"error_type": type(exc).__name__})
         if isinstance(exc, psycopg.IntegrityError):
             return JSONResponse(
                 {
@@ -303,21 +291,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.transaction() as conn:
             conn.execute("SELECT 1 FROM plan LIMIT 1")
         if workflows and not workflows.alive:
-            raise DomainError(
-                "WorkerUnavailable", "Workflow runner is unavailable.", 503
-            )
+            raise DomainError("WorkerUnavailable", "Workflow runner is unavailable.", 503)
         if studio_jobs and not studio_jobs.alive:
-            raise DomainError(
-                "StudioWorkerUnavailable", "Studio worker is unavailable.", 503
-            )
+            raise DomainError("StudioWorkerUnavailable", "Studio worker is unavailable.", 503)
         if not remote_stops.alive:
-            raise DomainError(
-                "StopWorkerUnavailable", "Remote pause worker is unavailable.", 503
-            )
+            raise DomainError("StopWorkerUnavailable", "Remote pause worker is unavailable.", 503)
         if campaign_builds and not campaign_builds.thread.is_alive():
-            raise DomainError(
-                "CampaignWorkerUnavailable", "Campaign worker is unavailable.", 503
-            )
+            raise DomainError("CampaignWorkerUnavailable", "Campaign worker is unavailable.", 503)
         return {"status": "ready"}
 
     @app.post("/api/auth/login")
@@ -341,9 +321,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             encoded = identity["password_hash"] if identity else dummy_password
             valid = password_matches(data.password, encoded)
             if not identity or not valid:
-                raise DomainError(
-                    "InvalidCredentials", "Email or password is incorrect.", 401
-                )
+                raise DomainError("InvalidCredentials", "Email or password is incorrect.", 401)
             token = secrets.token_urlsafe(48)
             conn.execute(
                 "SELECT create_session(%s,%s)",
@@ -370,15 +348,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.delete_cookie("adjutant_session", path="/")
         return {
             "status": "signed_out",
-            **cancellation_report(
-                db, session_digest(request.cookies.get("adjutant_session", ""))
-            ),
+            **cancellation_report(db, session_digest(request.cookies.get("adjutant_session", ""))),
         }
 
     @app.post("/api/auth/logout-all")
-    def logout_all(
-        request: Request, response: Response, actor: Actor
-    ) -> dict[str, Any]:
+    def logout_all(request: Request, response: Response, actor: Actor) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             hashes = one(
                 conn,
@@ -678,9 +652,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT 1 FROM brand WHERE account_id=%s", (data.account_id,)
                 ).fetchone()
             ):
-                raise DomainError(
-                    "SingleBrandAccount", "A business workspace supports one brand."
-                )
+                raise DomainError("SingleBrandAccount", "A business workspace supports one brand.")
             restricted = [data.vertical] if data.vertical in RESTRICTED else []
             brand = one(
                 conn,
@@ -774,9 +746,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/api/brands/{brand_id}/assertions", status_code=201)
-    def add_assertion(
-        brand_id: UUID, data: AssertionInput, actor: Actor
-    ) -> dict[str, Any]:
+    def add_assertion(brand_id: UUID, data: AssertionInput, actor: Actor) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, EDIT_ROLES | {"creative"})
@@ -831,9 +801,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "field_path": data.field_path,
                     "value": data.value,
-                    "provenance_uri": (
-                        str(data.provenance_uri) if data.provenance_uri else None
-                    ),
+                    "provenance_uri": (str(data.provenance_uri) if data.provenance_uri else None),
                 },
             )
         return row
@@ -889,9 +857,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return persist_plan(conn, events, brand_id, data)
 
     @app.put("/api/brands/{brand_id}/plans/{plan_id}")
-    def edit_plan(
-        brand_id: UUID, plan_id: UUID, data: PlanEdit, actor: Actor
-    ) -> dict[str, Any]:
+    def edit_plan(brand_id: UUID, plan_id: UUID, data: PlanEdit, actor: Actor) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, EDIT_ROLES)
@@ -901,9 +867,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (plan_id, brand_id),
             )
             if old["plan_hash"] != data.expected_hash:
-                raise DomainError(
-                    "SubjectChanged", "The plan changed. Reload before editing."
-                )
+                raise DomainError("SubjectChanged", "The plan changed. Reload before editing.")
             if old["state"] in {"live", "deploying", "paused", "archived"}:
                 raise DomainError(
                     "InvalidTransition",
@@ -918,9 +882,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
     @app.post("/api/brands/{brand_id}/plans/{plan_id}/submit")
-    def submit(
-        brand_id: UUID, plan_id: UUID, data: ApprovalInput, actor: Actor
-    ) -> dict[str, Any]:
+    def submit(brand_id: UUID, plan_id: UUID, data: ApprovalInput, actor: Actor) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             return request_approval(
                 conn,
@@ -1080,9 +1042,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return {
             "status": (
-                "brand_stopped"
-                if report["remote_pause_verified"]
-                else "local_operations_stopped"
+                "brand_stopped" if report["remote_pause_verified"] else "local_operations_stopped"
             ),
             **cancelled,
             **report,
@@ -1112,9 +1072,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )["count"]
         signing = "unavailable"
         try:
-            service_secret = config.approval_service_secret_path.read_text(
-                encoding="utf-8"
-            ).strip()
+            service_secret = config.approval_service_secret_path.read_text(encoding="utf-8").strip()
             response = httpx.get(
                 config.approval_url.rstrip("/") + "/readyz",
                 headers={"Authorization": f"Bearer {service_secret}"},
@@ -1168,17 +1126,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "local_operations_resumed"}
 
     @app.get("/api/models")
-    def models(
-        actor: Actor, provider: Literal["local", "cloud"] = "local"
-    ) -> dict[str, Any]:
+    def models(actor: Actor, provider: Literal["local", "cloud"] = "local") -> dict[str, Any]:
         selected = cloud_planner if provider == "cloud" else planner
         return {
             "models": selected.models(),
             "provider": provider,
             "configured_model": (
-                config.ollama_cloud_model
-                if provider == "cloud"
-                else config.ollama_model
+                config.ollama_cloud_model if provider == "cloud" else config.ollama_model
             ),
         }
 
@@ -1196,9 +1150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "id": "cloud",
                     "label": "Ollama Cloud",
-                    "credentials_saved": bool(
-                        config.ollama_cloud_api_key.get_secret_value()
-                    ),
+                    "credentials_saved": bool(config.ollama_cloud_api_key.get_secret_value()),
                     "configured_model": config.ollama_cloud_model,
                 },
             ],
@@ -1262,10 +1214,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         brand_id: UUID, data: GenerateInput, actor: Actor, request: Request
     ) -> dict[str, Any]:
         token_hash = session_digest(request.cookies.get("adjutant_session", ""))
-        if (
-            data.provider == "cloud"
-            and not config.ollama_cloud_api_key.get_secret_value()
-        ):
+        if data.provider == "cloud" and not config.ollama_cloud_api_key.get_secret_value():
             raise DomainError(
                 "CloudNotConfigured", "Configure the Ollama Cloud API key first.", 503
             )

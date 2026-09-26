@@ -11,9 +11,7 @@ from adjutant.storage import ObjectStore
 logger = logging.getLogger(__name__)
 
 
-def advance(
-    db: Database, storage: ObjectStore, brand_id: UUID, workflow_id: UUID
-) -> bool:
+def advance(db: Database, storage: ObjectStore, brand_id: UUID, workflow_id: UUID) -> bool:
     """Commit a single step under a row lock; competing workers skip claimed work."""
     with db.transaction(extra_brand=brand_id) as conn:
         row = conn.execute(
@@ -64,9 +62,7 @@ class WorkflowRunner:
         self.db = db
         self.storage = storage
         self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._run, name="adjutant-workflows", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="adjutant-workflows", daemon=True)
 
     @property
     def alive(self) -> bool:
@@ -103,7 +99,5 @@ class WorkflowRunner:
             try:
                 self.tick()
             except Exception as exc:
-                logger.error(
-                    "workflow.poll_failed", extra={"error_type": type(exc).__name__}
-                )
+                logger.error("workflow.poll_failed", extra={"error_type": type(exc).__name__})
             self._stop.wait(0.5)

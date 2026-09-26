@@ -33,9 +33,7 @@ class EventRegistry:
             self.document["envelope_schema"], format_checker=FormatChecker()
         )
         self.payloads = {
-            name: Draft202012Validator(
-                event["payload_schema"], format_checker=FormatChecker()
-            )
+            name: Draft202012Validator(event["payload_schema"], format_checker=FormatChecker())
             for name, event in self.events.items()
         }
 

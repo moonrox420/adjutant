@@ -54,9 +54,7 @@ class GuardrailInput(Input):
             raise ValueError("Daily cap cannot exceed the monthly cap")
         if self.min_channel_floor_pct > self.per_channel_cap_pct:
             raise ValueError("Channel floor cannot exceed the channel cap")
-        self.blocked_claims = list(
-            dict.fromkeys(item.strip() for item in self.blocked_claims)
-        )
+        self.blocked_claims = list(dict.fromkeys(item.strip() for item in self.blocked_claims))
         if any(not item or len(item) > 500 for item in self.blocked_claims):
             raise ValueError("Blocked claims must contain between 1 and 500 characters")
         return self
@@ -71,13 +69,11 @@ class LaunchApprovalInput(Input):
 
 def launch_scope(conn: Connection[Any], brand_id: UUID, plan_id: UUID) -> dict[str, Any]:
     """Resolve actual selected accounts; a plan revision never revokes a consumed grant."""
-    plan = one(
-        conn, "SELECT * FROM plan WHERE brand_id=%s AND id=%s", (brand_id, plan_id)
-    )
+    plan = one(conn, "SELECT * FROM plan WHERE brand_id=%s AND id=%s", (brand_id, plan_id))
     limits = one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
-    manifest = one(
-        conn, "SELECT campaign_review_manifest(%s,%s) AS document", (brand_id, plan_id)
-    )["document"]
+    manifest = one(conn, "SELECT campaign_review_manifest(%s,%s) AS document", (brand_id, plan_id))[
+        "document"
+    ]
     rows: Any = conn.execute(
         """SELECT a.channel,c.id AS connection_id,c.external_ad_account_id,
         c.external_account_name,c.health,c.verified_at,c.token_expires_at,c.authorization_generation,
@@ -183,16 +179,12 @@ def issue_launch_authorization(
     document = check_plan_integrity(plan)
     daily = sum(a.daily_budget_usd or Decimal(0) for a in document.allocations)
     if any(a.daily_budget_usd is None for a in document.allocations):
-        raise DomainError(
-            "DailyBudgetRequired", "Set a daily budget for every channel.", 422
-        )
+        raise DomainError("DailyBudgetRequired", "Set a daily budget for every channel.", 422)
     if (
         document.monthly_budget_usd > limits["monthly_spend_cap_usd"]
         or daily > limits["daily_spend_cap_usd"]
     ):
-        raise DomainError(
-            "GuardrailExceeded", "The plan exceeds the brand spend caps.", 409
-        )
+        raise DomainError("GuardrailExceeded", "The plan exceeds the brand spend caps.", 409)
     if (
         seat["approval_daily_usd_cap"] is None
         or seat["approval_total_usd_cap"] is None
@@ -204,11 +196,7 @@ def issue_launch_authorization(
         )
     for allocation in document.allocations:
         share = allocation.monthly_budget_usd * 100 / limits["monthly_spend_cap_usd"]
-        if (
-            not limits["min_channel_floor_pct"]
-            <= share
-            <= limits["per_channel_cap_pct"]
-        ):
+        if not limits["min_channel_floor_pct"] <= share <= limits["per_channel_cap_pct"]:
             raise DomainError(
                 "ChannelBudgetShare",
                 "A channel allocation is outside its guardrail share.",
@@ -346,19 +334,13 @@ def consume_launch_authorization(
     if existing and sorted(str(r["connection_id"]) for r in existing) == sorted(
         claims["connections"]
     ):
-        raise DomainError(
-            "LaunchTokenReplay", "This launch token has already been consumed.", 409
-        )
+        raise DomainError("LaunchTokenReplay", "This launch token has already been consumed.", 409)
     key = keys.get(row["signing_key_id"])
     if key is None:
-        raise DomainError(
-            "UnknownSigningKey", "The authorization signing key is not trusted.", 403
-        )
+        raise DomainError("UnknownSigningKey", "The authorization signing key is not trusted.", 403)
     verify_claims(key, claims, bytes(row["signature"]))
     if claims.get("operations") != ["activate"]:
-        raise DomainError(
-            "InvalidScope", "The token does not authorize brand activation.", 403
-        )
+        raise DomainError("InvalidScope", "The token does not authorize brand activation.", 403)
     plan = one(
         conn,
         "SELECT * FROM plan WHERE id=%s AND brand_id=%s",
@@ -371,12 +353,8 @@ def consume_launch_authorization(
         raise DomainError(
             "CapMismatch", "The plan differs from the token's signed spend caps.", 403
         )
-    if not claims["connections"] or len(set(claims["connections"])) != len(
-        claims["connections"]
-    ):
-        raise DomainError(
-            "InvalidScope", "Launch authorization has an invalid account scope.", 403
-        )
+    if not claims["connections"] or len(set(claims["connections"])) != len(claims["connections"]):
+        raise DomainError("InvalidScope", "Launch authorization has an invalid account scope.", 403)
     for connection in claims["connections"]:
         conn.execute(
             "INSERT INTO channel_launch_grant(brand_id,connection_id,authorization_id,"
@@ -438,4 +416,3 @@ def consume_launch_authorization(
                 },
             )
     return {"authorization_id": authorization_id, "consumed": True, "replayed": False}
-

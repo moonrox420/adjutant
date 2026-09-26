@@ -16,9 +16,7 @@ Money = Annotated[
     Decimal,
     Field(gt=0, max_digits=12, decimal_places=2),
     # Ollama's grammar converter does not support Pydantic's decimal lookahead regex.
-    WithJsonSchema(
-        {"type": "string", "pattern": r"^[0-9]{1,10}\.[0-9]{2}$"}, mode="serialization"
-    ),
+    WithJsonSchema({"type": "string", "pattern": r"^[0-9]{1,10}\.[0-9]{2}$"}, mode="serialization"),
 ]
 Channel = Literal[
     "meta",
@@ -83,9 +81,7 @@ class BrandInput(Input):
 
 
 class AssertionInput(Input):
-    field_path: str = Field(
-        min_length=2, max_length=200, pattern=r"^[a-zA-Z0-9_.\[\]-]+$"
-    )
+    field_path: str = Field(min_length=2, max_length=200, pattern=r"^[a-zA-Z0-9_.\[\]-]+$")
     value: str = Field(min_length=1, max_length=4000)
     provenance_uri: HttpUrl | None = None
     is_claim: bool = False
@@ -100,9 +96,7 @@ class Allocation(Input):
 class PlanInput(Input):
     name: str = Field(min_length=3, max_length=140)
     objective: Objective = "leads"
-    goal_kind: Literal[
-        "target_cpa", "target_roas", "lead_volume", "efficient_spend"
-    ] = "target_cpa"
+    goal_kind: Literal["target_cpa", "target_roas", "lead_volume", "efficient_spend"] = "target_cpa"
     goal_value: Money
     monthly_budget_usd: Money
     rationale: str = Field(min_length=20, max_length=8000)
@@ -115,13 +109,8 @@ class PlanInput(Input):
         channels = [a.channel for a in self.allocations]
         if len(channels) != len(set(channels)):
             raise ValueError("Each channel must appear exactly once")
-        if (
-            sum(a.monthly_budget_usd for a in self.allocations)
-            != self.monthly_budget_usd
-        ):
-            raise ValueError(
-                "Channel allocations must sum exactly to the monthly budget"
-            )
+        if sum(a.monthly_budget_usd for a in self.allocations) != self.monthly_budget_usd:
+            raise ValueError("Channel allocations must sum exactly to the monthly budget")
         return self
 
 
@@ -142,9 +131,7 @@ class Decision(Input):
     @model_validator(mode="after")
     def rejection_reason(self) -> Self:
         if self.decision != "approved" and len(self.reason) < 10:
-            raise ValueError(
-                "Explain the requested change or rejection in at least 10 characters"
-            )
+            raise ValueError("Explain the requested change or rejection in at least 10 characters")
         return self
 
 

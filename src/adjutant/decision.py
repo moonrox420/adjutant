@@ -140,9 +140,7 @@ def evaluate_guardrails(
         current_daily = Decimal(str(params.get("current_daily_usd", "0.00")))
         proposed_daily = Decimal(str(params.get("proposed_daily_usd", "0.00")))
         if current_daily > 0 and proposed_daily > current_daily:
-            increase_pct = (
-                (proposed_daily - current_daily) / current_daily * Decimal("100.0")
-            )
+            increase_pct = (proposed_daily - current_daily) / current_daily * Decimal("100.0")
             max_increase_pct = Decimal(str(limits["max_daily_spend_increase_pct"]))
             if increase_pct > max_increase_pct:
                 # Clamp rather than reject
@@ -155,17 +153,15 @@ def evaluate_guardrails(
                     f"Clamped spend increase from {increase_pct:.1f}% to allowed limit "
                     f"of {float(max_increase_pct):.1f}%."
                 )
-                params["proposed_daily_usd"] = str(
-                    clamped_daily.quantize(Decimal("0.01"))
-                )
+                params["proposed_daily_usd"] = str(clamped_daily.quantize(Decimal("0.01")))
                 proposed_daily = clamped_daily
 
     # Hard guardrail: requires_approval_above_usd
     req_above = limits.get("requires_approval_above_usd")
     if req_above is not None:
-        proposed_delta = Decimal(
-            str(params.get("proposed_daily_usd", "0.00"))
-        ) - Decimal(str(params.get("current_daily_usd", "0.00")))
+        proposed_delta = Decimal(str(params.get("proposed_daily_usd", "0.00"))) - Decimal(
+            str(params.get("current_daily_usd", "0.00"))
+        )
         if proposed_delta > Decimal(str(req_above)):
             esc_id = record_escalation(
                 conn,

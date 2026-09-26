@@ -16,14 +16,13 @@ class AccountConversion(Input):
     account_type: Literal["business", "agency"]
 
 
-def account_router(
-    db: Database, authenticate: Callable[[Request], Principal]
-) -> APIRouter:
+def account_router(db: Database, authenticate: Callable[[Request], Principal]) -> APIRouter:
     router = APIRouter(prefix="/api/accounts", tags=["accounts"])
-    actor_type = Annotated[Principal, Depends(authenticate)]
 
     @router.put("/{account_id}/type")
-    def convert(account_id: UUID, data: AccountConversion, actor: actor_type) -> dict:
+    def convert(
+        account_id: UUID, data: AccountConversion, actor: Principal = Depends(authenticate)
+    ) -> dict:
         with db.transaction(actor) as conn:
             one(conn, "SELECT id FROM account WHERE id=%s", (account_id,))
             allowed = conn.execute(
@@ -50,7 +49,7 @@ def account_router(
             return row
 
     @router.get("/{account_id}/type-history")
-    def history(account_id: UUID, actor: actor_type) -> list[dict]:
+    def history(account_id: UUID, actor: Principal = Depends(authenticate)) -> list[dict]:
         with db.transaction(actor) as conn:
             one(conn, "SELECT id FROM account WHERE id=%s", (account_id,))
             return conn.execute(

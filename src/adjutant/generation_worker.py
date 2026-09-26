@@ -32,9 +32,7 @@ def main() -> None:
             "attempts": result.attempts,
         }
     except DomainError as exc:
-        output = {
-            "error": {"code": exc.code, "message": exc.message, "status": exc.status}
-        }
+        output = {"error": {"code": exc.code, "message": exc.message, "status": exc.status}}
     sys.stdout.write(json.dumps(output))
     sys.stdout.flush()
 

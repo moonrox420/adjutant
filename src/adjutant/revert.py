@@ -29,9 +29,7 @@ def execute_revert(
         raise DomainError("ActionNotFound", "The specified action was not found.", 404)
 
     if action["reverted_by_action_id"] is not None:
-        raise DomainError(
-            "ActionAlreadyReverted", "This action has already been reverted.", 409
-        )
+        raise DomainError("ActionAlreadyReverted", "This action has already been reverted.", 409)
 
     if action["action_type"] == "action_revert":
         raise DomainError(

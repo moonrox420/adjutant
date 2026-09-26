@@ -1,5 +1,5 @@
 import io
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import psycopg
@@ -18,7 +18,7 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
     """Seed a completed set to exercise real read/edit/render/attach HTTP paths in Playwright."""
     if admin_url.rsplit("/", 1)[-1] != "adjutant_test":
         raise ValueError("Browser fixtures may only use adjutant_test")
-    with psycopg.connect(admin_url, row_factory=dict_row) as conn:
+    with psycopg.connect(admin_url, row_factory=cast(Any, dict_row)) as conn:
         conn.execute("SET search_path=adjutant,public")
         user_row: Any = conn.execute(
             "SELECT id FROM app_user WHERE email=%s", (identity["email"],)
@@ -74,9 +74,7 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
         )
         for index, direction in enumerate(CONCEPT_DIRECTIONS):
             image = io.BytesIO()
-            Image.new("RGB", (64, 64), (40 + index * 25, 100, 140)).save(
-                image, format="PNG"
-            )
+            Image.new("RGB", (64, 64), (40 + index * 25, 100, 140)).save(image, format="PNG")
             key = storage.put(brand, image.getvalue())
             document = {
                 "understanding": understanding,

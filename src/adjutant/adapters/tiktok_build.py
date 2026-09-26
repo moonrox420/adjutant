@@ -20,9 +20,7 @@ TIKTOK_API_ORIGIN = "https://business-api.tiktok.com/open_api/v1.3"
 def numeric(value: str) -> str:
     cleaned = re.sub(r"[^0-9]", "", value)
     if not cleaned:
-        raise DomainError(
-            "InvalidRemoteIdentity", "The platform requires a numeric identity.", 422
-        )
+        raise DomainError("InvalidRemoteIdentity", "The platform requires a numeric identity.", 422)
     return cleaned
 
 
@@ -36,9 +34,7 @@ class TikTokBuildSettings(Input):
 
     @model_validator(mode="after")
     def validate_settings(self):
-        self.countries = sorted(
-            set(country.strip().upper() for country in self.countries)
-        )
+        self.countries = sorted(set(country.strip().upper() for country in self.countries))
         if any(
             len(country) != 2 or not country.isascii() or not country.isalpha()
             for country in self.countries
@@ -84,9 +80,7 @@ def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list
         for field, maximum in limits.items():
             val = copy.get(field)
             if not isinstance(val, str) or len(val.strip()) == 0:
-                failures.append(
-                    f"Creative {cid} is missing required TikTok field '{field}'."
-                )
+                failures.append(f"Creative {cid} is missing required TikTok field '{field}'.")
             elif len(val) > maximum:
                 failures.append(
                     f"Creative {cid} field '{field}' length {len(val)} "
@@ -125,9 +119,7 @@ class TikTokBuilder:
         try:
             response = await self.client.request(method, url, headers=headers, **kwargs)
         except httpx.HTTPError as exc:
-            raise DomainError(
-                "ProviderStateUncertain", "TikTok did not respond.", 503
-            ) from exc
+            raise DomainError("ProviderStateUncertain", "TikTok did not respond.", 503) from exc
 
         try:
             body = response.json() if response.content else {}
@@ -189,9 +181,7 @@ class TikTokBuilder:
                 "name": f"{prefix} campaign",
                 "status": "PAUSED",
             }
-            await asyncio.to_thread(
-                self.finish, campaign_key, campaign_id, campaign_remote
-            )
+            await asyncio.to_thread(self.finish, campaign_key, campaign_id, campaign_remote)
         else:
             campaign_remote = {
                 "id": campaign_id,
@@ -201,9 +191,7 @@ class TikTokBuilder:
 
         # 2. Ad Group
         group_key = "ad_group"
-        step_group = await asyncio.to_thread(
-            self.begin, group_key, {"name": f"{prefix} ad set"}
-        )
+        step_group = await asyncio.to_thread(self.begin, group_key, {"name": f"{prefix} ad set"})
         group_id = step_group.get("native_id")
         if not group_id:
             res_group = await self.request(
@@ -256,9 +244,7 @@ class TikTokBuilder:
             cid = creative["id"]
             ad_key = f"ad:{cid}"
             copy = creative.get("copy", {}).get("tiktok", {})
-            step_ad = await asyncio.to_thread(
-                self.begin, ad_key, {"name": f"{prefix} ad {cid}"}
-            )
+            step_ad = await asyncio.to_thread(self.begin, ad_key, {"name": f"{prefix} ad {cid}"})
             ad_id = step_ad.get("native_id")
             if not ad_id:
                 res_ad = await self.request(

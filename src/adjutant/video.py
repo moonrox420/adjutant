@@ -23,39 +23,21 @@ class SafeArea:
 # Safe areas account for overlay chrome per channel format
 SAFE_AREAS = {
     "9:16": {
-        "tiktok": SafeArea(
-            top_pct=0.10, bottom_pct=0.20, left_pct=0.05, right_pct=0.15
-        ),
+        "tiktok": SafeArea(top_pct=0.10, bottom_pct=0.20, left_pct=0.05, right_pct=0.15),
         "meta": SafeArea(top_pct=0.12, bottom_pct=0.18, left_pct=0.06, right_pct=0.06),
-        "snapchat": SafeArea(
-            top_pct=0.10, bottom_pct=0.15, left_pct=0.05, right_pct=0.05
-        ),
-        "youtube": SafeArea(
-            top_pct=0.08, bottom_pct=0.16, left_pct=0.05, right_pct=0.12
-        ),
-        "default": SafeArea(
-            top_pct=0.10, bottom_pct=0.18, left_pct=0.05, right_pct=0.10
-        ),
+        "snapchat": SafeArea(top_pct=0.10, bottom_pct=0.15, left_pct=0.05, right_pct=0.05),
+        "youtube": SafeArea(top_pct=0.08, bottom_pct=0.16, left_pct=0.05, right_pct=0.12),
+        "default": SafeArea(top_pct=0.10, bottom_pct=0.18, left_pct=0.05, right_pct=0.10),
     },
     "1:1": {
         "meta": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
-        "linkedin": SafeArea(
-            top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05
-        ),
-        "default": SafeArea(
-            top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05
-        ),
+        "linkedin": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
+        "default": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
     },
     "16:9": {
-        "youtube": SafeArea(
-            top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08
-        ),
-        "google_ads": SafeArea(
-            top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08
-        ),
-        "default": SafeArea(
-            top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08
-        ),
+        "youtube": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
+        "google_ads": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
+        "default": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
     },
 }
 
@@ -113,15 +95,11 @@ class VideoTimeline:
         }
 
 
-def validate_safe_areas(
-    scene_graph: dict[str, Any], aspect_ratio: str, channel: str
-) -> list[str]:
+def validate_safe_areas(scene_graph: dict[str, Any], aspect_ratio: str, channel: str) -> list[str]:
     """Validate that text and CTA layers fall strictly inside the channel-specific safe area."""
     ratio_rules = SAFE_AREAS.get(aspect_ratio, {})
     safe_area = (
-        ratio_rules.get(channel)
-        or ratio_rules.get("default")
-        or SafeArea(0.05, 0.05, 0.05, 0.05)
+        ratio_rules.get(channel) or ratio_rules.get("default") or SafeArea(0.05, 0.05, 0.05, 0.05)
     )
 
     violations = []
@@ -170,9 +148,7 @@ def generate_hook_variants(
             (
                 {
                     **layer,
-                    "content": hook_copy.get(
-                        layer.get("field", "headline"), layer.get("content")
-                    ),
+                    "content": hook_copy.get(layer.get("field", "headline"), layer.get("content")),
                 }
                 if layer.get("type") in {"headline", "text"}
                 else layer
@@ -214,20 +190,14 @@ def render_video_timeline(
     # Validate safe areas across all timeline scenes (hook, body scenes, CTA)
     violations = []
     violations.extend(
-        validate_safe_areas(
-            timeline.hook_scene.scene_graph, timeline.aspect_ratio, channel
-        )
+        validate_safe_areas(timeline.hook_scene.scene_graph, timeline.aspect_ratio, channel)
     )
     for body_scene in timeline.body_scenes:
         violations.extend(
-            validate_safe_areas(
-                body_scene.scene_graph, timeline.aspect_ratio, channel
-            )
+            validate_safe_areas(body_scene.scene_graph, timeline.aspect_ratio, channel)
         )
     violations.extend(
-        validate_safe_areas(
-            timeline.cta_scene.scene_graph, timeline.aspect_ratio, channel
-        )
+        validate_safe_areas(timeline.cta_scene.scene_graph, timeline.aspect_ratio, channel)
     )
 
     if violations:
@@ -261,9 +231,7 @@ def render_video_timeline(
         return {
             "status": "degraded_to_static",
             "creative_id": (
-                str(static_fallback_creative_id)
-                if static_fallback_creative_id
-                else None
+                str(static_fallback_creative_id) if static_fallback_creative_id else None
             ),
             "fallback_used": True,
             "reason": "Video render pipeline degraded to static asset with zero dark-time",

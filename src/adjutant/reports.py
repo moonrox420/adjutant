@@ -22,9 +22,7 @@ def generate_weekly_result_summary(
     start = end - timedelta(days=7)
     prior_start = start - timedelta(days=7)
 
-    brand = one(
-        conn, "SELECT display_name, account_id FROM brand WHERE id=%s", (brand_id,)
-    )
+    brand = one(conn, "SELECT display_name, account_id FROM brand WHERE id=%s", (brand_id,))
 
     # Current 7 days metrics
     cur_metrics: Any = conn.execute(
@@ -61,9 +59,7 @@ def generate_weekly_result_summary(
     prior_cpa = (prior_spend / prior_convs) if prior_convs > 0 else Decimal("0.00")
 
     cpa_change_pct = (
-        ((cpa - prior_cpa) / prior_cpa * Decimal("100.0"))
-        if prior_cpa > 0
-        else Decimal("0.00")
+        ((cpa - prior_cpa) / prior_cpa * Decimal("100.0")) if prior_cpa > 0 else Decimal("0.00")
     )
 
     # Autonomous actions taken in this window
@@ -109,9 +105,7 @@ def generate_weekly_result_summary(
                 f"recorded {budget_shifts} budget adjustment actions."
             )
         else:
-            trend_note = (
-                f"CPA increased by {float(cpa_change_pct):.1f}% compared to last week."
-            )
+            trend_note = f"CPA increased by {float(cpa_change_pct):.1f}% compared to last week."
     else:
         trend_note = "Performance remained stable and consistent week-over-week."
 

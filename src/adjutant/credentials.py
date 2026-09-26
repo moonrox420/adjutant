@@ -18,9 +18,7 @@ def provision_master_key(path: Path) -> None:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         if len(path.read_bytes()) != 32:
-            raise ValueError(
-                "Credential master key must contain exactly 32 bytes"
-            ) from None
+            raise ValueError("Credential master key must contain exactly 32 bytes") from None
         return
     with os.fdopen(descriptor, "wb") as handle:
         handle.write(AESGCM.generate_key(bit_length=256))
@@ -83,4 +81,3 @@ class CredentialStore:
         )
         context = f"adjutant:credential:v1:{brand_id}:{name}".encode()
         return unseal(key, bytes(row["ciphertext"]), context).decode()
-

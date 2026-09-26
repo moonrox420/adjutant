@@ -39,9 +39,7 @@ class Database:
             ).fetchone()
             if role is None or role["rolsuper"] or role["rolbypassrls"]:
                 self.pool.close()
-                raise RuntimeError(
-                    "Runtime database role must not bypass row-level security"
-                )
+                raise RuntimeError("Runtime database role must not bypass row-level security")
 
     @contextmanager
     def transaction(
@@ -70,9 +68,7 @@ class Database:
             ).fetchone()
         if not row:
             raise DomainError("Unauthorized", "Sign in to continue.", 401)
-        return Principal(
-            row["user_id"], row["email"], row["full_name"], tuple(row["brand_ids"])
-        )
+        return Principal(row["user_id"], row["email"], row["full_name"], tuple(row["brand_ids"]))
 
 
 def one(
@@ -84,9 +80,7 @@ def one(
     return dict(row) if isinstance(row, dict) else row
 
 
-def require_role(
-    conn: Connection[Any], brand_id: UUID, roles: set[str]
-) -> dict[str, Any]:
+def require_role(conn: Connection[Any], brand_id: UUID, roles: set[str]) -> dict[str, Any]:
     seats: Any = conn.execute(
         """SELECT s.* FROM seat s JOIN brand b ON b.account_id=s.account_id
            WHERE b.id=%s AND s.user_id=current_actor_id() AND s.revoked_at IS NULL
@@ -97,4 +91,3 @@ def require_role(
     if not eligible:
         raise DomainError("Forbidden", "Your role does not permit this action.", 403)
     return max(eligible, key=lambda seat: seat.get("approval_daily_usd_cap") or 0)
-

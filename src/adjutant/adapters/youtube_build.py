@@ -20,9 +20,7 @@ YOUTUBE_API_ORIGIN = "https://googleads.googleapis.com/v25"
 def numeric(value: str) -> str:
     cleaned = re.sub(r"[^0-9]", "", value)
     if not cleaned:
-        raise DomainError(
-            "InvalidRemoteIdentity", "The platform requires a numeric identity.", 422
-        )
+        raise DomainError("InvalidRemoteIdentity", "The platform requires a numeric identity.", 422)
     return cleaned
 
 
@@ -37,9 +35,7 @@ class YouTubeBuildSettings(Input):
 
     @model_validator(mode="after")
     def validate_settings(self):
-        self.countries = sorted(
-            set(country.strip().upper() for country in self.countries)
-        )
+        self.countries = sorted(set(country.strip().upper() for country in self.countries))
         if any(
             len(country) != 2 or not country.isascii() or not country.isalpha()
             for country in self.countries
@@ -85,9 +81,7 @@ def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list
         for field, maximum in limits.items():
             val = copy.get(field)
             if not isinstance(val, str) or len(val.strip()) == 0:
-                failures.append(
-                    f"Creative {cid} is missing required YouTube field '{field}'."
-                )
+                failures.append(f"Creative {cid} is missing required YouTube field '{field}'.")
             elif len(val) > maximum:
                 failures.append(
                     f"Creative {cid} field '{field}' length {len(val)} "
@@ -129,9 +123,7 @@ class YouTubeBuilder:
         try:
             response = await self.client.request(method, url, headers=headers, **kwargs)
         except httpx.HTTPError as exc:
-            raise DomainError(
-                "ProviderStateUncertain", "YouTube did not respond.", 503
-            ) from exc
+            raise DomainError("ProviderStateUncertain", "YouTube did not respond.", 503) from exc
 
         try:
             body = response.json() if response.content else {}
@@ -175,9 +167,7 @@ class YouTubeBuilder:
 
         # 1. Budget
         budget_key = "campaign_budget"
-        step_budget = await asyncio.to_thread(
-            self.begin, budget_key, {"name": f"{prefix} budget"}
-        )
+        step_budget = await asyncio.to_thread(self.begin, budget_key, {"name": f"{prefix} budget"})
         budget_id = step_budget.get("native_id")
         if not budget_id:
             res_budget = await self.request(
@@ -189,10 +179,7 @@ class YouTubeBuilder:
                             "create": {
                                 "name": f"{prefix} budget",
                                 "amountMicros": str(
-                                    int(
-                                        Decimal(document["daily_budget_usd"])
-                                        * Decimal("1000000")
-                                    )
+                                    int(Decimal(document["daily_budget_usd"]) * Decimal("1000000"))
                                 ),
                                 "deliveryMethod": "STANDARD",
                             }
@@ -202,18 +189,14 @@ class YouTubeBuilder:
             )
             b_results = res_budget.get("results", [])
             if not b_results:
-                raise DomainError(
-                    "ProviderResponseInvalid", "YouTube budget creation failed.", 502
-                )
+                raise DomainError("ProviderResponseInvalid", "YouTube budget creation failed.", 502)
             budget_res_name = b_results[0]["resourceName"]
             budget_id = budget_res_name.split("/")[-1]
             await asyncio.to_thread(
                 self.finish, budget_key, budget_id, {"resource_name": budget_res_name}
             )
         else:
-            budget_res_name = (
-                f"customers/{self.customer_id}/campaignBudgets/{budget_id}"
-            )
+            budget_res_name = f"customers/{self.customer_id}/campaignBudgets/{budget_id}"
 
         # 2. Campaign
         campaign_key = "campaign"
@@ -252,9 +235,7 @@ class YouTubeBuilder:
                 "name": f"{prefix} campaign",
                 "status": "PAUSED",
             }
-            await asyncio.to_thread(
-                self.finish, campaign_key, str(campaign_id), campaign_remote
-            )
+            await asyncio.to_thread(self.finish, campaign_key, str(campaign_id), campaign_remote)
         else:
             camp_res_name = f"customers/{self.customer_id}/campaigns/{campaign_id}"
             campaign_remote = {
@@ -266,9 +247,7 @@ class YouTubeBuilder:
 
         # 3. Ad Group
         group_key = "ad_group"
-        step_group = await asyncio.to_thread(
-            self.begin, group_key, {"name": f"{prefix} ad set"}
-        )
+        step_group = await asyncio.to_thread(self.begin, group_key, {"name": f"{prefix} ad set"})
         group_id = step_group.get("native_id")
         if not group_id:
             res_group = await self.request(
@@ -334,9 +313,7 @@ class YouTubeBuilder:
             cid = creative["id"]
             ad_key = f"ad:{cid}"
             copy = creative.get("copy", {}).get("youtube", {})
-            step_ad = await asyncio.to_thread(
-                self.begin, ad_key, {"name": f"{prefix} ad {cid}"}
-            )
+            step_ad = await asyncio.to_thread(self.begin, ad_key, {"name": f"{prefix} ad {cid}"})
             ad_id = step_ad.get("native_id")
             if not ad_id:
                 res_ad = await self.request(
@@ -353,18 +330,10 @@ class YouTubeBuilder:
                                         "finalUrls": [str(settings.destination_url)],
                                         "videoResponsiveAd": {
                                             "headlines": [
-                                                {
-                                                    "text": copy.get(
-                                                        "headline", "Headline"
-                                                    )
-                                                }
+                                                {"text": copy.get("headline", "Headline")}
                                             ],
                                             "descriptions": [
-                                                {
-                                                    "text": copy.get(
-                                                        "description", "Description"
-                                                    )
-                                                }
+                                                {"text": copy.get("description", "Description")}
                                             ],
                                         },
                                     },
@@ -375,14 +344,10 @@ class YouTubeBuilder:
                 )
                 a_results = res_ad.get("results", [])
                 if not a_results:
-                    raise DomainError(
-                        "ProviderResponseInvalid", "YouTube ad creation failed.", 502
-                    )
+                    raise DomainError("ProviderResponseInvalid", "YouTube ad creation failed.", 502)
                 ad_res_name = a_results[0]["resourceName"]
                 ad_id = (
-                    ad_res_name.split("~")[-1]
-                    if "~" in ad_res_name
-                    else ad_res_name.split("/")[-1]
+                    ad_res_name.split("~")[-1] if "~" in ad_res_name else ad_res_name.split("/")[-1]
                 )
                 ad_remote = {
                     "id": str(ad_id),

@@ -121,9 +121,7 @@ def route_policy_rejection(
         or platform_rejection_payload.get("error_message")
         or "Ad disapproved by platform policy review."
     )
-    policy_code = platform_rejection_payload.get(
-        "policy_code", "GENERIC_POLICY_VIOLATION"
-    )
+    policy_code = platform_rejection_payload.get("policy_code", "GENERIC_POLICY_VIOLATION")
 
     sanitized_response = {
         "policy_code": str(policy_code),

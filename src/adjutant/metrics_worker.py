@@ -64,9 +64,7 @@ def sync_brand_channel_metrics(
                     impressions=int(metrics_payload.get("impressions", 0)),
                     clicks=int(metrics_payload.get("clicks", 0)),
                     spend_usd=Decimal(str(metrics_payload.get("spend_usd", "0.00"))),
-                    conversions=Decimal(
-                        str(metrics_payload.get("conversions", "0.00"))
-                    ),
+                    conversions=Decimal(str(metrics_payload.get("conversions", "0.00"))),
                     conversion_value_usd=Decimal(
                         str(metrics_payload.get("conversion_value_usd", "0.00"))
                     ),
@@ -96,18 +94,10 @@ def sync_brand_channel_metrics(
                         else None
                     ),
                     native_metrics=metrics_payload.get("native_metrics", {}),
-                    attribution_window=str(
-                        metrics_payload.get("attribution_window", "7d_click")
-                    ),
-                    attribution_model=str(
-                        metrics_payload.get("attribution_model", "last_click")
-                    ),
-                    conversion_event=str(
-                        metrics_payload.get("conversion_event", "purchase")
-                    ),
-                    view_through_policy=str(
-                        metrics_payload.get("view_through_policy", "none")
-                    ),
+                    attribution_window=str(metrics_payload.get("attribution_window", "7d_click")),
+                    attribution_model=str(metrics_payload.get("attribution_model", "last_click")),
+                    conversion_event=str(metrics_payload.get("conversion_event", "purchase")),
+                    view_through_policy=str(metrics_payload.get("view_through_policy", "none")),
                 )
                 raw_facts.append(fact)
 

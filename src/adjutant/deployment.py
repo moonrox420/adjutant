@@ -20,9 +20,7 @@ def deployment_preflight(
     """Report a point-in-time preflight; this function never reserves authority or launches ads."""
     with db.transaction(actor) as conn:
         require_role(conn, brand_id, EDIT_ROLES)
-        plan = one(
-            conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id)
-        )
+        plan = one(conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id))
         token = conn.execute(
             """SELECT id FROM approval_token WHERE brand_id=%s AND subject_type='plan'
             AND subject_id=%s AND subject_hash=%s AND voided_at IS NULL AND expires_at>now()
@@ -70,9 +68,7 @@ def deployment_preflight(
     checks: list[dict[str, Any]] = []
 
     def check(key: str, passed: bool, message: str, channel: str | None = None) -> None:
-        checks.append(
-            {"key": key, "passed": passed, "message": message, "channel": channel}
-        )
+        checks.append({"key": key, "passed": passed, "message": message, "channel": channel})
 
     authorized = bool(allocations) and all(
         any(
@@ -93,9 +89,7 @@ def deployment_preflight(
     secret = ""
     if token and not authorized:
         try:
-            secret = config.gateway_service_secret_path.read_text(
-                encoding="utf-8"
-            ).strip()
+            secret = config.gateway_service_secret_path.read_text(encoding="utf-8").strip()
         except OSError:
             check(
                 "gateway_configuration",
@@ -227,8 +221,7 @@ def deployment_preflight(
                     body = response.json()
                     valid = response.status_code == 200 and body.get("valid") is True
                     message = (
-                        "Gateway verified the signature, revision, scope, "
-                        "and budget authority."
+                        "Gateway verified the signature, revision, scope, and budget authority."
                     )
                     if not valid:
                         message = body.get("error", {}).get(

@@ -65,9 +65,7 @@ async def generate_copy(config: Settings, context: dict) -> AdCopyBundle:
                         )
                     await asyncio.sleep(0.15)
             if child.returncode != 0:
-                raise DomainError(
-                    "GenerationWorkerFailed", "Studio inference process failed.", 503
-                )
+                raise DomainError("GenerationWorkerFailed", "Studio inference process failed.", 503)
             output.seek(0)
             value = json.loads(output.read(1024 * 1024))
             if "error" in value:
@@ -105,9 +103,7 @@ def main() -> None:
         )
         output = {"copy": result.model_dump()}
     except DomainError as exc:
-        output = {
-            "error": {"code": exc.code, "message": exc.message, "status": exc.status}
-        }
+        output = {"error": {"code": exc.code, "message": exc.message, "status": exc.status}}
     sys.stdout.write(json.dumps(output))
     sys.stdout.flush()
 

@@ -38,9 +38,7 @@ def violations(source: str, filename: str) -> list[str]:
             values = [node.value]
         if any(channel_value(value) for value in values):
             lineno = getattr(node, "lineno", 1)
-            errors.append(
-                f"{filename}:{lineno}: channel-specific branching belongs in adapters/"
-            )
+            errors.append(f"{filename}:{lineno}: channel-specific branching belongs in adapters/")
     return errors
 
 

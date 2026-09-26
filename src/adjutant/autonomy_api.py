@@ -18,17 +18,13 @@ from adjutant.service import audit, locked_brand
 from adjutant.storage import ObjectStore
 
 
-def consume_remotely(
-    config: Settings, brand_id: UUID, authorization_id: str
-) -> dict[str, Any]:
+def consume_remotely(config: Settings, brand_id: UUID, authorization_id: str) -> dict[str, Any]:
     """Consume once; the caller reconciles the review receipt before retrying."""
     try:
         secret = config.gateway_service_secret_path.read_text(encoding="utf-8").strip()
         if len(secret) < 32:
             raise ValueError("Invalid service credential")
-        with httpx.Client(
-            timeout=15, trust_env=False, follow_redirects=False
-        ) as client:
+        with httpx.Client(timeout=15, trust_env=False, follow_redirects=False) as client:
             response = client.post(
                 config.gateway_url.rstrip("/")
                 + f"/internal/brands/{brand_id}/launch-authorizations/{authorization_id}/consume",
@@ -63,11 +59,12 @@ def autonomy_router(
     authenticate: Callable[[Request], Principal],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/brands/{brand_id}", tags=["autonomy"])
-    actor_type = Annotated[Principal, Depends(authenticate)]
     storage = ObjectStore(config.object_store_path)
 
     @router.get("/assets/{asset_id}/preview")
-    def asset_preview(brand_id: UUID, asset_id: UUID, actor: actor_type) -> Response:
+    def asset_preview(
+        brand_id: UUID, asset_id: UUID, actor: Principal = Depends(authenticate)
+    ) -> Response:
         with db.transaction(actor) as conn:
             asset = one(
                 conn,
@@ -95,13 +92,13 @@ def autonomy_router(
         )
 
     @router.get("/guardrails")
-    def guardrails(brand_id: UUID, actor: actor_type) -> dict[str, Any]:
+    def guardrails(brand_id: UUID, actor: Principal = Depends(authenticate)) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             return one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
 
     @router.put("/guardrails")
     def save_guardrails(
-        brand_id: UUID, data: GuardrailInput, actor: actor_type
+        brand_id: UUID, data: GuardrailInput, actor: Principal = Depends(authenticate)
     ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
@@ -124,9 +121,7 @@ def autonomy_router(
                     "UPDATE guardrail SET {},version=version+1,updated_at=now() "
                     "WHERE brand_id=%s RETURNING *"
                 ).format(
-                    sql.SQL(",").join(
-                        sql.SQL("{}=%s").format(sql.Identifier(k)) for k in values
-                    )
+                    sql.SQL(",").join(sql.SQL("{}=%s").format(sql.Identifier(k)) for k in values)
                 ),
                 (*values.values(), brand_id),
             )
@@ -143,7 +138,9 @@ def autonomy_router(
             return updated
 
     @router.get("/plans/{plan_id}/launch-scope")
-    def scope(brand_id: UUID, plan_id: UUID, actor: actor_type) -> dict[str, Any]:
+    def scope(
+        brand_id: UUID, plan_id: UUID, actor: Principal = Depends(authenticate)
+    ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             return launch_scope(conn, brand_id, plan_id)
 
@@ -152,8 +149,8 @@ def autonomy_router(
         brand_id: UUID,
         plan_id: UUID,
         data: LaunchApprovalInput,
-        actor: actor_type,
         request: Request,
+        actor: Principal = Depends(authenticate),
     ) -> dict[str, Any]:
         result = approval_request(
             config,

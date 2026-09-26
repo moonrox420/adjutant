@@ -73,9 +73,7 @@ def run_tick(
                         "kind": "refresh_creative",
                         "channel": f["channel"],
                         "target_id": f["object_id"],
-                        "params": {
-                            "reason": "Creative fatigue detected across 3+ signals"
-                        },
+                        "params": {"reason": "Creative fatigue detected across 3+ signals"},
                     }
                 )
             elif f["kind"] == "winner":

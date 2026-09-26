@@ -55,11 +55,14 @@ def studio_jobs_router(
     authenticate: Callable[[Request], Principal],
 ) -> APIRouter:
     router = APIRouter(tags=["studio-jobs"])
-    actor_type = Annotated[Principal, Depends(authenticate)]
     events = EventRegistry(config.registry_path)
 
     @router.post("/api/studio/jobs", status_code=202)
-    def enqueue(data: StudioJobInput, request: Request, actor: actor_type) -> dict:
+    def enqueue(
+        data: StudioJobInput,
+        request: Request,
+        actor: Principal = Depends(authenticate),
+    ) -> dict:
         if not config.workflow_enabled:
             raise DomainError(
                 "StudioWorkerDisabled",
@@ -152,7 +155,7 @@ def studio_jobs_router(
             return public_job(job)
 
     @router.get("/api/brands/{brand_id}/studio/jobs/latest")
-    def latest(brand_id: UUID, actor: actor_type) -> dict | None:
+    def latest(brand_id: UUID, actor: Principal = Depends(authenticate)) -> dict | None:
         with db.transaction(actor) as conn:
             one(conn, "SELECT id FROM brand WHERE id=%s", (brand_id,))
             row = conn.execute(
@@ -162,7 +165,9 @@ def studio_jobs_router(
             return public_job(row) if row else None
 
     @router.get("/api/brands/{brand_id}/studio/jobs/{job_id}")
-    def status(brand_id: UUID, job_id: UUID, actor: actor_type) -> dict:
+    def status(
+        brand_id: UUID, job_id: UUID, actor: Principal = Depends(authenticate)
+    ) -> dict:
         with db.transaction(actor) as conn:
             row = one(
                 conn,
@@ -179,7 +184,7 @@ def studio_jobs_router(
             return result
 
     @router.delete("/api/brands/{brand_id}/studio/jobs/{job_id}", status_code=202)
-    def cancel(brand_id: UUID, job_id: UUID, actor: actor_type) -> dict:
+    def cancel(brand_id: UUID, job_id: UUID, actor: Principal = Depends(authenticate)) -> dict:
         with db.transaction(actor) as conn:
             require_role(conn, brand_id, EDIT_ROLES)
             row = one(
@@ -198,7 +203,10 @@ def studio_jobs_router(
 
     @router.post("/api/brands/{brand_id}/studio/jobs/{job_id}/retry", status_code=202)
     def retry(
-        brand_id: UUID, job_id: UUID, request: Request, actor: actor_type
+        brand_id: UUID,
+        job_id: UUID,
+        request: Request,
+        actor: Principal = Depends(authenticate),
     ) -> dict:
         token_hash = session_digest(request.cookies.get("adjutant_session", ""))
         if not config.workflow_enabled:
@@ -237,9 +245,7 @@ def studio_jobs_router(
                 )
             provider = visual_generator(conn, brand_id, config)
             provider.require_configuration()
-            original = one(
-                conn, "SELECT image_model FROM studio_draft WHERE id=%s", (job_id,)
-            )
+            original = one(conn, "SELECT image_model FROM studio_draft WHERE id=%s", (job_id,))
             if original["image_model"] != provider.model:
                 raise DomainError(
                     "ImageModelChanged",
@@ -297,11 +303,7 @@ class StudioJobRunner:
         while True:
             try:
                 for job_id, task in self._tasks.items():
-                    if (
-                        task.done()
-                        and not task.cancelled()
-                        and task.exception() is not None
-                    ):
+                    if task.done() and not task.cancelled() and task.exception() is not None:
                         logger.error(
                             "studio.supervised_job_failed",
                             extra={
@@ -309,23 +311,17 @@ class StudioJobRunner:
                                 "error_type": type(task.exception()).__name__,
                             },
                         )
-                self._tasks = {
-                    key: value for key, value in self._tasks.items() if not value.done()
-                }
+                self._tasks = {key: value for key, value in self._tasks.items() if not value.done()}
                 if len(self._tasks) < 2:
                     with self.db.transaction() as conn:
-                        rows = conn.execute(
-                            "SELECT * FROM runnable_studio_jobs()"
-                        ).fetchall()
+                        rows = conn.execute("SELECT * FROM runnable_studio_jobs()").fetchall()
                     for row in rows:
                         if row["id"] not in self._tasks and len(self._tasks) < 2:
                             self._tasks[row["id"]] = asyncio.create_task(
                                 self.run_job(row["brand_id"], row["id"])
                             )
             except Exception as exc:
-                logger.error(
-                    "studio.poll_failed", extra={"error_type": type(exc).__name__}
-                )
+                logger.error("studio.poll_failed", extra={"error_type": type(exc).__name__})
             await asyncio.sleep(0.5)
 
     def finish(
@@ -392,9 +388,7 @@ class StudioJobRunner:
                         (job_id,),
                     )
                 actor = self.db.authenticate(row["session_hash"])
-                data = QuickGenerateRequest(
-                    brand_id=brand_id, url_or_prompt=row["url_or_prompt"]
-                )
+                data = QuickGenerateRequest(brand_id=brand_id, url_or_prompt=row["url_or_prompt"])
                 work = asyncio.create_task(self.generate_concepts(data, actor, row))
                 while not work.done():
                     await asyncio.sleep(0.15)
@@ -466,13 +460,9 @@ class StudioJobRunner:
                 lock_active_session(conn, job["session_hash"])
                 generation_gate(conn, locked_brand(conn, data.brand_id))
                 require_role(conn, data.brand_id, EDIT_ROLES)
-                current = one(
-                    conn, "SELECT * FROM studio_job WHERE id=%s", (job["id"],)
-                )
+                current = one(conn, "SELECT * FROM studio_job WHERE id=%s", (job["id"],))
                 if current["cancel_requested_at"]:
-                    raise DomainError(
-                        "GenerationCancelled", "Studio generation cancelled.", 409
-                    )
+                    raise DomainError("GenerationCancelled", "Studio generation cancelled.", 409)
                 draft = conn.execute(
                     "SELECT * FROM studio_draft WHERE job_id=%s AND concept_index=%s",
                     (job["id"], index),
@@ -497,8 +487,6 @@ class StudioJobRunner:
                 source_checkpoint=source_checkpoint,
             )
             with self.db.transaction(actor) as conn:
-                saved = one(
-                    conn, "SELECT * FROM studio_draft WHERE id=%s", (draft["id"],)
-                )
+                saved = one(conn, "SELECT * FROM studio_draft WHERE id=%s", (draft["id"],))
                 previous.append(saved["document"])
                 source_checkpoint = saved["work_checkpoint"]
