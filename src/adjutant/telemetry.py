@@ -59,6 +59,6 @@ def configure_logging() -> None:
     if not any(getattr(handler, "adjutant_json", False) for handler in logger.handlers):
         handler = logging.StreamHandler()
         handler.setFormatter(JsonFormatter())
-        handler.adjutant_json = True
+        setattr(handler, "adjutant_json", True)  # noqa: B010
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)
