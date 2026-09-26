@@ -1,5 +1,6 @@
 """Append-only action ledger revert engine restoring prior states deterministically."""
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -98,13 +99,23 @@ def execute_revert(
                     allocation["daily_budget_usd"],
                 ),
             )
-    elif kind == "campaign_object_state":
-        obj_id = UUID(revert_path["object_id"])
-        state = revert_path["state"]
-        conn.execute(
-            "UPDATE campaign_object SET state=%s, intended_state=%s WHERE id=%s AND brand_id=%s",
-            (state, state, obj_id, brand_id),
-        )
+    elif kind in {"campaign_object_state", "budget_set", "pause", "creative_swap"}:
+        obj_id = UUID(str(revert_path["object_id"]))
+        state = revert_path.get("state") or revert_path.get("before_state")
+        daily_budget = revert_path.get("before_daily_budget_usd") or revert_path.get("before_daily_usd") or revert_path.get("daily_budget_usd")
+
+        if state is not None:
+            # Map 'deleted' before_state to 'paused' or 'archived'
+            effective_state = "paused" if state == "deleted" else state
+            conn.execute(
+                "UPDATE campaign_object SET state=%s, intended_state=%s WHERE id=%s AND brand_id=%s",
+                (effective_state, effective_state, obj_id, brand_id),
+            )
+        if daily_budget is not None:
+            conn.execute(
+                "UPDATE campaign_object SET daily_budget_usd=%s WHERE id=%s AND brand_id=%s",
+                (Decimal(str(daily_budget)), obj_id, brand_id),
+            )
     else:
         raise DomainError(
             "UnsupportedRevertKind",
