@@ -68,13 +68,29 @@ def provision_runtime(conn: psycopg.Connection, app_password: str) -> None:
         "studio_rendition",
         "studio_plan_creative",
         "studio_job",
+        "channel_connection",
+        "channel_authorization",
+        "channel_oauth_state",
+        "tenant_secret_key",
+        "tenant_secret",
+        "remote_stop_run",
+        "remote_stop_item",
+        "campaign_build",
+        "campaign_build_step",
+        "campaign_object",
+        "workflow_run",
+        "workflow_checkpoint",
     ]
     conn.execute(
         sql.SQL("GRANT INSERT,UPDATE ON {} TO adjutant_app").format(
             sql.SQL(",").join(map(sql.Identifier, writable))
         )
     )
-    conn.execute("GRANT DELETE ON plan_allocation TO adjutant_app")
+    conn.execute("GRANT DELETE ON plan_allocation, tenant_secret TO adjutant_app")
+    conn.execute(
+        "GRANT EXECUTE ON FUNCTION runnable_campaign_builds(), validate_campaign_build(uuid), "
+        "runnable_remote_stops() TO adjutant_app"
+    )
     conn.execute("GRANT INSERT ON action,event_outbox,website_evidence TO adjutant_app")
     conn.execute("GRANT UPDATE(reverted_by_action_id) ON action TO adjutant_app")
     conn.execute("GRANT UPDATE(status, activated_at, campaigns_enabled) ON brand TO adjutant_app")
@@ -100,6 +116,18 @@ def provision_approval(conn: psycopg.Connection, password: str) -> None:
         adjutant.plan_allocation,adjutant.budget_ceiling,adjutant.brand_kill_switch,
         adjutant.channel_capability,adjutant.approval_request,adjutant.approval_token,
         adjutant.action,adjutant.event_outbox TO adjutant_approval""")
+    conn.execute(
+        """GRANT SELECT ON adjutant.guardrail,adjutant.channel_connection,
+        adjutant.channel_launch_grant,adjutant.brand_constraint,adjutant.creative,
+        adjutant.creative_concept,adjutant.rendition,adjutant.studio_plan_creative,
+        adjutant.studio_rendition,adjutant.asset,adjutant.placement_spec
+        TO adjutant_approval"""
+    )
+    conn.execute("GRANT SELECT, INSERT ON adjutant.launch_authorization TO adjutant_approval")
+    conn.execute(
+        "GRANT EXECUTE ON FUNCTION adjutant.campaign_review_manifest(uuid,uuid) "
+        "TO adjutant_approval"
+    )
     conn.execute("GRANT UPDATE(updated_at) ON adjutant.brand TO adjutant_approval")
     conn.execute("GRANT UPDATE(state) ON adjutant.plan TO adjutant_approval")
     conn.execute("GRANT UPDATE ON adjutant.approval_request TO adjutant_approval")
