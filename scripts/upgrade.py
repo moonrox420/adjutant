@@ -14,8 +14,6 @@ from bootstrap import (
 )
 from migrate import migrate
 
-from adjutant.config import Settings
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -37,7 +35,9 @@ def upgrade() -> None:
         provision_approval(conn, approval_password)
     env_path = ROOT / ".env"
     content = env_path.read_text(encoding="utf-8")
-    keys = {line.split("=", 1)[0].strip() for line in content.splitlines() if "=" in line}
+    keys = {
+        line.split("=", 1)[0].strip() for line in content.splitlines() if "=" in line
+    }
     if "ADJUTANT_GATEWAY_DATABASE_URL" not in keys:
         host = admin_url.split("@", 1)[1]
         with env_path.open("a", encoding="utf-8") as handle:
@@ -52,7 +52,9 @@ def upgrade() -> None:
                 f"\nADJUTANT_APPROVAL_DATABASE_URL=postgresql://adjutant_approval:"
                 f"{quote(approval_password)}@{host}\n"
             )
-    print("Workspace upgraded. Existing accounts, passwords, and campaign data were preserved.")
+    print(
+        "Workspace upgraded. Existing accounts, passwords, and campaign data were preserved."
+    )
 
 
 if __name__ == "__main__":

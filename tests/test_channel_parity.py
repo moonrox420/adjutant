@@ -18,7 +18,9 @@ def test_channel_comparisons_and_cases_are_rejected(source):
 
 def test_registry_lookups_and_data_literals_are_allowed():
     assert (
-        violations('channels = ["meta", "google_ads"]\nvalue = registry[channel]', "service.py")
+        violations(
+            'channels = ["meta", "google_ads"]\nvalue = registry[channel]', "service.py"
+        )
         == []
     )
     assert violations('if record["channel"] == channel:\n    run()', "service.py") == []

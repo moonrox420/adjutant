@@ -32,7 +32,9 @@ def consent(client, brand, channel):
 
 
 @pytest.mark.parametrize("channel", [p.channel for p in PROVIDERS])
-def test_channel_authorize_discover_select_disconnect(client, brand, channel, monkeypatch, admin):
+def test_channel_authorize_discover_select_disconnect(
+    client, brand, channel, monkeypatch, admin
+):
     setup_app(client, brand, channel)
     calls = []
 
@@ -77,7 +79,12 @@ def test_channel_authorize_discover_select_disconnect(client, brand, channel, mo
         == 400
     )
     assert client.post(prefix + "/discover").json()["accounts"][0]["id"] == "1234"
-    assert client.post(prefix + "/select", json={"account_id": "not-authorized"}).status_code == 403
+    assert (
+        client.post(
+            prefix + "/select", json={"account_id": "not-authorized"}
+        ).status_code
+        == 403
+    )
     selected = client.post(prefix + "/select", json={"account_id": "1234"})
     assert selected.status_code == 200, selected.text
     status = client.get(f"/api/brands/{brand}/channels")
@@ -93,7 +100,9 @@ def test_channel_authorize_discover_select_disconnect(client, brand, channel, mo
     assert client.delete(prefix + "/authorization").status_code == 200
     assert client.post(prefix + "/discover").status_code == 422
     channel_state = next(
-        x for x in client.get(f"/api/brands/{brand}/channels").json() if x["channel"] == channel
+        x
+        for x in client.get(f"/api/brands/{brand}/channels").json()
+        if x["channel"] == channel
     )
     assert not channel_state["token_saved"]
     assert not channel_state["connections"][0]["selected"]
@@ -127,7 +136,9 @@ def test_channel_refresh_is_durable_even_if_discovery_fails(client, brand, monke
     prefix = f"/api/brands/{brand}/channels/google_ads"
     assert (
         client.get(
-            prefix + "/callback", params={"state": state, "code": "ok"}, follow_redirects=False
+            prefix + "/callback",
+            params={"state": state, "code": "ok"},
+            follow_redirects=False,
         ).status_code
         == 303
     )
@@ -136,7 +147,9 @@ def test_channel_refresh_is_durable_even_if_discovery_fails(client, brand, monke
     assert refresh_calls == ["initial"]
     status = client.get(f"/api/brands/{brand}/channels").json()
     assert (
-        next(x for x in status if x["channel"] == "google_ads")["authorization"]["last_error"]
+        next(x for x in status if x["channel"] == "google_ads")["authorization"][
+            "last_error"
+        ]
         == "Provider unavailable."
     )
 
@@ -150,11 +163,16 @@ def test_channel_state_is_tenant_scoped_and_expires(client, brand, admin):
         (brand,),
     )
     assert (
-        client.get(prefix + "/callback", params={"state": state, "code": "unused"}).status_code
+        client.get(
+            prefix + "/callback", params={"state": state, "code": "unused"}
+        ).status_code
         == 400
     )
     assert (
-        client.get("/api/brands/00000000-0000-0000-0000-000000000001/channels").status_code == 404
+        client.get(
+            "/api/brands/00000000-0000-0000-0000-000000000001/channels"
+        ).status_code
+        == 404
     )
     assert (
         client.post(
@@ -169,6 +187,7 @@ def test_channel_app_replacement_invalidates_pending_consent(client, brand):
     state = consent(client, brand, "meta")
     setup_app(client, brand, "meta")
     response = client.get(
-        f"/api/brands/{brand}/channels/meta/callback", params={"state": state, "code": "stale"}
+        f"/api/brands/{brand}/channels/meta/callback",
+        params={"state": state, "code": "stale"},
     )
     assert response.status_code == 400

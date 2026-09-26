@@ -8,7 +8,6 @@ from psycopg import Connection
 from psycopg.types.json import Jsonb
 
 from adjutant.db import one
-from adjutant.errors import DomainError
 
 
 def record_escalation(
@@ -61,7 +60,9 @@ def evaluate_guardrails(
     brand_id: UUID,
     candidate: dict[str, Any],
 ) -> dict[str, Any]:
-    """Verify candidate decision against guardrails. Clamp budget increases where allowed; reject hard breaches."""
+    """Verify candidate decision against guardrails.
+    Clamp budget increases where allowed; reject hard breaches.
+    """
     limits = one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
     kind = candidate["kind"]
     channel = candidate["channel"]
@@ -81,13 +82,18 @@ def evaluate_guardrails(
     if kind == "reallocate_budget":
         source_comparability = params.get("source_comparability")
         target_comparability = params.get("target_comparability")
-        if source_comparability and target_comparability and source_comparability != target_comparability:
+        if (
+            source_comparability
+            and target_comparability
+            and source_comparability != target_comparability
+        ):
             return {
                 "approved": False,
                 "state": "rejected",
                 "reason": (
-                    f"MismatchedComparabilityClass: Budget cannot move between objects with mismatched "
-                    f"comparability classes ({source_comparability} != {target_comparability})."
+                    "MismatchedComparabilityClass: Budget cannot move between objects with "
+                    f"mismatched comparability classes ({source_comparability} != "
+                    f"{target_comparability})."
                 ),
                 "params": params,
             }
@@ -104,18 +110,24 @@ def evaluate_guardrails(
                 "reason": f"Breaches daily_spend_cap_usd of {daily_cap}.",
                 "params": params,
             }
-        current_total_daily = Decimal(str(
-            conn.execute(
-                "SELECT COALESCE(sum(daily_budget_usd), 0) AS total FROM campaign_object "
-                "WHERE brand_id=%s AND state='active' AND level IN ('campaign', 'ad')",
-                (brand_id,),
-            ).fetchone()["total"]
-        ))
+        current_total_daily = Decimal(
+            str(
+                conn.execute(
+                    "SELECT COALESCE(sum(daily_budget_usd), 0) AS total FROM campaign_object "
+                    "WHERE brand_id=%s AND state='active' AND level IN ('campaign', 'ad')",
+                    (brand_id,),
+                ).fetchone()["total"]
+            )
+        )
         delta = raw_proposed - raw_current
         if kind == "reallocate_budget" and params.get("source_campaign_id"):
             # Reallocation moves budget between campaigns; net addition to total account spend is 0
             delta = Decimal("0.00")
-        if current_total_daily + delta > daily_cap and raw_proposed > raw_current and not params.get("source_campaign_id"):
+        if (
+            current_total_daily + delta > daily_cap
+            and raw_proposed > raw_current
+            and not params.get("source_campaign_id")
+        ):
             return {
                 "approved": False,
                 "state": "rejected",
@@ -128,23 +140,32 @@ def evaluate_guardrails(
         current_daily = Decimal(str(params.get("current_daily_usd", "0.00")))
         proposed_daily = Decimal(str(params.get("proposed_daily_usd", "0.00")))
         if current_daily > 0 and proposed_daily > current_daily:
-            increase_pct = (proposed_daily - current_daily) / current_daily * Decimal("100.0")
+            increase_pct = (
+                (proposed_daily - current_daily) / current_daily * Decimal("100.0")
+            )
             max_increase_pct = Decimal(str(limits["max_daily_spend_increase_pct"]))
             if increase_pct > max_increase_pct:
                 # Clamp rather than reject
-                clamped_daily = current_daily * (Decimal("1.0") + max_increase_pct / Decimal("100.0"))
+                clamped_daily = current_daily * (
+                    Decimal("1.0") + max_increase_pct / Decimal("100.0")
+                )
                 params["clamped"] = True
                 params["original_proposed_daily_usd"] = str(proposed_daily)
                 params["clamp_logged_reason"] = (
-                    f"Clamped spend increase from {increase_pct:.1f}% to allowed limit of {float(max_increase_pct):.1f}%."
+                    f"Clamped spend increase from {increase_pct:.1f}% to allowed limit "
+                    f"of {float(max_increase_pct):.1f}%."
                 )
-                params["proposed_daily_usd"] = str(clamped_daily.quantize(Decimal("0.01")))
+                params["proposed_daily_usd"] = str(
+                    clamped_daily.quantize(Decimal("0.01"))
+                )
                 proposed_daily = clamped_daily
 
     # Hard guardrail: requires_approval_above_usd
     req_above = limits.get("requires_approval_above_usd")
     if req_above is not None:
-        proposed_delta = Decimal(str(params.get("proposed_daily_usd", "0.00"))) - Decimal(str(params.get("current_daily_usd", "0.00")))
+        proposed_delta = Decimal(
+            str(params.get("proposed_daily_usd", "0.00"))
+        ) - Decimal(str(params.get("current_daily_usd", "0.00")))
         if proposed_delta > Decimal(str(req_above)):
             esc_id = record_escalation(
                 conn,
@@ -152,13 +173,19 @@ def evaluate_guardrails(
                 "guardrail_breach",
                 "campaign_object",
                 target_id,
-                {"reason": "Budget increase exceeds requires_approval_above_usd", "delta": float(proposed_delta)},
+                {
+                    "reason": "Budget increase exceeds requires_approval_above_usd",
+                    "delta": float(proposed_delta),
+                },
             )
             return {
                 "approved": False,
                 "state": "escalated",
                 "escalation_id": esc_id,
-                "reason": f"Budget delta {proposed_delta} exceeds threshold {req_above}; escalated for approval.",
+                "reason": (
+                    f"Budget delta {proposed_delta} exceeds threshold {req_above}; "
+                    "escalated for approval."
+                ),
                 "params": params,
             }
 

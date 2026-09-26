@@ -1,16 +1,15 @@
-"""Agency platform: Multi-brand management, client approver scoping, atomic bulk operations, and cross-client rollups."""
+"""Agency platform: Multi-brand management, client approver scoping,
+atomic bulk operations, and cross-client rollups.
+"""
 
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from psycopg import Connection
-from psycopg.types.json import Jsonb
 
-from adjutant.db import one
 from adjutant.errors import DomainError
-from adjutant.metrics import aggregate_metric_sum
 
 
 @dataclass(frozen=True)
@@ -28,34 +27,36 @@ def verify_client_approver_brand_access(
     target_brand_id: UUID,
 ) -> bool:
     """S12.1: A client approver can approve only their own brand and read nothing else."""
-    membership = conn.execute(
-        """SELECT role, brand_id, account_id FROM account_membership
-        WHERE user_id=%s""",
+    seats = conn.execute(
+        """SELECT role, brand_id, account_id FROM seat
+        WHERE user_id=%s AND revoked_at IS NULL""",
         (user_id,),
-    ).fetchone()
-    if not membership:
+    ).fetchall()
+    if not seats:
         raise DomainError("Unauthorized", "User is not a member of any account.", 403)
 
-    role = membership["role"]
-    if role in {"owner", "admin", "media_buyer"}:
-        # Agency staff can manage any brand in the agency account
-        brand_match = conn.execute(
-            "SELECT 1 FROM brand WHERE id=%s AND account_id=%s",
-            (target_brand_id, membership["account_id"]),
-        ).fetchone()
-        return bool(brand_match)
+    for s in seats:
+        role = s["role"]
+        if role in {"owner", "admin", "buyer"}:
+            brand_match = conn.execute(
+                "SELECT 1 FROM brand WHERE id=%s AND account_id=%s",
+                (target_brand_id, s["account_id"]),
+            ).fetchone()
+            if brand_match:
+                return True
+        elif role == "client_approver":
+            if s["brand_id"] == target_brand_id:
+                return True
 
-    if role == "client_approver":
-        # Client approver is strictly bound to one brand_id
-        assigned_brand = membership.get("brand_id")
-        if assigned_brand != target_brand_id:
-            raise DomainError(
-                "AccessDenied",
-                f"Client approver is authorized exclusively for brand {assigned_brand}, cannot access {target_brand_id}.",
-                403,
-            )
-        return True
-
+    client_approver_seats = [s for s in seats if s["role"] == "client_approver"]
+    if client_approver_seats:
+        assigned_brand = client_approver_seats[0]["brand_id"]
+        raise DomainError(
+            "AccessDenied",
+            f"Client approver is authorized exclusively for brand {assigned_brand}, "
+            f"cannot access {target_brand_id}.",
+            403,
+        )
     return False
 
 
@@ -80,11 +81,13 @@ def execute_bulk_brand_operation(
             (brand_id, account_id),
         ).fetchone()
         if not brand:
-            failed.append({
-                "brand_id": str(brand_id),
-                "error": "BrandNotFoundInAccount",
-                "message": "Brand does not belong to the agency account.",
-            })
+            failed.append(
+                {
+                    "brand_id": str(brand_id),
+                    "error": "BrandNotFoundInAccount",
+                    "message": "Brand does not belong to the agency account.",
+                }
+            )
             continue
 
         try:
@@ -92,7 +95,9 @@ def execute_bulk_brand_operation(
             with conn.savepoint():
                 if operation_kind == "set_monthly_ceiling":
                     new_monthly = Decimal(str(params["monthly_usd_max"]))
-                    new_daily = Decimal(str(params.get("daily_usd_max", new_monthly / Decimal("28.0"))))
+                    new_daily = Decimal(
+                        str(params.get("daily_usd_max", new_monthly / Decimal("28.0")))
+                    )
                     conn.execute(
                         """UPDATE budget_ceiling SET monthly_usd_max=%s, daily_usd_max=%s
                         WHERE brand_id=%s AND scope_kind='brand'""",
@@ -105,10 +110,12 @@ def execute_bulk_brand_operation(
                     )
                 elif operation_kind == "pause_all_campaigns":
                     conn.execute(
-                        "UPDATE brand SET campaigns_enabled=false WHERE id=%s", (brand_id,)
+                        "UPDATE brand SET campaigns_enabled=false WHERE id=%s",
+                        (brand_id,),
                     )
                     conn.execute(
-                        "UPDATE campaign_object SET state='paused' WHERE brand_id=%s AND state='active'",
+                        "UPDATE campaign_object SET state='paused' "
+                        "WHERE brand_id=%s AND state='active'",
                         (brand_id,),
                     )
                 elif operation_kind == "add_blocked_claim":
@@ -119,16 +126,22 @@ def execute_bulk_brand_operation(
                         (claim, brand_id, claim),
                     )
                 else:
-                    raise DomainError("UnsupportedBulkOperation", f"Operation '{operation_kind}' is not supported.", 400)
+                    raise DomainError(
+                        "UnsupportedBulkOperation",
+                        f"Operation '{operation_kind}' is not supported.",
+                        400,
+                    )
 
                 succeeded.append(str(brand_id))
 
         except Exception as exc:
-            failed.append({
-                "brand_id": str(brand_id),
-                "error": type(exc).__name__,
-                "message": str(exc),
-            })
+            failed.append(
+                {
+                    "brand_id": str(brand_id),
+                    "error": type(exc).__name__,
+                    "message": str(exc),
+                }
+            )
 
     return BulkOperationResult(
         total_brands=len(brand_ids),
@@ -149,7 +162,7 @@ def compute_cross_client_rollup(
     facts = conn.execute(
         """SELECT
             mn.brand_id,
-            b.name AS brand_name,
+            b.display_name AS brand_name,
             mn.channel,
             mn.metric_key,
             mn.metric_value,
@@ -171,7 +184,14 @@ def compute_cross_client_rollup(
         grouped_by_comparability.setdefault(comp_class, []).append(f)
 
         bid = str(f["brand_id"])
-        brand_summaries.setdefault(bid, {"brand_name": f["brand_name"], "spend": Decimal("0.00"), "conversions": Decimal("0.00")})
+        brand_summaries.setdefault(
+            bid,
+            {
+                "brand_name": f["brand_name"],
+                "spend": Decimal("0.00"),
+                "conversions": Decimal("0.00"),
+            },
+        )
         if f["metric_key"] == "spend":
             brand_summaries[bid]["spend"] += Decimal(str(f["metric_value"]))
         elif f["metric_key"] == "conversions":
@@ -191,7 +211,10 @@ def compute_cross_client_rollup(
             "annotation": (
                 "Direct last-click methodology"
                 if comp_class == "direct"
-                else "Caveated view-through or multi-touch attribution; cannot be merged into direct CPA"
+                else (
+                    "Caveated view-through or multi-touch attribution; "
+                    "cannot be merged into direct CPA"
+                )
             ),
             "total_spend_usd": str(total_spend),
             "total_conversions": str(total_conv),

@@ -21,7 +21,9 @@ def approve(client, brand, approval):
 def test_authentication_and_csrf(client):
     assert client.get("/api/me").status_code == 200
     assert (
-        client.post("/api/auth/logout", headers={"origin": "https://evil.example"}).status_code
+        client.post(
+            "/api/auth/logout", headers={"origin": "https://evil.example"}
+        ).status_code
         == 403
     )
     assert client.post("/api/auth/logout").status_code == 200
@@ -33,7 +35,9 @@ def test_plan_creation_does_not_require_confirmation(client, brand, plan_input):
     assert response.status_code == 201, response.text
 
 
-def test_plan_approval_is_persisted_signed_and_audited(client, confirmed_brand, approval, admin):
+def test_plan_approval_is_persisted_signed_and_audited(
+    client, confirmed_brand, approval, admin
+):
     result = approve(client, confirmed_brand, approval)
     assert result.status_code == 200, result.text
     token = admin.execute(
@@ -42,7 +46,9 @@ def test_plan_approval_is_persisted_signed_and_audited(client, confirmed_brand, 
     from pathlib import Path
 
     signer = ApprovalSigner(Path(".local/approval.key"))
-    verify_claims(signer.public_bytes, token["signed_claims"], bytes(token["signature"]))
+    verify_claims(
+        signer.public_bytes, token["signed_claims"], bytes(token["signature"])
+    )
     claims = dict(token["signed_claims"], usd_daily_cap="999999.00")
     with pytest.raises(DomainError, match="signature"):
         verify_claims(signer.public_bytes, claims, bytes(token["signature"]))
@@ -67,7 +73,9 @@ def test_plan_approval_is_persisted_signed_and_audited(client, confirmed_brand, 
     )
 
 
-def test_changed_plan_voids_approval(client, confirmed_brand, plan, approval, plan_input, admin):
+def test_changed_plan_voids_approval(
+    client, confirmed_brand, plan, approval, plan_input, admin
+):
     assert approve(client, confirmed_brand, approval).status_code == 200
     response = client.put(
         f"/api/brands/{confirmed_brand}/plans/{plan['id']}",
@@ -76,18 +84,24 @@ def test_changed_plan_voids_approval(client, confirmed_brand, plan, approval, pl
     assert response.status_code == 200, response.text
     assert response.json()["plan_hash"] != plan["plan_hash"]
     row = admin.execute(
-        "SELECT voided_at FROM approval_token WHERE approval_request_id=%s", (approval["id"],)
+        "SELECT voided_at FROM approval_token WHERE approval_request_id=%s",
+        (approval["id"],),
     ).fetchone()
     assert row["voided_at"] is not None
     assert approve(client, confirmed_brand, approval).status_code == 409
 
 
-def test_concurrent_approval_only_issues_one_token(client, confirmed_brand, approval, admin):
+def test_concurrent_approval_only_issues_one_token(
+    client, confirmed_brand, approval, admin
+):
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda _: approve(client, confirmed_brand, approval), range(2)))
+        results = list(
+            pool.map(lambda _: approve(client, confirmed_brand, approval), range(2))
+        )
     assert sorted(r.status_code for r in results) == [200, 409]
     count = admin.execute(
-        "SELECT count(*) AS n FROM approval_token WHERE approval_request_id=%s", (approval["id"],)
+        "SELECT count(*) AS n FROM approval_token WHERE approval_request_id=%s",
+        (approval["id"],),
     ).fetchone()["n"]
     assert count == 1
 
@@ -104,14 +118,20 @@ def test_ceiling_rechecked_at_approval(client, confirmed_brand, approval):
 
 
 def test_seat_caps_fail_closed(client, confirmed_brand, approval, admin, identity):
-    admin.execute("UPDATE seat SET approval_daily_usd_cap=1 WHERE user_id=%s", (identity["user"],))
+    admin.execute(
+        "UPDATE seat SET approval_daily_usd_cap=1 WHERE user_id=%s", (identity["user"],)
+    )
     response = approve(client, confirmed_brand, approval)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "SpendAuthorityExceeded"
 
 
-@pytest.mark.parametrize("role", ["creative", "reviewer", "client_viewer", "client_approver"])
-def test_non_spend_roles_cannot_approve(client, confirmed_brand, approval, admin, identity, role):
+@pytest.mark.parametrize(
+    "role", ["creative", "reviewer", "client_viewer", "client_approver"]
+)
+def test_non_spend_roles_cannot_approve(
+    client, confirmed_brand, approval, admin, identity, role
+):
     admin.execute(
         "UPDATE seat SET brand_id=%s,role=%s WHERE user_id=%s",
         (confirmed_brand, role, identity["user"]),
@@ -124,16 +144,23 @@ def test_expired_requests_fail_closed(client, confirmed_brand, approval, admin):
         "UPDATE approval_request SET expires_at=now()-interval '1 second' WHERE id=%s",
         (approval["id"],),
     )
-    assert approve(client, confirmed_brand, approval).json()["error"]["code"] == "ApprovalExpired"
+    assert (
+        approve(client, confirmed_brand, approval).json()["error"]["code"]
+        == "ApprovalExpired"
+    )
 
 
 def test_kill_switch_blocks_approval(client, confirmed_brand, approval):
     result = client.post(
-        f"/api/brands/{confirmed_brand}/kill", json={"reason": "Unexpected campaign activity"}
+        f"/api/brands/{confirmed_brand}/kill",
+        json={"reason": "Unexpected campaign activity"},
     )
     assert result.status_code == 200
     assert result.json()["remote_pause_verified"] is False
-    assert approve(client, confirmed_brand, approval).json()["error"]["code"] == "KillSwitchActive"
+    assert (
+        approve(client, confirmed_brand, approval).json()["error"]["code"]
+        == "KillSwitchActive"
+    )
 
 
 def test_audit_immutable_even_for_owner(admin, brand):
@@ -149,7 +176,8 @@ def test_cross_tenant_api_and_views(client, brand, admin, database_urls, identit
     other = uuid4()
     account = uuid4()
     admin.execute(
-        "INSERT INTO account(id,account_type,display_name) VALUES(%s,'agency','Other')", (account,)
+        "INSERT INTO account(id,account_type,display_name) VALUES(%s,'agency','Other')",
+        (account,),
     )
     admin.execute(
         "INSERT INTO brand(id,account_id,display_name) VALUES(%s,%s,'Other secret brand')",
@@ -160,8 +188,15 @@ def test_cross_tenant_api_and_views(client, brand, admin, database_urls, identit
     with psycopg.connect(database_urls[1]) as conn:
         conn.execute("SET LOCAL search_path=adjutant,public")
         conn.execute("SELECT set_config('app.current_brand_ids',%s,true)", (brand,))
-        for view in ["brand", "v_approval_queue", "v_agency_portfolio", "v_spend_authority_trail"]:
-            rows = conn.execute(sql.SQL("SELECT * FROM {}").format(sql.Identifier(view))).fetchall()
+        for view in [
+            "brand",
+            "v_approval_queue",
+            "v_agency_portfolio",
+            "v_spend_authority_trail",
+        ]:
+            rows = conn.execute(
+                sql.SQL("SELECT * FROM {}").format(sql.Identifier(view))
+            ).fetchall()
             assert str(other) not in str(rows)
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             conn.execute(
@@ -178,9 +213,13 @@ def test_missing_context_and_pool_reuse(database_urls, brand):
             with db.transaction(extra_brand=UUID(brand)) as conn:
                 assert len(conn.execute("SELECT * FROM brand").fetchall()) == 1
             with db.transaction() as conn:
-                assert conn.execute("SELECT count(*) AS n FROM brand").fetchone()["n"] == 0
                 assert (
-                    conn.execute("SELECT count(*) AS n FROM v_agency_portfolio").fetchone()["n"]
+                    conn.execute("SELECT count(*) AS n FROM brand").fetchone()["n"] == 0
+                )
+                assert (
+                    conn.execute(
+                        "SELECT count(*) AS n FROM v_agency_portfolio"
+                    ).fetchone()["n"]
                     == 0
                 )
     finally:
@@ -188,21 +227,28 @@ def test_missing_context_and_pool_reuse(database_urls, brand):
 
 
 def test_every_brand_table_and_partition_has_rls(admin):
-    unprotected = admin.execute("""SELECT c.relname FROM pg_class c
+    unprotected = admin.execute(
+        """SELECT c.relname FROM pg_class c
         JOIN pg_namespace n ON n.oid=c.relnamespace
         JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='brand_id'
         WHERE n.nspname='adjutant' AND c.relkind IN ('r','p')
         AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity
-             OR NOT EXISTS(SELECT 1 FROM pg_policy p WHERE p.polrelid=c.oid))""").fetchall()
+             OR NOT EXISTS(SELECT 1 FROM pg_policy p WHERE p.polrelid=c.oid))"""
+    ).fetchall()
     assert unprotected == []
 
 
 def test_budget_allocation_exactness(client, confirmed_brand, plan_input):
     plan_input["monthly_budget_usd"] = "3000.01"
-    assert client.post(f"/api/brands/{confirmed_brand}/plans", json=plan_input).status_code == 422
+    assert (
+        client.post(f"/api/brands/{confirmed_brand}/plans", json=plan_input).status_code
+        == 422
+    )
 
 
-def test_token_expiry_and_scope_and_replay_database(client, confirmed_brand, approval, admin):
+def test_token_expiry_and_scope_and_replay_database(
+    client, confirmed_brand, approval, admin
+):
     result = approve(client, confirmed_brand, approval)
     assert result.status_code == 200, result.text
     token = result.json()["token_id"]
@@ -226,13 +272,15 @@ def test_token_expiry_and_scope_and_replay_database(client, confirmed_brand, app
         )
     with pytest.raises(psycopg.errors.CheckViolation):
         admin.execute(
-            "UPDATE approval_token SET expires_at=now()+interval '4 days' WHERE id=%s", (token,)
+            "UPDATE approval_token SET expires_at=now()+interval '4 days' WHERE id=%s",
+            (token,),
         )
 
 
 def test_brand_fact_does_not_require_a_source(client, brand):
     response = client.post(
-        f"/api/brands/{brand}/assertions", json={"field_path": "offer", "value": "Local repairs"}
+        f"/api/brands/{brand}/assertions",
+        json={"field_path": "offer", "value": "Local repairs"},
     )
     assert response.status_code == 201, response.text
     assert response.json()["provenance_uri"] is None

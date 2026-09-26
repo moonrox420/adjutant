@@ -58,7 +58,9 @@ def consume_once(conn: psycopg.Connection, config: dict) -> int:
     """Each effect and durable receipt commit together; locked work is reclaimed on disconnect."""
     with conn.transaction():
         conn.execute("SELECT adjutant.reap_abandoned_jobs()")
-        count = conn.execute("SELECT adjutant.consume_activity_batch(100) AS n").fetchone()["n"]
+        count = conn.execute(
+            "SELECT adjutant.consume_activity_batch(100) AS n"
+        ).fetchone()["n"]
     with conn.transaction():
         item = conn.execute("""SELECT * FROM adjutant.mail_outbox
             WHERE delivered_at IS NULL AND attempts<8 AND next_attempt_at<=now()
@@ -69,7 +71,9 @@ def consume_once(conn: psycopg.Connection, config: dict) -> int:
             except (OSError, smtplib.SMTPException) as exc:
                 # Persist exception classes; SMTP responses can include private addresses.
                 logger.warning(
-                    "Mail delivery failed: message_id=%s type=%s", item["id"], type(exc).__name__
+                    "Mail delivery failed: message_id=%s type=%s",
+                    item["id"],
+                    type(exc).__name__,
                 )
                 conn.execute(
                     """UPDATE adjutant.mail_outbox SET attempts=attempts+1,last_error=%s,
@@ -95,7 +99,10 @@ def main() -> None:
     while True:
         try:
             with psycopg.connect(
-                config["database_url"], autocommit=True, row_factory=dict_row, connect_timeout=5
+                config["database_url"],
+                autocommit=True,
+                row_factory=dict_row,
+                connect_timeout=5,
             ) as conn:
                 conn.execute("SET statement_timeout='30s'")
                 while True:

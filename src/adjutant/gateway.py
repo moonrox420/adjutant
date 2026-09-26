@@ -47,7 +47,9 @@ class SpendAuthority:
 
     def validate(self, conn: Connection, intent: SpendIntent) -> dict[str, Any]:
         """Lock brand before token, matching stop operations and serializing authority changes."""
-        conn.execute("SELECT lock_spend_authority(%s,%s)", (intent.brand_id, intent.token_id))
+        conn.execute(
+            "SELECT lock_spend_authority(%s,%s)", (intent.brand_id, intent.token_id)
+        )
         brand = one(conn, "SELECT * FROM brand WHERE id=%s", (intent.brand_id,))
         token = one(
             conn,
@@ -56,10 +58,14 @@ class SpendAuthority:
         )
         key = self.trusted_keys.get(token["signing_key_id"])
         if key is None:
-            raise DomainError("UnknownSigningKey", "Approval uses an untrusted signing key.", 403)
+            raise DomainError(
+                "UnknownSigningKey", "Approval uses an untrusted signing key.", 403
+            )
         claims = token["signed_claims"]
         if not isinstance(claims, dict):
-            raise DomainError("InvalidSignature", "Approval has no verifiable signed claims.", 403)
+            raise DomainError(
+                "InvalidSignature", "Approval has no verifiable signed claims.", 403
+            )
         verify_claims(key, claims, bytes(token["signature"]))
         expected = {
             "tok": str(token["id"]),
@@ -81,17 +87,28 @@ class SpendAuthority:
         if token["voided_at"] or token["expires_at"] <= datetime.now(UTC):
             raise DomainError("TokenExpired", "Approval expired or was voided.", 403)
         if int(token["expires_at"].timestamp()) != claims["exp"]:
-            raise DomainError("ClaimMismatch", "Approval expiry does not match its signature.", 403)
-        if int(token["issued_at"].timestamp()) != claims["iat"] or token["subject_type"] != "plan":
-            raise DomainError("ClaimMismatch", "Approval issuance or subject type is invalid.", 403)
+            raise DomainError(
+                "ClaimMismatch", "Approval expiry does not match its signature.", 403
+            )
+        if (
+            int(token["issued_at"].timestamp()) != claims["iat"]
+            or token["subject_type"] != "plan"
+        ):
+            raise DomainError(
+                "ClaimMismatch", "Approval issuance or subject type is invalid.", 403
+            )
         if intent.subject_hash != claims["sub_hash"]:
-            raise DomainError("SubjectChanged", "The requested revision is not approved.", 403)
+            raise DomainError(
+                "SubjectChanged", "The requested revision is not approved.", 403
+            )
         if (
             f"channel:{intent.channel}" not in claims["scopes"]
             or f"op:{intent.operation}" not in claims["scopes"]
         ):
             raise DomainError(
-                "ScopeDenied", "Approval does not authorize this channel operation.", 403
+                "ScopeDenied",
+                "Approval does not authorize this channel operation.",
+                403,
             )
         plan = one(
             conn,
@@ -102,15 +119,21 @@ class SpendAuthority:
             plan["plan_hash"] != intent.subject_hash
             or digest(plan["plan_document"]) != intent.subject_hash
         ):
-            raise DomainError("SubjectChanged", "Approved plan content has changed.", 403)
+            raise DomainError(
+                "SubjectChanged", "Approved plan content has changed.", 403
+            )
         if digest(intent.payload) != intent.subject_hash:
             raise DomainError(
                 "PayloadChanged", "The operation payload is not the approved plan.", 403
             )
         if plan["state"] not in {"approved", "deploying", "live"}:
-            raise DomainError("ApprovalRequired", "This plan is not approved for deployment.", 403)
+            raise DomainError(
+                "ApprovalRequired", "This plan is not approved for deployment.", 403
+            )
         request = one(
-            conn, "SELECT state FROM approval_request WHERE id=%s", (token["approval_request_id"],)
+            conn,
+            "SELECT state FROM approval_request WHERE id=%s",
+            (token["approval_request_id"],),
         )
         if request["state"] != "approved":
             raise DomainError("ApprovalRequired", "Approval is no longer valid.", 403)
@@ -119,7 +142,9 @@ class SpendAuthority:
             or not brand["campaigns_enabled"]
             or brand["restricted_flags"]
         ):
-            raise DomainError("BrandNotReady", "The brand is not cleared for campaigns.", 403)
+            raise DomainError(
+                "BrandNotReady", "The brand is not cleared for campaigns.", 403
+            )
         if conn.execute(
             "SELECT 1 FROM brand_kill_switch WHERE brand_id=%s AND released_at IS NULL",
             (intent.brand_id,),
@@ -136,7 +161,9 @@ class SpendAuthority:
             or intent.total_usd > allocation["monthly_budget_usd"]
         ):
             raise DomainError(
-                "AllocationExceeded", "The operation exceeds its approved channel allocation.", 403
+                "AllocationExceeded",
+                "The operation exceeds its approved channel allocation.",
+                403,
             )
         if conn.execute(
             """SELECT 1 FROM approval_token_consumption
@@ -144,10 +171,14 @@ class SpendAuthority:
             (token["id"], intent.channel, intent.operation),
         ).fetchone():
             logger.error(
-                "Spend replay denied: brand_id=%s token_id=%s", intent.brand_id, intent.token_id
+                "Spend replay denied: brand_id=%s token_id=%s",
+                intent.brand_id,
+                intent.token_id,
             )
             raise DomainError(
-                "ReplayDenied", "This channel operation has already consumed its approval.", 409
+                "ReplayDenied",
+                "This channel operation has already consumed its approval.",
+                409,
             )
         totals = one(
             conn,
@@ -161,7 +192,9 @@ class SpendAuthority:
             or totals["daily"] + intent.daily_usd > token["usd_daily_cap"]
         ):
             raise DomainError(
-                "CapExceeded", "Cumulative commitments exceed the signed approval cap.", 403
+                "CapExceeded",
+                "Cumulative commitments exceed the signed approval cap.",
+                403,
             )
         ceilings = conn.execute(
             """SELECT * FROM budget_ceiling WHERE brand_id=%s
@@ -170,7 +203,9 @@ class SpendAuthority:
         ).fetchall()
         if not any(ceiling["scope_kind"] == "brand" for ceiling in ceilings):
             raise DomainError(
-                "BudgetCeilingRequired", "A current brand budget ceiling is required.", 403
+                "BudgetCeilingRequired",
+                "A current brand budget ceiling is required.",
+                403,
             )
         for ceiling in ceilings:
             committed = one(
@@ -218,4 +253,8 @@ class SpendAuthority:
                 digest(intent.payload),
             ),
         )
-        return {**result, "reservation_id": str(row["id"]), "reserved_at": row["consumed_at"]}
+        return {
+            **result,
+            "reservation_id": str(row["id"]),
+            "reserved_at": row["consumed_at"],
+        }

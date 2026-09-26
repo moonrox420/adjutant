@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -17,7 +18,6 @@ from adjutant.models import Input, Money
 from adjutant.security import ApprovalSigner, digest, verify_claims
 from adjutant.service import audit, check_plan_integrity, generation_gate, locked_brand
 
-from pathlib import Path
 events = EventRegistry(Path(__file__).with_name("event_registry.json"))
 
 
@@ -25,7 +25,9 @@ class GuardrailInput(Input):
     expected_version: int = Field(ge=1)
     monthly_spend_cap_usd: Money
     daily_spend_cap_usd: Money
-    max_daily_spend_increase_pct: Decimal = Field(default=25, ge=0, le=100, decimal_places=2)
+    max_daily_spend_increase_pct: Decimal = Field(
+        default=25, ge=0, le=100, decimal_places=2
+    )
     max_new_campaigns_per_day: int = Field(default=3, ge=1, le=1000)
     max_new_ads_per_day: int = Field(default=20, ge=1, le=10000)
     per_channel_cap_pct: Decimal = Field(default=60, gt=0, le=100, decimal_places=2)
@@ -39,7 +41,9 @@ class GuardrailInput(Input):
             raise ValueError("Daily cap cannot exceed the monthly cap")
         if self.min_channel_floor_pct > self.per_channel_cap_pct:
             raise ValueError("Channel floor cannot exceed the channel cap")
-        self.blocked_claims = list(dict.fromkeys(item.strip() for item in self.blocked_claims))
+        self.blocked_claims = list(
+            dict.fromkeys(item.strip() for item in self.blocked_claims)
+        )
         if any(not item or len(item) > 500 for item in self.blocked_claims):
             raise ValueError("Blocked claims must contain between 1 and 500 characters")
         return self
@@ -54,11 +58,13 @@ class LaunchApprovalInput(Input):
 
 def launch_scope(conn: Connection, brand_id: UUID, plan_id: UUID) -> dict[str, Any]:
     """Resolve actual selected accounts; a plan revision never revokes a consumed grant."""
-    plan = one(conn, "SELECT * FROM plan WHERE brand_id=%s AND id=%s", (brand_id, plan_id))
+    plan = one(
+        conn, "SELECT * FROM plan WHERE brand_id=%s AND id=%s", (brand_id, plan_id)
+    )
     limits = one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
-    manifest = one(conn, "SELECT campaign_review_manifest(%s,%s) AS document", (brand_id, plan_id))[
-        "document"
-    ]
+    manifest = one(
+        conn, "SELECT campaign_review_manifest(%s,%s) AS document", (brand_id, plan_id)
+    )["document"]
     rows = conn.execute(
         """SELECT a.channel,c.id AS connection_id,c.external_ad_account_id,
         c.external_account_name,c.health,c.verified_at,c.token_expires_at,c.authorization_generation,
@@ -83,9 +89,9 @@ def launch_scope(conn: Connection, brand_id: UUID, plan_id: UUID) -> dict[str, A
                 "accounts": [
                     {
                         "channel": row["channel"],
-                        "connection_id": str(row["connection_id"])
-                        if row["connection_id"]
-                        else None,
+                        "connection_id": (
+                            str(row["connection_id"]) if row["connection_id"] else None
+                        ),
                         "authorization_generation": row["authorization_generation"],
                     }
                     for row in rows
@@ -120,7 +126,9 @@ def issue_launch_authorization(
             or previous["claims"].get("review_hash") != data.expected_review_hash
         ):
             raise DomainError(
-                "IdempotencyConflict", "This approval key belongs to another review.", 409
+                "IdempotencyConflict",
+                "This approval key belongs to another review.",
+                409,
             )
         consumed = conn.execute(
             "SELECT g.connection_id FROM channel_launch_grant g JOIN channel_connection c "
@@ -133,14 +141,18 @@ def issue_launch_authorization(
         ):
             return {"authorization_id": None, "already_authorized": True}
         if conn.execute(
-            "SELECT 1 FROM channel_launch_grant WHERE authorization_id=%s", (previous["id"],)
+            "SELECT 1 FROM channel_launch_grant WHERE authorization_id=%s",
+            (previous["id"],),
         ).fetchone():
             raise DomainError(
                 "AuthorizationRevoked",
                 "Account consent changed. Review and authorize it again.",
                 409,
             )
-        return {"authorization_id": previous["id"], "expires_at": previous["expires_at"]}
+        return {
+            "authorization_id": previous["id"],
+            "expires_at": previous["expires_at"],
+        }
     generation_gate(conn, brand)
     scope = launch_scope(conn, brand_id, plan_id)
     limits = scope["guardrails"]
@@ -150,18 +162,24 @@ def issue_launch_authorization(
         or limits["version"] != data.expected_guardrail_version
     ):
         raise DomainError(
-            "ReviewChanged", "The plan or guardrails changed. Review the current values.", 409
+            "ReviewChanged",
+            "The plan or guardrails changed. Review the current values.",
+            409,
         )
     plan = one(conn, "SELECT * FROM plan WHERE id=%s", (plan_id,))
     document = check_plan_integrity(plan)
     daily = sum(a.daily_budget_usd or Decimal(0) for a in document.allocations)
     if any(a.daily_budget_usd is None for a in document.allocations):
-        raise DomainError("DailyBudgetRequired", "Set a daily budget for every channel.", 422)
+        raise DomainError(
+            "DailyBudgetRequired", "Set a daily budget for every channel.", 422
+        )
     if (
         document.monthly_budget_usd > limits["monthly_spend_cap_usd"]
         or daily > limits["daily_spend_cap_usd"]
     ):
-        raise DomainError("GuardrailExceeded", "The plan exceeds the brand spend caps.", 409)
+        raise DomainError(
+            "GuardrailExceeded", "The plan exceeds the brand spend caps.", 409
+        )
     if (
         seat["approval_daily_usd_cap"] is None
         or seat["approval_total_usd_cap"] is None
@@ -173,9 +191,15 @@ def issue_launch_authorization(
         )
     for allocation in document.allocations:
         share = allocation.monthly_budget_usd * 100 / limits["monthly_spend_cap_usd"]
-        if not limits["min_channel_floor_pct"] <= share <= limits["per_channel_cap_pct"]:
+        if (
+            not limits["min_channel_floor_pct"]
+            <= share
+            <= limits["per_channel_cap_pct"]
+        ):
             raise DomainError(
-                "ChannelBudgetShare", "A channel allocation is outside its guardrail share.", 409
+                "ChannelBudgetShare",
+                "A channel allocation is outside its guardrail share.",
+                409,
             )
     now = datetime.now(UTC).replace(microsecond=0)
     connections = []
@@ -298,7 +322,9 @@ def consume_launch_authorization(
         claims.get("connections"), list
     ):
         raise DomainError(
-            "InvalidClaims", "Launch authorization does not match its signed record.", 403
+            "InvalidClaims",
+            "Launch authorization does not match its signed record.",
+            403,
         )
     existing = conn.execute(
         "SELECT connection_id FROM channel_launch_grant WHERE authorization_id=%s AND brand_id=%s",
@@ -307,14 +333,24 @@ def consume_launch_authorization(
     if existing and sorted(str(r["connection_id"]) for r in existing) == sorted(
         claims["connections"]
     ):
-        raise DomainError("LaunchTokenReplay", "This launch token has already been consumed.", 409)
+        raise DomainError(
+            "LaunchTokenReplay", "This launch token has already been consumed.", 409
+        )
     key = keys.get(row["signing_key_id"])
     if key is None:
-        raise DomainError("UnknownSigningKey", "The authorization signing key is not trusted.", 403)
+        raise DomainError(
+            "UnknownSigningKey", "The authorization signing key is not trusted.", 403
+        )
     verify_claims(key, claims, bytes(row["signature"]))
     if claims.get("operations") != ["activate"]:
-        raise DomainError("InvalidScope", "The token does not authorize brand activation.", 403)
-    plan = one(conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (row["plan_id"], brand_id))
+        raise DomainError(
+            "InvalidScope", "The token does not authorize brand activation.", 403
+        )
+    plan = one(
+        conn,
+        "SELECT * FROM plan WHERE id=%s AND brand_id=%s",
+        (row["plan_id"], brand_id),
+    )
     document = check_plan_integrity(plan)
     if claims.get("usd_daily_cap") != str(
         sum(a.daily_budget_usd for a in document.allocations)
@@ -322,8 +358,12 @@ def consume_launch_authorization(
         raise DomainError(
             "CapMismatch", "The plan differs from the token's signed spend caps.", 403
         )
-    if not claims["connections"] or len(set(claims["connections"])) != len(claims["connections"]):
-        raise DomainError("InvalidScope", "Launch authorization has an invalid account scope.", 403)
+    if not claims["connections"] or len(set(claims["connections"])) != len(
+        claims["connections"]
+    ):
+        raise DomainError(
+            "InvalidScope", "Launch authorization has an invalid account scope.", 403
+        )
     for connection in claims["connections"]:
         conn.execute(
             "INSERT INTO channel_launch_grant(brand_id,connection_id,authorization_id,"
@@ -338,29 +378,37 @@ def consume_launch_authorization(
     brand = one(conn, "SELECT * FROM brand WHERE id=%s FOR UPDATE", (brand_id,))
     if brand.get("status") != "active":
         conn.execute(
-            "UPDATE brand SET status='active', activated_at=now(), campaigns_enabled=true WHERE id=%s",
+            """UPDATE brand SET status='active', activated_at=now(), campaigns_enabled=true
+            WHERE id=%s""",
             (brand_id,),
         )
         action_row = conn.execute(
-            """INSERT INTO action(brand_id, actor_kind, action_type, target_kind, target_id, diff, rationale, revert_path)
+            """INSERT INTO action(
+                brand_id, actor_kind, action_type, target_kind, target_id, diff,
+                rationale, revert_path
+            )
             VALUES(%s, 'system', 'brand_activate', 'brand', %s, %s, %s, %s) RETURNING id""",
             (
                 brand_id,
                 brand_id,
-                Jsonb({
-                    "before": {
+                Jsonb(
+                    {
+                        "before": {
+                            "status": brand.get("status", "draft"),
+                            "campaigns_enabled": brand["campaigns_enabled"],
+                        },
+                        "after": {"status": "active", "campaigns_enabled": True},
+                    }
+                ),
+                "Brand activated on first launch authorization",
+                Jsonb(
+                    {
+                        "kind": "brand_status",
+                        "brand_id": str(brand_id),
                         "status": brand.get("status", "draft"),
                         "campaigns_enabled": brand["campaigns_enabled"],
-                    },
-                    "after": {"status": "active", "campaigns_enabled": True},
-                }),
-                "Brand activated on first launch authorization",
-                Jsonb({
-                    "kind": "brand_status",
-                    "brand_id": str(brand_id),
-                    "status": brand.get("status", "draft"),
-                    "campaigns_enabled": brand["campaigns_enabled"],
-                }),
+                    }
+                ),
             ),
         ).fetchone()
         if events is not None and action_row is not None:

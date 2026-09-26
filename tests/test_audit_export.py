@@ -18,7 +18,10 @@ def test_audit_export_is_reproducible_complete_and_signed(client, brand, admin):
     first = client.post(f"/api/brands/{brand}/audit-export", json=window)
     assert first.status_code == 200, first.text
     assert first.headers["Cache-Control"] == "no-store"
-    assert first.content == client.post(f"/api/brands/{brand}/audit-export", json=window).content
+    assert (
+        first.content
+        == client.post(f"/api/brands/{brand}/audit-export", json=window).content
+    )
     bundle = first.json()
     count = admin.execute(
         "SELECT count(*) AS n FROM action WHERE brand_id=%s", (brand,)
@@ -28,7 +31,11 @@ def test_audit_export_is_reproducible_complete_and_signed(client, brand, admin):
     signer = ApprovalSigner(Path(".local/approval.key"))
     keys = {signer.key_id: signer.public_bytes}
     verify_export(bundle, keys)
-    for key, changed in (("brand_id", str(uuid4())), ("entries", []), ("start", "changed")):
+    for key, changed in (
+        ("brand_id", str(uuid4())),
+        ("entries", []),
+        ("start", "changed"),
+    ):
         altered = copy.deepcopy(bundle)
         altered["document"][key] = changed
         with pytest.raises(DomainError, match="verification failed"):
@@ -47,7 +54,10 @@ def test_audit_export_enforces_brand_isolation_and_window(client, brand):
         {**window, "start": "2026-09-01T00:00:00"},
         {**window, "signing_key": "attacker"},
     ):
-        assert client.post(f"/api/brands/{brand}/audit-export", json=invalid).status_code == 422
+        assert (
+            client.post(f"/api/brands/{brand}/audit-export", json=invalid).status_code
+            == 422
+        )
 
 
 def test_empty_export_uses_exclusive_end(client, brand, admin):

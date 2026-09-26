@@ -5,7 +5,14 @@ import time
 from typing import Literal
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from adjutant.config import Settings
 from adjutant.db import Database, one
@@ -61,9 +68,13 @@ class ResetInput(TokenInput, PasswordInput):
 
 def rate_limit(db: Database, key: str) -> None:
     with db.transaction() as conn:
-        allowed = one(conn, "SELECT check_login_rate(%s) AS allowed", (session_digest(key),))
+        allowed = one(
+            conn, "SELECT check_login_rate(%s) AS allowed", (session_digest(key),)
+        )
     if not allowed["allowed"]:
-        raise DomainError("RateLimited", "Too many requests. Try again in 15 minutes.", 429)
+        raise DomainError(
+            "RateLimited", "Too many requests. Try again in 15 minutes.", 429
+        )
 
 
 def cancellation_report(
@@ -84,7 +95,9 @@ def cancellation_report(
             job
             for job in jobs
             if job["finished_at"] is None
-            or (job["worker_pid"] is not None and job["worker_exit_verified_at"] is None)
+            or (
+                job["worker_pid"] is not None and job["worker_exit_verified_at"] is None
+            )
         ]
         if not pending or time.monotonic() >= deadline:
             return {"cancellation_verified": not pending, "jobs": jobs}
@@ -95,7 +108,11 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
     router = APIRouter(prefix="/api/auth")
 
     def message(purpose: str, token: str) -> str:
-        action = "verify your email address" if purpose == "verify" else "reset your password"
+        action = (
+            "verify your email address"
+            if purpose == "verify"
+            else "reset your password"
+        )
         return (
             f"Use this link to {action}:\n\n{config.public_origin}/account#{purpose}={token}\n\n"
             "This link expires in one hour and works once. If you did not request it, ignore it."
@@ -106,9 +123,9 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
             "status": "accepted",
             "delivery": config.mail_transport,
             "message": "If this address is eligible, an account email has been queued.",
-            "local_mailbox": str(config.mail_directory)
-            if config.mail_transport == "file"
-            else None,
+            "local_mailbox": (
+                str(config.mail_directory) if config.mail_transport == "file" else None
+            ),
         }
 
     @router.get("/options")
@@ -117,7 +134,9 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
 
     @router.post("/register", status_code=202)
     def register(data: Registration, request: Request) -> dict:
-        rate_limit(db, f"register-ip:{request.client.host if request.client else 'unknown'}")
+        rate_limit(
+            db, f"register-ip:{request.client.host if request.client else 'unknown'}"
+        )
         rate_limit(db, f"account:{data.email}")
         token = secrets.token_urlsafe(48)
         encoded = password_hash(data.password)
@@ -140,7 +159,9 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
     def request_link(
         data: EmailInput, purpose: Literal["verify", "reset"], request: Request
     ) -> dict:
-        rate_limit(db, f"links-ip:{request.client.host if request.client else 'unknown'}")
+        rate_limit(
+            db, f"links-ip:{request.client.host if request.client else 'unknown'}"
+        )
         rate_limit(db, f"account:{data.email}")
         token = secrets.token_urlsafe(48)
         with db.transaction() as conn:
@@ -159,7 +180,9 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
                 (session_digest(data.token),),
             )["valid"]
         if not valid:
-            raise DomainError("InvalidLink", "This link is invalid, expired, or already used.", 400)
+            raise DomainError(
+                "InvalidLink", "This link is invalid, expired, or already used.", 400
+            )
         return {"status": "verified", "message": "Email verified. You can now sign in."}
 
     @router.post("/reset-password")
@@ -171,7 +194,9 @@ def auth_router(db: Database, config: Settings) -> APIRouter:
                 (session_digest(data.token), password_hash(data.password)),
             )["valid"]
         if not valid:
-            raise DomainError("InvalidLink", "This link is invalid, expired, or already used.", 400)
+            raise DomainError(
+                "InvalidLink", "This link is invalid, expired, or already used.", 400
+            )
         return {
             "status": "password_reset",
             "message": "Password changed. All sessions were revoked.",

@@ -57,7 +57,9 @@ def spawn_worker(database_urls, brand, workflow, tmp_path, stage):
 
 
 @pytest.mark.parametrize("stage", ["waiting", "before_commit"])
-def test_workflow_survives_real_worker_kill(client, brand, database_urls, admin, tmp_path, stage):
+def test_workflow_survives_real_worker_kill(
+    client, brand, database_urls, admin, tmp_path, stage
+):
     workflow = start(client, brand, delay=1)
     process, marker = spawn_worker(database_urls, brand, workflow, tmp_path, stage)
     try:
@@ -74,7 +76,9 @@ def test_workflow_survives_real_worker_kill(client, brand, database_urls, admin,
     finally:
         terminate_owned(process)
         process.stdin.close()
-    replacement, completed = spawn_worker(database_urls, brand, workflow, tmp_path, "complete")
+    replacement, completed = spawn_worker(
+        database_urls, brand, workflow, tmp_path, "complete"
+    )
     try:
         assert replacement.wait(timeout=15) == 0
         assert completed.exists()
@@ -89,21 +93,27 @@ def test_workflow_survives_real_worker_kill(client, brand, database_urls, admin,
         "status": "completed",
     }
     checkpoints = admin.execute(
-        "SELECT step FROM workflow_checkpoint WHERE workflow_id=%s ORDER BY step", (workflow["id"],)
+        "SELECT step FROM workflow_checkpoint WHERE workflow_id=%s ORDER BY step",
+        (workflow["id"],),
     ).fetchall()
     assert [row["step"] for row in checkpoints] == [1, 2]
     assert len(list((tmp_path / "objects" / brand).iterdir())) == 1
 
 
-def test_parallel_workers_and_http_retries_commit_once(client, brand, database_urls, tmp_path):
+def test_parallel_workers_and_http_retries_commit_once(
+    client, brand, database_urls, tmp_path
+):
     key = str(uuid4())
     with ThreadPoolExecutor(max_workers=4) as pool:
-        workflows = list(pool.map(lambda _: start(client, brand, request_key=key), range(4)))
+        workflows = list(
+            pool.map(lambda _: start(client, brand, request_key=key), range(4))
+        )
     assert len({item["id"] for item in workflows}) == 1
     workflow = workflows[0]
     assert (
         client.post(
-            f"/api/brands/{brand}/workflows", json={"request_key": key, "delay_seconds": 3}
+            f"/api/brands/{brand}/workflows",
+            json={"request_key": key, "delay_seconds": 3},
         ).status_code
         == 409
     )
@@ -113,17 +123,23 @@ def test_parallel_workers_and_http_retries_commit_once(client, brand, database_u
         store = ObjectStore(tmp_path / "objects")
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(
-                pool.map(lambda _: advance(db, store, UUID(brand), UUID(workflow["id"])), range(12))
+                pool.map(
+                    lambda _: advance(db, store, UUID(brand), UUID(workflow["id"])),
+                    range(12),
+                )
             )
         assert sum(results) == 2
     finally:
         db.pool.close()
     assert (
-        client.get(f"/api/brands/{brand}/workflows/{workflow['id']}").json()["state"] == "completed"
+        client.get(f"/api/brands/{brand}/workflows/{workflow['id']}").json()["state"]
+        == "completed"
     )
 
 
-def test_background_runner_picks_up_pending_work(client, brand, database_urls, tmp_path):
+def test_background_runner_picks_up_pending_work(
+    client, brand, database_urls, tmp_path
+):
     workflow = start(client, brand)
     db = Database(database_urls[1])
     db.open()
@@ -132,7 +148,9 @@ def test_background_runner_picks_up_pending_work(client, brand, database_urls, t
     try:
         wait_for(
             lambda: (
-                client.get(f"/api/brands/{brand}/workflows/{workflow['id']}").json()["state"]
+                client.get(f"/api/brands/{brand}/workflows/{workflow['id']}").json()[
+                    "state"
+                ]
                 == "completed"
             )
         )
@@ -150,10 +168,13 @@ def test_credentials_ciphertext_and_log_output(client, brand, admin, tmp_path):
     logger = logging.getLogger("adjutant")
     logger.addHandler(handler)
     try:
-        response = client.put(f"/api/brands/{brand}/credentials/provider", json={"value": secret})
+        response = client.put(
+            f"/api/brands/{brand}/credentials/provider", json={"value": secret}
+        )
         assert response.status_code == 204, response.text
         invalid = client.put(
-            f"/api/brands/{brand}/credentials/provider", json={"value": {"secret": secret}}
+            f"/api/brands/{brand}/credentials/provider",
+            json={"value": {"secret": secret}},
         )
         assert invalid.status_code == 422
         assert secret not in invalid.text
@@ -164,17 +185,23 @@ def test_credentials_ciphertext_and_log_output(client, brand, admin, tmp_path):
             "USING(brand_id) WHERE s.brand_id=%s",
             (brand,),
         ).fetchone()
-        assert secret.encode() not in bytes(row["ciphertext"]) + bytes(row["wrapped_key"])
+        assert secret.encode() not in bytes(row["ciphertext"]) + bytes(
+            row["wrapped_key"]
+        )
         assert secret not in output.getvalue()
         records = [json.loads(line) for line in output.getvalue().splitlines()]
-        assert any(item["trace_id"] == response.headers["x-request-id"] for item in records)
+        assert any(
+            item["trace_id"] == response.headers["x-request-id"] for item in records
+        )
         assert all(len(item["trace_id"]) == 32 for item in records)
         assert secret not in response.text
     finally:
         logger.removeHandler(handler)
 
 
-def test_ciphertext_cannot_move_between_brands_or_names(client, brand, admin, tmp_path, identity):
+def test_ciphertext_cannot_move_between_brands_or_names(
+    client, brand, admin, tmp_path, identity
+):
     other = admin.execute(
         "INSERT INTO brand(account_id,display_name) VALUES(%s,'Other brand') RETURNING id",
         (identity["account"],),
@@ -211,7 +238,9 @@ def test_ciphertext_cannot_move_between_brands_or_names(client, brand, admin, tm
         ("client_viewer", 403, 403),
     ],
 )
-def test_foundation_api_roles(client, brand, admin, identity, role, write_status, start_status):
+def test_foundation_api_roles(
+    client, brand, admin, identity, role, write_status, start_status
+):
     admin.execute(
         "UPDATE seat SET role=%s,brand_id=%s WHERE user_id=%s",
         (role, brand, identity["user"]),
@@ -223,12 +252,15 @@ def test_foundation_api_roles(client, brand, admin, identity, role, write_status
         == write_status
     )
     response = client.post(
-        f"/api/brands/{brand}/workflows", json={"request_key": str(uuid4()), "delay_seconds": 0}
+        f"/api/brands/{brand}/workflows",
+        json={"request_key": str(uuid4()), "delay_seconds": 0},
     )
     assert response.status_code == start_status
 
 
-def test_foundation_rls_missing_and_other_tenant_context(client, brand, database_urls, admin):
+def test_foundation_rls_missing_and_other_tenant_context(
+    client, brand, database_urls, admin
+):
     start(client, brand)
     assert (
         client.put(
@@ -241,7 +273,9 @@ def test_foundation_rls_missing_and_other_tenant_context(client, brand, database
             "SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user"
         ).fetchone() == (False, False)
         for context in ("", str(uuid4())):
-            conn.execute("SELECT set_config('app.current_brand_ids',%s,true)", (context,))
+            conn.execute(
+                "SELECT set_config('app.current_brand_ids',%s,true)", (context,)
+            )
             for table in (
                 "tenant_secret_key",
                 "tenant_secret",
@@ -250,7 +284,9 @@ def test_foundation_rls_missing_and_other_tenant_context(client, brand, database
             ):
                 assert (
                     conn.execute(
-                        sql.SQL("SELECT * FROM adjutant.{}").format(sql.Identifier(table))
+                        sql.SQL("SELECT * FROM adjutant.{}").format(
+                            sql.Identifier(table)
+                        )
                     ).fetchall()
                     == []
                 )
@@ -260,7 +296,9 @@ def test_trace_on_errors_excludes_sensitive_url(client):
     canary = "query-secret-" + str(uuid4())
     response = client.get(f"/does-not-exist?secret={canary}")
     assert response.status_code == 404 and len(response.headers["x-request-id"]) == 32
-    rejected = client.post("/api/auth/logout", headers={"origin": "https://invalid.example"})
+    rejected = client.post(
+        "/api/auth/logout", headers={"origin": "https://invalid.example"}
+    )
     assert rejected.status_code == 403 and len(rejected.headers["x-request-id"]) == 32
 
 

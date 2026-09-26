@@ -10,12 +10,13 @@ Verifies channel adapters against identical architectural invariants:
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import pytest
+
 import httpx
+import pytest
 
 from adjutant.adapters.builds import BUILDERS, build_configuration, builder_for
 from adjutant.adapters.campaign_control import CampaignControl, CampaignTarget
-from tests.conformance.cassette import Cassette, CassetteTransport
+from .cassette import Cassette, CassetteTransport
 
 CASSETTES_DIR = Path(__file__).parent / "cassettes"
 
@@ -43,7 +44,7 @@ def test_conformance_schema_and_builder_registered(channel):
 def test_conformance_preflight_validates_objective_and_limits(channel):
     """S9.1: Preflight validates campaign objective and placement text limits before remote writes."""
     _, _, preflight_fn = builder_for(channel)
-    
+
     # Invalid objective fails preflight
     invalid_doc = {
         "objective": "invalid_objective_xyz",
@@ -95,12 +96,16 @@ def test_conformance_preflight_validates_objective_and_limits(channel):
     }
     limits = {"headline": 40, "primary_text": 125, "description": 30}
     failures_long = preflight_fn(too_long_doc, text_limits=limits)
-    assert any("headline" in f.lower() or "character" in f.lower() or "limit" in f.lower() for f in failures_long)
+    assert any(
+        "headline" in f.lower() or "character" in f.lower() or "limit" in f.lower()
+        for f in failures_long
+    )
 
 
 @pytest.mark.parametrize("channel", SUPPORTED_CHANNELS)
 def test_conformance_campaign_control_pause_and_resume(channel):
     """S9.1 & S6.3: Every adapter provides verified pause and resume control."""
+
     async def _run():
         cassette_path = CASSETTES_DIR / f"{channel}.json"
         cassette = Cassette(cassette_path)
@@ -134,9 +139,12 @@ def test_conformance_campaign_control_pause_and_resume(channel):
 @pytest.mark.parametrize("channel", SUPPORTED_CHANNELS)
 def test_conformance_offline_cassette_execution(channel):
     """S9.5: Adapter builds execute in CI against recorded cassettes with zero live account touches."""
+
     async def _run():
         cassette_path = CASSETTES_DIR / f"{channel}.json"
-        assert cassette_path.exists(), f"Cassette missing for channel {channel} at {cassette_path}"
+        assert (
+            cassette_path.exists()
+        ), f"Cassette missing for channel {channel} at {cassette_path}"
 
         cassette = Cassette(cassette_path)
         transport = CassetteTransport(cassette)
@@ -220,6 +228,8 @@ def test_conformance_offline_cassette_execution(channel):
 
             # S9.1 Idempotency on replay: re-running returns same native IDs without extra creates
             objects_replay = await builder.build(document, "idem_test_001")
-            assert [o["remote"]["id"] for o in objects_replay] == [o["remote"]["id"] for o in objects]
+            assert [o["remote"]["id"] for o in objects_replay] == [
+                o["remote"]["id"] for o in objects
+            ]
 
     asyncio.run(_run())

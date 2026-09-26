@@ -16,7 +16,9 @@ class AccountConversion(Input):
     account_type: Literal["business", "agency"]
 
 
-def account_router(db: Database, authenticate: Callable[[Request], Principal]) -> APIRouter:
+def account_router(
+    db: Database, authenticate: Callable[[Request], Principal]
+) -> APIRouter:
     router = APIRouter(prefix="/api/accounts", tags=["accounts"])
     actor_type = Annotated[Principal, Depends(authenticate)]
 
@@ -31,7 +33,9 @@ def account_router(db: Database, authenticate: Callable[[Request], Principal]) -
             ).fetchone()
             if not allowed:
                 raise DomainError(
-                    "Forbidden", "An account owner or administrator can change its type.", 403
+                    "Forbidden",
+                    "An account owner or administrator can change its type.",
+                    403,
                 )
             row = one(
                 conn,
@@ -39,7 +43,9 @@ def account_router(db: Database, authenticate: Callable[[Request], Principal]) -
                 (account_id, data.expected_type, data.account_type),
             )
             row["brand_count"] = one(
-                conn, "SELECT count(*) AS n FROM brand WHERE account_id=%s", (account_id,)
+                conn,
+                "SELECT count(*) AS n FROM brand WHERE account_id=%s",
+                (account_id,),
             )["n"]
             return row
 

@@ -72,7 +72,9 @@ def verify(state: Path, port: int) -> None:
 
         conn.row_factory = dict_row
         assert (
-            CredentialStore(state / "tenant-master.key").read(conn, UUID(brand), "startup_canary")
+            CredentialStore(state / "tenant-master.key").read(
+                conn, UUID(brand), "startup_canary"
+            )
             == canary
         )
         ciphertext = conn.execute(
@@ -87,7 +89,9 @@ def verify(state: Path, port: int) -> None:
     deadline = time.monotonic() + 15
     while request("GET", path)["state"] != "completed":
         if time.monotonic() >= deadline:
-            raise AssertionError("The HTTP-hosted worker did not finish its durable workflow")
+            raise AssertionError(
+                "The HTTP-hosted worker did not finish its durable workflow"
+            )
         time.sleep(0.1)
     assert request("GET", path + "/result") == {
         "workflow_id": workflow["id"],

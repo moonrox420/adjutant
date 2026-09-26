@@ -10,7 +10,9 @@ from adjutant.errors import DomainError
 from adjutant.telemetry import CredentialQueryFilter
 
 
-def test_reddit_discovery_queries_all_business_pages_and_deduplicates_shared_accounts(monkeypatch):
+def test_reddit_discovery_queries_all_business_pages_and_deduplicates_shared_accounts(
+    monkeypatch,
+):
     calls = []
 
     def request(method, url, **kwargs):
@@ -46,7 +48,9 @@ def test_reddit_discovery_queries_all_business_pages_and_deduplicates_shared_acc
         "https://ads-api.reddit.com/api/v3/me/businesses",
     ],
 )
-def test_reddit_pagination_rejects_credential_exfiltration_and_cycles(monkeypatch, next_url):
+def test_reddit_pagination_rejects_credential_exfiltration_and_cycles(
+    monkeypatch, next_url
+):
     calls = []
 
     def request(method, url, **kwargs):
@@ -79,7 +83,9 @@ def test_provider_errors_never_include_response_credentials(monkeypatch, status)
     with pytest.raises(DomainError) as error:
         authorization.request_json("GET", "https://api.example.test/accounts")
     assert "private-token-secret" not in error.value.message
-    assert error.value.status == (403 if status in {401, 403} else 429 if status == 429 else 502)
+    assert error.value.status == (
+        403 if status in {401, 403} else 429 if status == 429 else 502
+    )
 
 
 def test_google_discovery_walks_manager_hierarchy_and_pages(monkeypatch):
@@ -110,7 +116,12 @@ def test_google_discovery_walks_manager_hierarchy_and_pages(monkeypatch):
         return {
             "results": [
                 {"customerClient": {"id": "789", "manager": True}},
-                {"customerClient": {"id": "987", "descriptiveName": "Nested advertiser"}},
+                {
+                    "customerClient": {
+                        "id": "987",
+                        "descriptiveName": "Nested advertiser",
+                    }
+                },
             ]
         }
 
@@ -156,11 +167,15 @@ def test_empty_success_is_only_permitted_for_revocation(monkeypatch):
         "Client",
         lambda **kwargs: original(
             **kwargs,
-            transport=httpx.MockTransport(lambda request: httpx.Response(204, request=request)),
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(204, request=request)
+            ),
         ),
     )
     assert (
-        authorization.request_json("POST", "https://api.example.test/revoke", allow_empty=True)
+        authorization.request_json(
+            "POST", "https://api.example.test/revoke", allow_empty=True
+        )
         == {}
     )
     with pytest.raises(DomainError, match="unexpected response"):

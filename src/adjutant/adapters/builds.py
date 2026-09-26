@@ -3,47 +3,66 @@
 from adjutant.adapters.amazon_ads_build import (
     AmazonAdsBuilder,
     AmazonAdsBuildSettings,
+)
+from adjutant.adapters.amazon_ads_build import (
     preflight as amazon_ads_preflight,
 )
 from adjutant.adapters.google_ads_build import (
     GoogleAdsBuilder,
     GoogleAdsBuildSettings,
+)
+from adjutant.adapters.google_ads_build import (
     preflight as google_ads_preflight,
 )
 from adjutant.adapters.linkedin_build import (
     LinkedInBuilder,
     LinkedInBuildSettings,
+)
+from adjutant.adapters.linkedin_build import (
     preflight as linkedin_preflight,
 )
-from adjutant.adapters.meta_build import MetaBuilder, MetaBuildSettings, preflight as meta_preflight
+from adjutant.adapters.meta_build import MetaBuilder, MetaBuildSettings
+from adjutant.adapters.meta_build import preflight as meta_preflight
 from adjutant.adapters.microsoft_build import (
     MicrosoftBuilder,
     MicrosoftBuildSettings,
+)
+from adjutant.adapters.microsoft_build import (
     preflight as microsoft_preflight,
 )
 from adjutant.adapters.pinterest_build import (
     PinterestBuilder,
     PinterestBuildSettings,
+)
+from adjutant.adapters.pinterest_build import (
     preflight as pinterest_preflight,
 )
 from adjutant.adapters.reddit_build import (
     RedditBuilder,
     RedditBuildSettings,
+)
+from adjutant.adapters.reddit_build import (
     preflight as reddit_preflight,
 )
 from adjutant.adapters.snapchat_build import (
     SnapchatBuilder,
     SnapchatBuildSettings,
+)
+from adjutant.adapters.snapchat_build import (
     preflight as snapchat_preflight,
 )
 from adjutant.adapters.tiktok_build import (
     TikTokBuilder,
     TikTokBuildSettings,
+)
+from adjutant.adapters.tiktok_build import (
     preflight as tiktok_preflight,
 )
 from adjutant.adapters.youtube_build import (
     YouTubeBuilder,
     YouTubeBuildSettings,
+)
+from adjutant.adapters.youtube_build import (
     preflight as youtube_preflight,
 )
 from adjutant.errors import DomainError

@@ -45,7 +45,9 @@ def test_finished_renditions_keep_text_and_reject_overflow(copy_bundle):
         render_ad(document, PNG, "1:1")
 
 
-def test_provider_configuration_is_encrypted_and_applied(client, brand, admin, providers):
+def test_provider_configuration_is_encrypted_and_applied(
+    client, brand, admin, providers
+):
     key = "private-google-key-never-return"
     result = client.put(
         f"/api/brands/{brand}/visual-provider",
@@ -58,7 +60,10 @@ def test_provider_configuration_is_encrypted_and_applied(client, brand, admin, p
         (brand,),
     ).fetchone()
     assert key.encode() not in bytes(stored["ciphertext"])
-    assert client.get(f"/api/brands/{brand}/visual-provider").json()["credentials_saved"] is True
+    assert (
+        client.get(f"/api/brands/{brand}/visual-provider").json()["credentials_saved"]
+        is True
+    )
     response = generate(client, brand)
     assert response.status_code == 201, response.text
     assert response.json()["image_model"] == "gemini-2.5-flash-image"
@@ -69,19 +74,25 @@ def test_understanding_edits_are_versioned_and_used(client, brand, providers, ad
     context = client.get(f"/api/brands/{brand}/understanding").json()
     edited = {**context["document"], "voice": "Friendly and precise"}
     response = client.put(
-        f"/api/brands/{brand}/understanding", json={"expected_version": 1, "document": edited}
+        f"/api/brands/{brand}/understanding",
+        json={"expected_version": 1, "document": edited},
     )
     assert response.status_code == 200, response.text
     assert response.json()["version"] == 2
     stale = client.put(
-        f"/api/brands/{brand}/understanding", json={"expected_version": 1, "document": edited}
+        f"/api/brands/{brand}/understanding",
+        json={"expected_version": 1, "document": edited},
     )
     assert stale.status_code == 409
     assert generate(client, brand).status_code == 201
-    assert providers[0].call_args.args[1]["brand_understanding"]["voice"] == edited["voice"]
+    assert (
+        providers[0].call_args.args[1]["brand_understanding"]["voice"]
+        == edited["voice"]
+    )
     assert (
         admin.execute(
-            "SELECT document FROM brand_context WHERE brand_id=%s AND version=1", (brand,)
+            "SELECT document FROM brand_context WHERE brand_id=%s AND version=1",
+            (brand,),
         ).fetchone()["document"]
         == original["understanding"]
     )
@@ -92,7 +103,9 @@ def test_render_download_attach_and_audit_are_connected(
 ):
     bundle = generate(client, brand).json()
     endpoint = f"/api/brands/{brand}/studio/{bundle['id']}"
-    result = client.post(endpoint + "/render", json={"expected_revision": 1, "aspect_ratio": "1:1"})
+    result = client.post(
+        endpoint + "/render", json={"expected_revision": 1, "aspect_ratio": "1:1"}
+    )
     assert result.status_code == 201, result.text
     rendition = result.json()
     assert client.get(rendition["png_url"]).content.startswith(b"\x89PNG")
@@ -113,21 +126,23 @@ def test_render_download_attach_and_audit_are_connected(
         == 4
     )
     assert (
-        admin.execute("SELECT count(*) AS n FROM creative WHERE brand_id=%s", (brand,)).fetchone()[
-            "n"
-        ]
+        admin.execute(
+            "SELECT count(*) AS n FROM creative WHERE brand_id=%s", (brand,)
+        ).fetchone()["n"]
         == 1
     )
     preflight = client.post(f"/api/brands/{brand}/plans/{plan['id']}/preflight").json()
     assert (
-        next(check for check in preflight["checks"] if check["key"] == "creative_attached")[
-            "passed"
-        ]
+        next(
+            check
+            for check in preflight["checks"]
+            if check["key"] == "creative_attached"
+        )["passed"]
         is True
     )
-    assert next(check for check in preflight["checks"] if check["key"] == "creative_approval")[
-        "passed"
-    ]
+    assert next(
+        check for check in preflight["checks"] if check["key"] == "creative_approval"
+    )["passed"]
     assert (
         admin.execute(
             "SELECT count(*) AS n FROM rendition WHERE brand_id=%s AND spec_validation_passed",
@@ -137,9 +152,12 @@ def test_render_download_attach_and_audit_are_connected(
     )
     assert not preflight["ready"]
     assert {
-        item["action_type"] for item in client.get(f"/api/brands/{brand}/workspace").json()["audit"]
+        item["action_type"]
+        for item in client.get(f"/api/brands/{brand}/workspace").json()["audit"]
     } >= {"studio_generate", "creative_render"}
-    assert client.get(rendition["png_url"].replace(brand, str(uuid4()))).status_code == 404
+    assert (
+        client.get(rendition["png_url"].replace(brand, str(uuid4()))).status_code == 404
+    )
     assert (
         client.post(
             endpoint + "/render", json={"expected_revision": 99, "aspect_ratio": "1:1"}
@@ -151,13 +169,15 @@ def test_render_download_attach_and_audit_are_connected(
 def test_local_stop_can_be_resumed_without_restoring_tokens(client, brand, providers):
     assert (
         client.post(
-            f"/api/brands/{brand}/kill", json={"reason": "Stop while checking the brand setup."}
+            f"/api/brands/{brand}/kill",
+            json={"reason": "Stop while checking the brand setup."},
         ).status_code
         == 200
     )
     assert generate(client, brand).status_code == 409
     response = client.post(
-        f"/api/brands/{brand}/resume", json={"reason": "Resume after checking the brand setup."}
+        f"/api/brands/{brand}/resume",
+        json={"reason": "Resume after checking the brand setup."},
     )
     assert response.status_code == 200, response.text
     assert generate(client, brand).status_code == 201
@@ -214,7 +234,10 @@ def providers(copy_bundle):
             OllamaPlanner, "generate_document", return_value=(copy_bundle, 10, 20, 1)
         ) as copy,
         patch.object(
-            VisualsGenerator, "generate_ad_image", new_callable=AsyncMock, return_value=IMAGE
+            VisualsGenerator,
+            "generate_ad_image",
+            new_callable=AsyncMock,
+            return_value=IMAGE,
         ) as image,
     ):
         yield copy, image
@@ -222,7 +245,8 @@ def providers(copy_bundle):
 
 def generate(client, brand, value="Create ads for our residential plumbing repairs"):
     return client.post(
-        "/api/campaigns/generate-quick", json={"brand_id": brand, "url_or_prompt": value}
+        "/api/campaigns/generate-quick",
+        json={"brand_id": brand, "url_or_prompt": value},
     )
 
 
@@ -241,13 +265,21 @@ def enqueue_studio(client, brand, request_key=None):
 
 def job_runner(client):
     config = client.app.state.config
-    return StudioJobRunner(client.app.state.db, config, ObjectStore(config.object_store_path))
+    return StudioJobRunner(
+        client.app.state.db, config, ObjectStore(config.object_store_path)
+    )
 
 
-def test_studio_disabled_worker_rejects_queue_without_persisting_job(client, brand, admin):
+def test_studio_disabled_worker_rejects_queue_without_persisting_job(
+    client, brand, admin
+):
     response = client.post(
         "/api/studio/jobs",
-        json={"brand_id": brand, "url_or_prompt": "Plumbing ads", "request_key": str(uuid4())},
+        json={
+            "brand_id": brand,
+            "url_or_prompt": "Plumbing ads",
+            "request_key": str(uuid4()),
+        },
     )
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "StudioWorkerDisabled"
@@ -279,7 +311,10 @@ def test_studio_durable_job_recovers_checkpoint_without_repeating_copy(
     checkpoint = admin.execute(
         "SELECT work_checkpoint FROM studio_draft WHERE id=%s", (job["id"],)
     ).fetchone()
-    assert checkpoint["work_checkpoint"]["copy"]["meta"]["headline"] == copy_bundle.meta.headline
+    assert (
+        checkpoint["work_checkpoint"]["copy"]["meta"]["headline"]
+        == copy_bundle.meta.headline
+    )
     asyncio.run(job_runner(client).run_job(UUID(brand), UUID(job["id"])))
     result = client.get(f"/api/brands/{brand}/studio/jobs/{job['id']}").json()
     assert result["state"] == "completed", result
@@ -287,21 +322,34 @@ def test_studio_durable_job_recovers_checkpoint_without_repeating_copy(
     assert result["result"]["meta"]["image_url"] == IMAGE
     assert copy.await_count == 1
     assert "session_hash" not in result
-    assert "session_hash" not in client.get(f"/api/brands/{brand}/studio/jobs/latest").json()
+    assert (
+        "session_hash"
+        not in client.get(f"/api/brands/{brand}/studio/jobs/latest").json()
+    )
     finished = client.delete(f"/api/brands/{brand}/studio/jobs/{job['id']}").json()
     assert finished["state"] == "completed" and finished["cancel_requested_at"] is None
     job_runner(client).finish(UUID(brand), UUID(job["id"]), "cancelled")
-    assert client.get(f"/api/brands/{brand}/studio/jobs/{job['id']}").json()["state"] == "completed"
-    listed = next(row for row in client.get("/api/jobs").json() if row["id"] == job["id"])
+    assert (
+        client.get(f"/api/brands/{brand}/studio/jobs/{job['id']}").json()["state"]
+        == "completed"
+    )
+    listed = next(
+        row for row in client.get("/api/jobs").json() if row["id"] == job["id"]
+    )
     assert listed["kind"] == "studio" and listed["state"] == "completed"
     assert "session_hash" not in listed
 
 
-def test_studio_model_change_rejects_queued_job_before_provider_call(client, brand, monkeypatch):
+def test_studio_model_change_rejects_queued_job_before_provider_call(
+    client, brand, monkeypatch
+):
     job = enqueue_studio(client, brand).json()
     response = client.put(
         f"/api/brands/{brand}/visual-provider",
-        json={"api_key": "private-key-for-model-change", "model": "gemini-2.5-flash-image"},
+        json={
+            "api_key": "private-key-for-model-change",
+            "model": "gemini-2.5-flash-image",
+        },
     )
     assert response.status_code == 200
     copy = AsyncMock()
@@ -312,7 +360,9 @@ def test_studio_model_change_rejects_queued_job_before_provider_call(client, bra
     copy.assert_not_awaited()
 
 
-def test_studio_job_cancels_before_provider_calls_and_reports_activity(client, brand, admin):
+def test_studio_job_cancels_before_provider_calls_and_reports_activity(
+    client, brand, admin
+):
     job = enqueue_studio(client, brand).json()
     prefix = f"/api/brands/{brand}/studio/jobs/{job['id']}"
     assert client.delete(prefix).status_code == 202
@@ -330,8 +380,12 @@ def test_studio_job_cancels_before_provider_calls_and_reports_activity(client, b
 
 
 def test_studio_scheduler_executes_queued_job(client, brand, copy_bundle, monkeypatch):
-    monkeypatch.setattr("adjutant.studio_worker.generate_copy", AsyncMock(return_value=copy_bundle))
-    monkeypatch.setattr(VisualsGenerator, "generate_ad_image", AsyncMock(return_value=IMAGE))
+    monkeypatch.setattr(
+        "adjutant.studio_worker.generate_copy", AsyncMock(return_value=copy_bundle)
+    )
+    monkeypatch.setattr(
+        VisualsGenerator, "generate_ad_image", AsyncMock(return_value=IMAGE)
+    )
     job = enqueue_studio(client, brand).json()
 
     async def run():
@@ -341,7 +395,9 @@ def test_studio_scheduler_executes_queued_job(client, brand, copy_bundle, monkey
             async with asyncio.timeout(5):
                 while True:
                     await asyncio.sleep(0.1)
-                    status = client.get(f"/api/brands/{brand}/studio/jobs/{job['id']}").json()
+                    status = client.get(
+                        f"/api/brands/{brand}/studio/jobs/{job['id']}"
+                    ).json()
                     if status["state"] == "completed":
                         return
                     assert status["state"] in {"queued", "running"}, status
@@ -365,7 +421,9 @@ def test_studio_inference_child_is_reaped_on_cancellation(client, monkeypatch):
     monkeypatch.setattr(studio_worker, "launch", launch)
 
     async def run():
-        task = asyncio.create_task(studio_worker.generate_copy(client.app.state.config, {}))
+        task = asyncio.create_task(
+            studio_worker.generate_copy(client.app.state.config, {})
+        )
         await asyncio.sleep(0.05)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -406,7 +464,9 @@ def test_session_revocation_and_kill_wait_for_studio_cancellation(
                         json={"reason": "Stop Studio work"},
                     )
                 else:
-                    result = await asyncio.to_thread(client.post, f"/api/auth/{operation}")
+                    result = await asyncio.to_thread(
+                        client.post, f"/api/auth/{operation}"
+                    )
                 assert result.status_code == 200, result.text
                 assert result.json()["cancellation_verified"] is True
                 assert any(row["id"] == job["id"] for row in result.json()["jobs"])
@@ -422,7 +482,9 @@ def test_session_revocation_and_kill_wait_for_studio_cancellation(
     assert row["cancel_requested_at"] is not None
 
 
-def test_url_ingest_real_bundle_persists_without_confirmation(client, brand, providers, admin):
+def test_url_ingest_real_bundle_persists_without_confirmation(
+    client, brand, providers, admin
+):
     with patch(
         "adjutant.campaign_api.fetch_website",
         return_value=WebsiteEvidence(
@@ -439,9 +501,13 @@ def test_url_ingest_real_bundle_persists_without_confirmation(client, brand, pro
     assert bundle["google"]["headlines"] and bundle["tiktok"]["hook"]
     ingest.assert_called_once()
     assert "Residential plumbing" in providers[0].call_args.args[1]["business_context"]
-    providers[1].assert_awaited_once_with(bundle["meta"]["image_prompt"], aspect_ratio="1:1")
+    providers[1].assert_awaited_once_with(
+        bundle["meta"]["image_prompt"], aspect_ratio="1:1"
+    )
     assert client.get(f"/api/brands/{brand}/studio/latest").json() == bundle
-    context = admin.execute("SELECT * FROM brand_context WHERE brand_id=%s", (brand,)).fetchone()
+    context = admin.execute(
+        "SELECT * FROM brand_context WHERE brand_id=%s", (brand,)
+    ).fetchone()
     assert context["accepted_automatically_at"] is not None and context["version"] == 1
     layers = bundle["scene_graph"]["layers"]
     assert layers[0]["type"] == "image" and "content" not in layers[0]
@@ -454,7 +520,9 @@ def test_url_ingest_real_bundle_persists_without_confirmation(client, brand, pro
     )
 
 
-def test_prompt_ingest_reuses_context_and_edits_persist(client, brand, providers, admin):
+def test_prompt_ingest_reuses_context_and_edits_persist(
+    client, brand, providers, admin
+):
     first = generate(client, brand).json()
     second = generate(client, brand).json()
     assert first["context_version"] == second["context_version"] == 1
@@ -481,10 +549,15 @@ def test_prompt_ingest_reuses_context_and_edits_persist(client, brand, providers
         client.get(f"/api/brands/{brand}/studio/latest").json()["tiktok"]["hook"]
         == body["tiktok"]["hook"]
     )
-    assert client.put(f"/api/brands/{brand}/studio/{second['id']}", json=body).status_code == 409
+    assert (
+        client.put(f"/api/brands/{brand}/studio/{second['id']}", json=body).status_code
+        == 409
+    )
 
 
-def test_image_failure_returns_no_placeholder_and_records_failure(client, brand, providers, admin):
+def test_image_failure_returns_no_placeholder_and_records_failure(
+    client, brand, providers, admin
+):
     providers[1].side_effect = DomainError(
         "ImageGenerationBlocked", "Provider blocked the image", 422
     )
@@ -504,11 +577,15 @@ def test_blocked_claim_stops_before_visual_generation(client, brand, providers, 
         (brand,),
     )
     result = generate(client, brand)
-    assert result.status_code == 422 and result.json()["error"]["code"] == "BlockedClaim"
+    assert (
+        result.status_code == 422 and result.json()["error"]["code"] == "BlockedClaim"
+    )
     providers[1].assert_not_awaited()
 
 
-def test_foreign_tenant_and_viewer_cannot_generate(client, brand, providers, admin, identity):
+def test_foreign_tenant_and_viewer_cannot_generate(
+    client, brand, providers, admin, identity
+):
     result = generate(client, str(uuid4()))
     assert result.status_code == 404
     admin.execute(
@@ -521,7 +598,9 @@ def test_foreign_tenant_and_viewer_cannot_generate(client, brand, providers, adm
     assert generate(client, brand).status_code == 401
 
 
-def test_logout_during_inference_prevents_image_call_and_save(client, brand, providers, admin):
+def test_logout_during_inference_prevents_image_call_and_save(
+    client, brand, providers, admin
+):
     def revoke(*args, **kwargs):
         assert client.post("/api/auth/logout").status_code == 200
         return providers[0].return_value
@@ -530,16 +609,18 @@ def test_logout_during_inference_prevents_image_call_and_save(client, brand, pro
     assert generate(client, brand).status_code == 401
     providers[1].assert_not_awaited()
     assert (
-        admin.execute("SELECT state FROM studio_draft WHERE brand_id=%s", (brand,)).fetchone()[
-            "state"
-        ]
+        admin.execute(
+            "SELECT state FROM studio_draft WHERE brand_id=%s", (brand,)
+        ).fetchone()["state"]
         == "failed"
     )
 
 
 def test_unsafe_url_rejected_before_inference(client, brand, providers):
     result = generate(client, brand, "http://127.0.0.1/private")
-    assert result.status_code == 422 and result.json()["error"]["code"] == "UnsafeWebsite"
+    assert (
+        result.status_code == 422 and result.json()["error"]["code"] == "UnsafeWebsite"
+    )
     providers[0].assert_not_called()
 
 
@@ -548,7 +629,9 @@ def test_copywriter_http_contract_uses_supplied_context(copy_bundle):
 
     def handler(request):
         captured.append(json.loads(request.content))
-        return httpx.Response(200, json={"message": {"content": copy_bundle.model_dump_json()}})
+        return httpx.Response(
+            200, json={"message": {"content": copy_bundle.model_dump_json()}}
+        )
 
     with (
         patch.object(OllamaPlanner, "models", return_value=["test-model"]),
@@ -604,7 +687,9 @@ def test_supported_gemini_sdk_request_and_real_bytes(ratio):
     )
     with patch("adjutant.services.visuals.genai.Client", return_value=sdk):
         result = asyncio.run(
-            VisualsGenerator("test-key").generate_ad_image("A kitchen with a dripping tap", ratio)
+            VisualsGenerator("test-key").generate_ad_image(
+                "A kitchen with a dripping tap", ratio
+            )
         )
     assert base64.b64decode(result.split(",")[1]) == PNG
     assert "gemini-3.1-flash-image" in str(calls[0].url)
@@ -623,7 +708,14 @@ def test_visual_missing_key_and_invalid_ratio_fail_without_request():
 def test_google_retired_model_error_is_actionable():
     def handler(request):
         return httpx.Response(
-            404, json={"error": {"code": 404, "message": "retired model", "status": "NOT_FOUND"}}
+            404,
+            json={
+                "error": {
+                    "code": 404,
+                    "message": "retired model",
+                    "status": "NOT_FOUND",
+                }
+            },
         )
 
     sdk = genai.Client(
@@ -648,16 +740,32 @@ def test_corrupt_image_and_retired_model_fail_before_persistence():
         VisualsGenerator.data_uri(invalid_png, "image/png")
     assert error.value.code == "InvalidGeneratedImage"
     with pytest.raises(DomainError) as error:
-        VisualsGenerator("test-key", model="imagen-3.0-generate-002").require_configuration()
+        VisualsGenerator(
+            "test-key", model="imagen-3.0-generate-002"
+        ).require_configuration()
     assert error.value.code == "UnsupportedImageModel"
 
 
-def test_five_concepts_resume_and_render_all_ratios(client, brand, copy_bundle, monkeypatch, admin):
+def test_five_concepts_resume_and_render_all_ratios(
+    client, brand, copy_bundle, monkeypatch, admin
+):
     messages = [
-        ("Stop the drip", "Leaking faucet beneath dark cabinets and a puddle on tiles."),
-        ("Enjoy your kitchen again", "Family preparing dinner around a sunny island with fruit."),
-        ("A closer look at repairs", "Macro photography of wrench tightening a copper pipe joint."),
-        ("Getting ready for guests?", "Holiday table set with dishes next to a modern dishwasher."),
+        (
+            "Stop the drip",
+            "Leaking faucet beneath dark cabinets and a puddle on tiles.",
+        ),
+        (
+            "Enjoy your kitchen again",
+            "Family preparing dinner around a sunny island with fruit.",
+        ),
+        (
+            "A closer look at repairs",
+            "Macro photography of wrench tightening a copper pipe joint.",
+        ),
+        (
+            "Getting ready for guests?",
+            "Holiday table set with dishes next to a modern dishwasher.",
+        ),
         (
             "Explore home plumbing services",
             "Neatly arranged professional toolbox photographed overhead.",
@@ -670,7 +778,9 @@ def test_five_concepts_resume_and_render_all_ratios(client, brand, copy_bundle, 
         value.meta.image_prompt = prompt
         bundles.append(value)
     copy = AsyncMock(side_effect=bundles)
-    image = AsyncMock(side_effect=[IMAGE, IMAGE, asyncio.CancelledError(), IMAGE, IMAGE, IMAGE])
+    image = AsyncMock(
+        side_effect=[IMAGE, IMAGE, asyncio.CancelledError(), IMAGE, IMAGE, IMAGE]
+    )
     monkeypatch.setattr("adjutant.studio_worker.generate_copy", copy)
     monkeypatch.setattr(VisualsGenerator, "generate_ad_image", image)
     client.app.state.config.workflow_enabled = True
@@ -718,13 +828,18 @@ def test_five_concepts_resume_and_render_all_ratios(client, brand, copy_bundle, 
         response = client.get(f"/api/brands/{brand}/studio/{concept['id']}")
         assert response.status_code == 200
         assert response.json()["meta"]["image_url"] == IMAGE
-    assert client.get(f"/api/brands/{uuid4()}/studio/{concepts[0]['id']}").status_code == 404
+    assert (
+        client.get(f"/api/brands/{uuid4()}/studio/{concepts[0]['id']}").status_code
+        == 404
+    )
 
 
 def test_duplicate_concept_does_not_spend_on_a_second_image(
     client, brand, copy_bundle, monkeypatch
 ):
-    monkeypatch.setattr("adjutant.studio_worker.generate_copy", AsyncMock(return_value=copy_bundle))
+    monkeypatch.setattr(
+        "adjutant.studio_worker.generate_copy", AsyncMock(return_value=copy_bundle)
+    )
     image = AsyncMock(return_value=IMAGE)
     monkeypatch.setattr(VisualsGenerator, "generate_ad_image", image)
     client.app.state.config.workflow_enabled = True
@@ -742,10 +857,14 @@ def test_duplicate_concept_does_not_spend_on_a_second_image(
     image.assert_awaited_once()
 
 
-def test_failed_concept_retry_keeps_completed_work(client, brand, copy_bundle, monkeypatch, admin):
+def test_failed_concept_retry_keeps_completed_work(
+    client, brand, copy_bundle, monkeypatch, admin
+):
     copy = AsyncMock(return_value=copy_bundle)
     image = AsyncMock(
-        side_effect=DomainError("ImageGenerationUnavailable", "Network unavailable", 503)
+        side_effect=DomainError(
+            "ImageGenerationUnavailable", "Network unavailable", 503
+        )
     )
     monkeypatch.setattr("adjutant.studio_worker.generate_copy", copy)
     monkeypatch.setattr(VisualsGenerator, "generate_ad_image", image)
@@ -779,4 +898,6 @@ def test_database_rejects_incomplete_concept_set(client, brand, admin):
         },
     ).json()
     with pytest.raises(psycopg.Error, match="Every requested concept"):
-        admin.execute("UPDATE studio_job SET state='completed' WHERE id=%s", (job["id"],))
+        admin.execute(
+            "UPDATE studio_job SET state='completed' WHERE id=%s", (job["id"],)
+        )

@@ -53,25 +53,35 @@ def authority():
     return SpendAuthority({signer.key_id: signer.public_bytes})
 
 
-def test_gateway_reserves_once_without_signing_or_mutation_privileges(gateway_url, intent):
+def test_gateway_reserves_once_without_signing_or_mutation_privileges(
+    gateway_url, intent
+):
     config = GatewaySettings(database_url=gateway_url)
     secret = config.service_secret_path.read_text(encoding="utf-8").strip()
     with TestClient(create_app(config)) as client:
         assert (
-            client.post("/internal/spend/reserve", json=intent.model_dump(mode="json")).status_code
+            client.post(
+                "/internal/spend/reserve", json=intent.model_dump(mode="json")
+            ).status_code
             == 401
         )
         client.headers["Authorization"] = f"Bearer {secret}"
         assert client.get("/readyz").status_code == 200
         assert (
-            client.post("/internal/spend/validate", json=intent.model_dump(mode="json")).status_code
+            client.post(
+                "/internal/spend/validate", json=intent.model_dump(mode="json")
+            ).status_code
             == 200
         )
-        result = client.post("/internal/spend/reserve", json=intent.model_dump(mode="json"))
+        result = client.post(
+            "/internal/spend/reserve", json=intent.model_dump(mode="json")
+        )
         assert result.status_code == 200, result.text
         assert result.json()["reservation_id"]
         assert (
-            client.post("/internal/spend/reserve", json=intent.model_dump(mode="json")).status_code
+            client.post(
+                "/internal/spend/reserve", json=intent.model_dump(mode="json")
+            ).status_code
             == 409
         )
     with psycopg.connect(gateway_url, autocommit=True) as conn:
@@ -122,8 +132,13 @@ def test_gateway_cross_brand_and_unknown_key(gateway_url, intent):
     db.open()
     try:
         other_brand = uuid4()
-        with pytest.raises(DomainError) as error, db.transaction(extra_brand=other_brand) as conn:
-            authority().validate(conn, intent.model_copy(update={"brand_id": other_brand}))
+        with (
+            pytest.raises(DomainError) as error,
+            db.transaction(extra_brand=other_brand) as conn,
+        ):
+            authority().validate(
+                conn, intent.model_copy(update={"brand_id": other_brand})
+            )
         assert error.value.code == "NotFound"
     finally:
         db.pool.close()
@@ -168,8 +183,16 @@ def test_sql_cumulative_cap_is_enforced_across_channels(
     database_urls,
 ):
     plan_input["allocations"] = [
-        {"channel": "meta", "monthly_budget_usd": "1500.00", "daily_budget_usd": "50.00"},
-        {"channel": "google_ads", "monthly_budget_usd": "1500.00", "daily_budget_usd": "50.00"},
+        {
+            "channel": "meta",
+            "monthly_budget_usd": "1500.00",
+            "daily_budget_usd": "50.00",
+        },
+        {
+            "channel": "google_ads",
+            "monthly_budget_usd": "1500.00",
+            "daily_budget_usd": "50.00",
+        },
     ]
     plan = client.post(f"/api/brands/{confirmed_brand}/plans", json=plan_input).json()
     approval = client.post(
@@ -197,7 +220,10 @@ def test_sql_cumulative_cap_is_enforced_across_channels(
             return "denied"
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        assert sorted(pool.map(consume, ["meta", "google_ads"])) == ["denied", "reserved"]
+        assert sorted(pool.map(consume, ["meta", "google_ads"])) == [
+            "denied",
+            "reserved",
+        ]
 
 
 def test_preflight_verifies_gateway_without_reserving_or_faking_launch_readiness(
@@ -221,14 +247,23 @@ def test_preflight_verifies_gateway_without_reserving_or_faking_launch_readiness
 
         transport = httpx.Client(transport=httpx.MockTransport(send))
         with patch("adjutant.deployment.httpx.Client", return_value=transport):
-            response = client.post(f"/api/brands/{intent.brand_id}/plans/{plan_id}/preflight")
+            response = client.post(
+                f"/api/brands/{intent.brand_id}/plans/{plan_id}/preflight"
+            )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["ready"] is False and body["authority_reserved"] is False
-    assert any(check["key"] == "spend_authority" and check["passed"] for check in body["checks"])
-    assert any(check["key"] == "channel_access" and not check["passed"] for check in body["checks"])
     assert any(
-        check["key"] == "creative_approval" and not check["passed"] for check in body["checks"]
+        check["key"] == "spend_authority" and check["passed"]
+        for check in body["checks"]
+    )
+    assert any(
+        check["key"] == "channel_access" and not check["passed"]
+        for check in body["checks"]
+    )
+    assert any(
+        check["key"] == "creative_approval" and not check["passed"]
+        for check in body["checks"]
     )
     assert (
         admin.execute(
@@ -244,10 +279,14 @@ def test_preflight_gateway_outage_fails_closed(client, intent, admin):
         "SELECT subject_id FROM approval_token WHERE id=%s", (intent.token_id,)
     ).fetchone()["subject_id"]
     transport = httpx.Client(
-        transport=httpx.MockTransport(lambda request: httpx.Response(503, text="upstream failure"))
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(503, text="upstream failure")
+        )
     )
     with patch("adjutant.deployment.httpx.Client", return_value=transport):
-        response = client.post(f"/api/brands/{intent.brand_id}/plans/{plan_id}/preflight")
+        response = client.post(
+            f"/api/brands/{intent.brand_id}/plans/{plan_id}/preflight"
+        )
     assert response.status_code == 200, response.text
     assert response.json()["ready"] is False
     assert any(

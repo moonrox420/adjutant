@@ -1,0 +1,1 @@
+"""Adapter conformance test package."""

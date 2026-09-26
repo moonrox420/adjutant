@@ -39,7 +39,12 @@ def test_approval_role_cannot_read_secrets_or_change_campaign_content(
     password = (ROOT / ".local/approval.password").read_text(encoding="utf-8").strip()
     url = f"postgresql://adjutant_approval:{quote(password)}@{database_urls[0].split('@')[1]}"
     with psycopg.connect(url, autocommit=True) as conn:
-        for table in ("local_credential", "auth_session", "mail_outbox", "channel_connection"):
+        for table in (
+            "local_credential",
+            "auth_session",
+            "mail_outbox",
+            "channel_connection",
+        ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 conn.execute(
                     psycopg.sql.SQL("SELECT * FROM adjutant.{}").format(
@@ -73,13 +78,19 @@ def test_approval_service_authenticates_service_and_live_session(
             "expected_hash": approval["subject_hash"],
         },
     }
-    secret = (ROOT / ".local/approval-service.secret").read_text(encoding="utf-8").strip()
+    secret = (
+        (ROOT / ".local/approval-service.secret").read_text(encoding="utf-8").strip()
+    )
     headers = {"Authorization": f"Bearer {secret}"}
     with httpx.Client(trust_env=False) as transport:
         assert transport.post(path, json=body).status_code == 401
-        invalid = transport.post(path, headers=headers, json={**body, "session": "x" * 48})
+        invalid = transport.post(
+            path, headers=headers, json={**body, "session": "x" * 48}
+        )
         assert invalid.status_code == 401
-        malformed = transport.post(path, headers=headers, json={**body, "actor_id": "forged"})
+        malformed = transport.post(
+            path, headers=headers, json={**body, "actor_id": "forged"}
+        )
         assert malformed.status_code == 422
         assert session not in malformed.text and secret not in malformed.text
         assert client.post("/api/auth/logout").status_code == 200
@@ -96,13 +107,19 @@ def test_approval_service_authenticates_service_and_live_session(
 def test_approval_service_rejects_application_database_role(database_urls):
     with (
         pytest.raises(RuntimeError, match="adjutant_approval role"),
-        TestClient(create_approval_app(ApprovalSettings(database_url=database_urls[1]))),
+        TestClient(
+            create_approval_app(ApprovalSettings(database_url=database_urls[1]))
+        ),
     ):
         raise AssertionError("Privileged service started under the wrong identity")
 
 
-def test_missing_approval_service_fails_closed(client, confirmed_brand, approval, tmp_path, admin):
-    client.app.state.config.approval_service_secret_path = tmp_path / "missing-service-secret"
+def test_missing_approval_service_fails_closed(
+    client, confirmed_brand, approval, tmp_path, admin
+):
+    client.app.state.config.approval_service_secret_path = (
+        tmp_path / "missing-service-secret"
+    )
     response = client.post(
         f"/api/brands/{confirmed_brand}/approvals/{approval['id']}/decide",
         json={"decision": "approved", "expected_hash": approval["subject_hash"]},
@@ -116,7 +133,12 @@ def test_missing_approval_service_fails_closed(client, confirmed_brand, approval
 
 
 @pytest.mark.parametrize(
-    "url", ["http://example.com", "https://user:secret@example.com", "https://example.com/path"]
+    "url",
+    [
+        "http://example.com",
+        "https://user:secret@example.com",
+        "https://example.com/path",
+    ],
 )
 def test_approval_transport_rejects_insecure_or_ambiguous_origins(url):
     with pytest.raises(ValueError, match="APPROVAL_URL"):

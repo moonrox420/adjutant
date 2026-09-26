@@ -1,6 +1,5 @@
 """Weekly automated executive result summaries for business owners and media buyers."""
 
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -9,7 +8,6 @@ from uuid import UUID
 from psycopg import Connection
 
 from adjutant.db import one
-from adjutant.errors import DomainError
 
 
 def generate_weekly_result_summary(
@@ -17,12 +15,16 @@ def generate_weekly_result_summary(
     brand_id: UUID,
     end_date: datetime | None = None,
 ) -> dict[str, Any]:
-    """S14.4: Generate an automated plain-English weekly result summary comprehensible to non-technical business owners."""
+    """S14.4: Generate an automated plain-English weekly result summary
+    comprehensible to non-technical business owners.
+    """
     end = (end_date or datetime.now(UTC)).replace(minute=0, second=0, microsecond=0)
     start = end - timedelta(days=7)
     prior_start = start - timedelta(days=7)
 
-    brand = one(conn, "SELECT name, account_id FROM brand WHERE id=%s", (brand_id,))
+    brand = one(
+        conn, "SELECT display_name, account_id FROM brand WHERE id=%s", (brand_id,)
+    )
 
     # Current 7 days metrics
     cur_metrics = conn.execute(
@@ -59,7 +61,9 @@ def generate_weekly_result_summary(
     prior_cpa = (prior_spend / prior_convs) if prior_convs > 0 else Decimal("0.00")
 
     cpa_change_pct = (
-        ((cpa - prior_cpa) / prior_cpa * Decimal("100.0")) if prior_cpa > 0 else Decimal("0.00")
+        ((cpa - prior_cpa) / prior_cpa * Decimal("100.0"))
+        if prior_cpa > 0
+        else Decimal("0.00")
     )
 
     # Autonomous actions taken in this window
@@ -77,7 +81,8 @@ def generate_weekly_result_summary(
 
     # Top performing channel
     channel_perf = conn.execute(
-        """SELECT channel, COALESCE(sum(spend_usd), 0) AS spend, COALESCE(sum(conversions), 0) AS convs
+        """SELECT channel, COALESCE(sum(spend_usd), 0) AS spend,
+        COALESCE(sum(conversions), 0) AS convs
         FROM metric_fact_raw
         WHERE brand_id=%s AND date_hour >= %s AND date_hour < %s
         GROUP BY channel
@@ -89,23 +94,31 @@ def generate_weekly_result_summary(
 
     # Human-readable plain English narrative
     headline = (
-        f"Your ads generated {int(convs)} conversions this week at an average cost of ${cpa:.2f} per conversion."
+        f"Your ads generated {int(convs)} conversions this week at an average cost "
+        f"of ${cpa:.2f} per conversion."
     )
     if cpa_change_pct < -5:
-        trend_note = f"Efficiency improved: CPA dropped by {abs(float(cpa_change_pct)):.1f}% compared to last week."
+        trend_note = (
+            f"Efficiency improved: CPA dropped by {abs(float(cpa_change_pct)):.1f}% "
+            "compared to last week."
+        )
     elif cpa_change_pct > 5:
-        trend_note = f"CPA increased by {float(cpa_change_pct):.1f}% compared to last week. The optimizer is reallocating budget toward top performers."
+        trend_note = (
+            f"CPA increased by {float(cpa_change_pct):.1f}% compared to last week. "
+            "The optimizer is reallocating budget toward top performers."
+        )
     else:
         trend_note = "Performance remained stable and consistent week-over-week."
 
     autonomous_work_summary = (
         f"Adjutant worked in the background this week: refreshed {refreshes} worn-out ads, "
-        f"adjusted budget {budget_shifts} times toward high-converting placements, and paused {pauses} inefficient ads."
+        f"adjusted budget {budget_shifts} times toward high-converting placements, "
+        f"and paused {pauses} inefficient ads."
     )
 
     return {
         "brand_id": str(brand_id),
-        "brand_name": brand["name"],
+        "brand_name": brand["display_name"],
         "window_start": start.isoformat(),
         "window_end": end.isoformat(),
         "headline": headline,

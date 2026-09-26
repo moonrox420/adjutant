@@ -1,10 +1,10 @@
-"""Video generation, timeline of scene graphs, safe area enforcement, hook variants, and fallback."""
+"""Video generation, timeline of scene graphs, safe area enforcement,
+hook variants, and fallback.
+"""
 
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from decimal import Decimal
-import json
 import time
+from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -25,21 +25,39 @@ class SafeArea:
 # Safe areas account for overlay chrome per channel format
 SAFE_AREAS = {
     "9:16": {
-        "tiktok": SafeArea(top_pct=0.10, bottom_pct=0.20, left_pct=0.05, right_pct=0.15),
+        "tiktok": SafeArea(
+            top_pct=0.10, bottom_pct=0.20, left_pct=0.05, right_pct=0.15
+        ),
         "meta": SafeArea(top_pct=0.12, bottom_pct=0.18, left_pct=0.06, right_pct=0.06),
-        "snapchat": SafeArea(top_pct=0.10, bottom_pct=0.15, left_pct=0.05, right_pct=0.05),
-        "youtube": SafeArea(top_pct=0.08, bottom_pct=0.16, left_pct=0.05, right_pct=0.12),
-        "default": SafeArea(top_pct=0.10, bottom_pct=0.18, left_pct=0.05, right_pct=0.10),
+        "snapchat": SafeArea(
+            top_pct=0.10, bottom_pct=0.15, left_pct=0.05, right_pct=0.05
+        ),
+        "youtube": SafeArea(
+            top_pct=0.08, bottom_pct=0.16, left_pct=0.05, right_pct=0.12
+        ),
+        "default": SafeArea(
+            top_pct=0.10, bottom_pct=0.18, left_pct=0.05, right_pct=0.10
+        ),
     },
     "1:1": {
         "meta": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
-        "linkedin": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
-        "default": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
+        "linkedin": SafeArea(
+            top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05
+        ),
+        "default": SafeArea(
+            top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05
+        ),
     },
     "16:9": {
-        "youtube": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
-        "google_ads": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
-        "default": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
+        "youtube": SafeArea(
+            top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08
+        ),
+        "google_ads": SafeArea(
+            top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08
+        ),
+        "default": SafeArea(
+            top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08
+        ),
     },
 }
 
@@ -62,7 +80,11 @@ class VideoTimeline:
 
     @property
     def total_duration(self) -> float:
-        return self.hook_scene.duration_seconds + sum(s.duration_seconds for s in self.body_scenes) + self.cta_scene.duration_seconds
+        return (
+            self.hook_scene.duration_seconds
+            + sum(s.duration_seconds for s in self.body_scenes)
+            + self.cta_scene.duration_seconds
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -93,10 +115,16 @@ class VideoTimeline:
         }
 
 
-def validate_safe_areas(scene_graph: dict[str, Any], aspect_ratio: str, channel: str) -> list[str]:
+def validate_safe_areas(
+    scene_graph: dict[str, Any], aspect_ratio: str, channel: str
+) -> list[str]:
     """Validate that text and CTA layers fall strictly inside the channel-specific safe area."""
     ratio_rules = SAFE_AREAS.get(aspect_ratio, {})
-    safe_area = ratio_rules.get(channel) or ratio_rules.get("default") or SafeArea(0.05, 0.05, 0.05, 0.05)
+    safe_area = (
+        ratio_rules.get(channel)
+        or ratio_rules.get("default")
+        or SafeArea(0.05, 0.05, 0.05, 0.05)
+    )
 
     violations = []
     layers = scene_graph.get("layers", [])
@@ -110,26 +138,47 @@ def validate_safe_areas(scene_graph: dict[str, Any], aspect_ratio: str, channel:
             right = pos.get("right_pct", 0.0)
 
             if top < safe_area.top_pct:
-                violations.append(f"Layer '{layer.get('id', 'unnamed')}' top {top:.2f} breaches safe area top bound {safe_area.top_pct:.2f}")
+                violations.append(
+                    f"Layer '{layer.get('id', 'unnamed')}' top {top:.2f} "
+                    f"breaches safe area top bound {safe_area.top_pct:.2f}"
+                )
             if bottom < safe_area.bottom_pct:
-                violations.append(f"Layer '{layer.get('id', 'unnamed')}' bottom {bottom:.2f} breaches safe area bottom bound {safe_area.bottom_pct:.2f}")
+                violations.append(
+                    f"Layer '{layer.get('id', 'unnamed')}' bottom {bottom:.2f} "
+                    f"breaches safe area bottom bound {safe_area.bottom_pct:.2f}"
+                )
             if left < safe_area.left_pct:
-                violations.append(f"Layer '{layer.get('id', 'unnamed')}' left {left:.2f} breaches safe area left bound {safe_area.left_pct:.2f}")
+                violations.append(
+                    f"Layer '{layer.get('id', 'unnamed')}' left {left:.2f} "
+                    f"breaches safe area left bound {safe_area.left_pct:.2f}"
+                )
             if right < safe_area.right_pct:
-                violations.append(f"Layer '{layer.get('id', 'unnamed')}' right {right:.2f} breaches safe area right bound {safe_area.right_pct:.2f}")
+                violations.append(
+                    f"Layer '{layer.get('id', 'unnamed')}' right {right:.2f} "
+                    f"breaches safe area right bound {safe_area.right_pct:.2f}"
+                )
 
     return violations
 
 
-def generate_hook_variants(base_timeline: VideoTimeline, hook_copy_variants: list[dict[str, Any]]) -> list[VideoTimeline]:
+def generate_hook_variants(
+    base_timeline: VideoTimeline, hook_copy_variants: list[dict[str, Any]]
+) -> list[VideoTimeline]:
     """Generate 3 hook variants from one concept without re-rendering or altering body scenes."""
     variants = []
     for i, hook_copy in enumerate(hook_copy_variants[:3], start=1):
         modified_scene_graph = dict(base_timeline.hook_scene.scene_graph)
         modified_scene_graph["layers"] = [
-            {**layer, "content": hook_copy.get(layer.get("field", "headline"), layer.get("content"))}
-            if layer.get("type") in {"headline", "text"}
-            else layer
+            (
+                {
+                    **layer,
+                    "content": hook_copy.get(
+                        layer.get("field", "headline"), layer.get("content")
+                    ),
+                }
+                if layer.get("type") in {"headline", "text"}
+                else layer
+            )
             for layer in modified_scene_graph.get("layers", [])
         ]
         hook_scene = VideoScene(
@@ -163,11 +212,14 @@ def render_video_timeline(
     If rendering fails, degrades gracefully to static creative rather than leaving brand dark.
     """
     start_time = time.perf_counter()
-    violations = validate_safe_areas(timeline.hook_scene.scene_graph, timeline.aspect_ratio, channel)
+    violations = validate_safe_areas(
+        timeline.hook_scene.scene_graph, timeline.aspect_ratio, channel
+    )
     if violations:
         raise DomainError(
             "SafeAreaViolation",
-            f"Video scene graph violates safe area bounds for {channel} at {timeline.aspect_ratio}: {'; '.join(violations)}",
+            f"Video scene graph violates safe area bounds for {channel} "
+            f"at {timeline.aspect_ratio}: {'; '.join(violations)}",
             422,
         )
 
@@ -193,7 +245,11 @@ def render_video_timeline(
         )
         return {
             "status": "degraded_to_static",
-            "creative_id": str(static_fallback_creative_id) if static_fallback_creative_id else None,
+            "creative_id": (
+                str(static_fallback_creative_id)
+                if static_fallback_creative_id
+                else None
+            ),
             "fallback_used": True,
             "reason": "Video render failed; served static asset with zero dark-time",
             "aspect_ratio": timeline.aspect_ratio,
@@ -204,7 +260,8 @@ def render_video_timeline(
     elapsed_sec = max(0.01, time.perf_counter() - start_time)
     # Estimate compute cost at $0.005 per render second
     cost_usd = Decimal(str(round(elapsed_sec * 0.005, 4)))
-    asset_uri = f"s3://adjutant-renders/{brand_id}/{video_id}_{timeline.aspect_ratio.replace(':', 'x')}.mp4"
+    ratio_str = timeline.aspect_ratio.replace(":", "x")
+    asset_uri = f"s3://adjutant-renders/{brand_id}/{video_id}_{ratio_str}.mp4"
 
     conn.execute(
         """INSERT INTO video_render_log(

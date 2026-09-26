@@ -66,7 +66,9 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
         )
         for index, direction in enumerate(CONCEPT_DIRECTIONS):
             image = io.BytesIO()
-            Image.new("RGB", (64, 64), (40 + index * 25, 100, 140)).save(image, format="PNG")
+            Image.new("RGB", (64, 64), (40 + index * 25, 100, 140)).save(
+                image, format="PNG"
+            )
             key = storage.put(brand, image.getvalue())
             document = {
                 "understanding": understanding,
@@ -82,7 +84,11 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
                     "image_prompt": direction["brief"],
                 },
                 "google": {
-                    "headlines": ["Home Plumbing", "Plumbing Repairs", "Contact The Team"],
+                    "headlines": [
+                        "Home Plumbing",
+                        "Plumbing Repairs",
+                        "Contact The Team",
+                    ],
                     "descriptions": [
                         "Repair your home's plumbing.",
                         "Contact our team about an appointment.",
@@ -118,6 +124,7 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
             ).fetchone()
             persist_render(conn, storage, brand, row, "1:1")
         conn.execute(
-            "UPDATE studio_job SET state='completed',finished_at=now() WHERE id=%s", (root,)
+            "UPDATE studio_job SET state='completed',finished_at=now() WHERE id=%s",
+            (root,),
         )
         return str(brand)

@@ -114,6 +114,21 @@ BEGIN
 END;
 $$;
 
--- Grant permissions to non-superuser application roles
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA adjutant TO adjutant_app, adjutant_worker, adjutant_gateway;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA adjutant TO adjutant_app, adjutant_worker, adjutant_gateway;
+-- Grant permissions to non-superuser application roles for new tables
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+    metric_sync_watermark,
+    metric_restatement_log,
+    finding,
+    autonomous_decision,
+    escalation,
+    loop_tick_run
+TO adjutant_app;
+
+GRANT SELECT, INSERT, UPDATE ON
+    metric_sync_watermark,
+    metric_restatement_log,
+    finding,
+    autonomous_decision,
+    escalation,
+    loop_tick_run
+TO adjutant_gateway;

@@ -1,7 +1,6 @@
 """Autonomous loop runner executing hourly ticks with advisory locking and idempotent ordering."""
 
 import logging
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,11 +9,10 @@ from psycopg import Connection
 from psycopg.types.json import Jsonb
 
 from adjutant.config import Settings
-from adjutant.decision import evaluate_guardrails, record_escalation
+from adjutant.decision import evaluate_guardrails
 from adjutant.diagnosis import diagnose_campaign_objects
-from adjutant.errors import DomainError
 from adjutant.events import EventRegistry
-from adjutant.service import audit, locked_brand
+from adjutant.service import locked_brand
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +29,9 @@ def run_tick(
     tid = tick_id or uuid4()
 
     # Step 0: Ensure tenant scope and acquire brand runner advisory lock
-    current_ids = conn.execute("SELECT current_brand_ids() AS ids").fetchone()["ids"] or []
+    current_ids = (
+        conn.execute("SELECT current_brand_ids() AS ids").fetchone()["ids"] or []
+    )
     if brand_id not in current_ids:
         new_ids = list(current_ids) + [brand_id]
         conn.execute(
@@ -41,7 +41,10 @@ def run_tick(
     conn.execute("SELECT lock_runner_brand(%s)", (brand_id,))
     brand = locked_brand(conn, brand_id)
     if brand.get("status") != "active" or not brand.get("campaigns_enabled"):
-        return {"status": "skipped", "reason": "Brand is not active or campaigns are disabled."}
+        return {
+            "status": "skipped",
+            "reason": "Brand is not active or campaigns are disabled.",
+        }
 
     # Record loop tick run
     conn.execute(
@@ -65,30 +68,37 @@ def run_tick(
         candidates = []
         for f in findings:
             if f["kind"] == "fatigue":
-                candidates.append({
-                    "finding_id": f["finding_id"],
-                    "kind": "refresh_creative",
-                    "channel": f["channel"],
-                    "target_id": f["object_id"],
-                    "params": {"reason": "Creative fatigue detected across 3+ signals"},
-                })
+                candidates.append(
+                    {
+                        "finding_id": f["finding_id"],
+                        "kind": "refresh_creative",
+                        "channel": f["channel"],
+                        "target_id": f["object_id"],
+                        "params": {
+                            "reason": "Creative fatigue detected across 3+ signals"
+                        },
+                    }
+                )
             elif f["kind"] == "winner":
                 obj = conn.execute(
-                    "SELECT daily_budget_usd FROM campaign_object WHERE id=%s", (f["object_id"],)
+                    "SELECT daily_budget_usd FROM campaign_object WHERE id=%s",
+                    (f["object_id"],),
                 ).fetchone()
                 current_daily = obj["daily_budget_usd"] or Decimal("50.00")
                 proposed_daily = current_daily * Decimal("1.25")
-                candidates.append({
-                    "finding_id": f["finding_id"],
-                    "kind": "scale_winner",
-                    "channel": f["channel"],
-                    "target_id": f["object_id"],
-                    "params": {
-                        "current_daily_usd": str(current_daily),
-                        "proposed_daily_usd": str(proposed_daily),
-                        "reason": f"Winner cleared volume with low CPA {f.get('cpa')}",
-                    },
-                })
+                candidates.append(
+                    {
+                        "finding_id": f["finding_id"],
+                        "kind": "scale_winner",
+                        "channel": f["channel"],
+                        "target_id": f["object_id"],
+                        "params": {
+                            "current_daily_usd": str(current_daily),
+                            "proposed_daily_usd": str(proposed_daily),
+                            "reason": f"Winner cleared volume with low CPA {f.get('cpa')}",
+                        },
+                    }
+                )
 
         executed_actions = []
         # Step 5: Execute survivors with idempotency & strict ordering
@@ -98,7 +108,8 @@ def run_tick(
 
             # Check if this exact action was already executed in this tick (S8.8)
             prior = conn.execute(
-                "SELECT state, action_id FROM autonomous_decision WHERE brand_id=%s AND idempotency_key=%s",
+                """SELECT state, action_id FROM autonomous_decision
+                WHERE brand_id=%s AND idempotency_key=%s""",
                 (brand_id, idem_key),
             ).fetchone()
             if prior and prior["state"] == "executed":
@@ -171,7 +182,7 @@ def run_tick(
                     ),
                 )
 
-                rep_action_id = conn.execute(
+                conn.execute(
                     """INSERT INTO action(
                         brand_id, actor_kind, action_type, target_kind, target_id,
                         channel, target_native_id, diff, rationale, token_id, revert_path,
@@ -185,20 +196,30 @@ def run_tick(
                         replacement_id,
                         fatigued_obj["channel"],
                         f"native_rep_{replacement_id.hex[:8]}",
-                        Jsonb({"after": {"state": "active", "parent_id": str(fatigued_obj["parent_id"])}}),
+                        Jsonb(
+                            {
+                                "after": {
+                                    "state": "active",
+                                    "parent_id": str(fatigued_obj["parent_id"]),
+                                }
+                            }
+                        ),
                         "Replacement ad created and launched prior to cutting fatigued creative",
                         token_id,
-                        Jsonb({
-                            "kind": "campaign_object_state",
-                            "object_id": str(replacement_id),
-                            "before_state": "deleted",
-                        }),
+                        Jsonb(
+                            {
+                                "kind": "campaign_object_state",
+                                "object_id": str(replacement_id),
+                                "before_state": "deleted",
+                            }
+                        ),
                     ),
-                ).fetchone()["id"]
+                )
 
                 # 2. ONLY AFTER replacement is active, pause fatigued ad
                 conn.execute(
-                    "UPDATE campaign_object SET state='paused' WHERE id=%s", (fatigued_id,)
+                    "UPDATE campaign_object SET state='paused' WHERE id=%s",
+                    (fatigued_id,),
                 )
 
                 pause_action_id = conn.execute(
@@ -215,13 +236,20 @@ def run_tick(
                         fatigued_id,
                         fatigued_obj["channel"],
                         fatigued_obj["native_id"],
-                        Jsonb({"before": {"state": "active"}, "after": {"state": "paused"}}),
+                        Jsonb(
+                            {
+                                "before": {"state": "active"},
+                                "after": {"state": "paused"},
+                            }
+                        ),
                         "Fatigued ad paused after verified replacement launch",
-                        Jsonb({
-                            "kind": "campaign_object_state",
-                            "object_id": str(fatigued_id),
-                            "before_state": "active",
-                        }),
+                        Jsonb(
+                            {
+                                "kind": "campaign_object_state",
+                                "object_id": str(fatigued_id),
+                                "before_state": "active",
+                            }
+                        ),
                     ),
                 ).fetchone()["id"]
                 action_id = pause_action_id
@@ -245,14 +273,22 @@ def run_tick(
                         brand_id,
                         obj_id,
                         cand["channel"],
-                        Jsonb({"before": params["current_daily_usd"], "after": str(new_budget)}),
-                        params.get("clamp_logged_reason") or "Scaled winner budget within daily cap limit",
+                        Jsonb(
+                            {
+                                "before": params["current_daily_usd"],
+                                "after": str(new_budget),
+                            }
+                        ),
+                        params.get("clamp_logged_reason")
+                        or "Scaled winner budget within daily cap limit",
                         token_id,
-                        Jsonb({
-                            "kind": "campaign_object_state",
-                            "object_id": str(obj_id),
-                            "before_state": "active",
-                        }),
+                        Jsonb(
+                            {
+                                "kind": "campaign_object_state",
+                                "object_id": str(obj_id),
+                                "before_state": "active",
+                            }
+                        ),
                     ),
                 ).fetchone()["id"]
 
@@ -281,9 +317,16 @@ def run_tick(
                 status='completed', step='done',
                 summary=%s, finished_at=now()
             WHERE id=%s""",
-            (Jsonb({"executed": executed_actions, "findings_count": len(findings)}), tid),
+            (
+                Jsonb({"executed": executed_actions, "findings_count": len(findings)}),
+                tid,
+            ),
         )
-        return {"status": "completed", "tick_id": str(tid), "executed": executed_actions}
+        return {
+            "status": "completed",
+            "tick_id": str(tid),
+            "executed": executed_actions,
+        }
 
     except Exception as exc:
         conn.execute(

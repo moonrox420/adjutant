@@ -1,11 +1,12 @@
 """TikTok campaign hierarchy builder, settings schema, and preflight validation."""
 
 import asyncio
+import re
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
-import re
 from typing import Any
+
 import httpx
 from pydantic import Field, HttpUrl, model_validator
 
@@ -19,7 +20,9 @@ TIKTOK_API_ORIGIN = "https://business-api.tiktok.com/open_api/v1.3"
 def numeric(value: str) -> str:
     cleaned = re.sub(r"[^0-9]", "", value)
     if not cleaned:
-        raise DomainError("InvalidRemoteIdentity", "The platform requires a numeric identity.", 422)
+        raise DomainError(
+            "InvalidRemoteIdentity", "The platform requires a numeric identity.", 422
+        )
     return cleaned
 
 
@@ -33,7 +36,9 @@ class TikTokBuildSettings(Input):
 
     @model_validator(mode="after")
     def validate_settings(self):
-        self.countries = sorted(set(country.strip().upper() for country in self.countries))
+        self.countries = sorted(
+            set(country.strip().upper() for country in self.countries)
+        )
         if any(
             len(country) != 2 or not country.isascii() or not country.isalpha()
             for country in self.countries
@@ -46,8 +51,16 @@ class TikTokBuildSettings(Input):
 
 def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list[str]:
     failures: list[str] = []
-    if document.get("objective") not in {"awareness", "traffic", "leads", "sales", "video_views"}:
-        failures.append("This TikTok campaign requires awareness, traffic, leads, sales, or video_views.")
+    if document.get("objective") not in {
+        "awareness",
+        "traffic",
+        "leads",
+        "sales",
+        "video_views",
+    }:
+        failures.append(
+            "This TikTok campaign requires awareness, traffic, leads, sales, or video_views."
+        )
 
     settings_data = document.get("settings")
     if not isinstance(settings_data, dict):
@@ -71,10 +84,13 @@ def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list
         for field, maximum in limits.items():
             val = copy.get(field)
             if not isinstance(val, str) or len(val.strip()) == 0:
-                failures.append(f"Creative {cid} is missing required TikTok field '{field}'.")
+                failures.append(
+                    f"Creative {cid} is missing required TikTok field '{field}'."
+                )
             elif len(val) > maximum:
                 failures.append(
-                    f"Creative {cid} field '{field}' length {len(val)} exceeds allowed limit of {maximum} characters."
+                    f"Creative {cid} field '{field}' length {len(val)} "
+                    f"exceeds allowed limit of {maximum} characters."
                 )
     return failures
 
@@ -109,21 +125,33 @@ class TikTokBuilder:
         try:
             response = await self.client.request(method, url, headers=headers, **kwargs)
         except httpx.HTTPError as exc:
-            raise DomainError("ProviderStateUncertain", "TikTok did not respond.", 503) from exc
+            raise DomainError(
+                "ProviderStateUncertain", "TikTok did not respond.", 503
+            ) from exc
 
         try:
             body = response.json() if response.content else {}
         except ValueError as exc:
-            raise DomainError("ProviderResponseInvalid", "TikTok returned invalid JSON.", 502) from exc
+            raise DomainError(
+                "ProviderResponseInvalid", "TikTok returned invalid JSON.", 502
+            ) from exc
 
         if not isinstance(body, dict):
-            raise DomainError("ProviderResponseInvalid", "TikTok returned invalid response shape.", 502)
+            raise DomainError(
+                "ProviderResponseInvalid",
+                "TikTok returned invalid response shape.",
+                502,
+            )
 
         code = body.get("code", 0)
         if code != 0 or not 200 <= response.status_code < 300:
             msg = str(body.get("message") or f"HTTP {response.status_code}")
             scrubbed_msg = msg.replace(self.token, "[redacted]")
-            err_code = "PlatformAuthorization" if response.status_code in {401, 403} else "PlatformRequestRejected"
+            err_code = (
+                "PlatformAuthorization"
+                if response.status_code in {401, 403}
+                else "PlatformRequestRejected"
+            )
             raise ProviderRejection(err_code, str(code), scrubbed_msg, "TikTok")
         return body
 
@@ -137,7 +165,9 @@ class TikTokBuilder:
 
         # 1. Campaign
         campaign_key = "campaign"
-        step_campaign = await asyncio.to_thread(self.begin, campaign_key, {"name": f"{prefix} campaign"})
+        step_campaign = await asyncio.to_thread(
+            self.begin, campaign_key, {"name": f"{prefix} campaign"}
+        )
         campaign_id = step_campaign.get("native_id")
         if not campaign_id:
             res_camp = await self.request(
@@ -154,14 +184,26 @@ class TikTokBuilder:
             )
             data = res_camp.get("data", {})
             campaign_id = str(data.get("campaign_id", "238491029384"))
-            campaign_remote = {"id": campaign_id, "name": f"{prefix} campaign", "status": "PAUSED"}
-            await asyncio.to_thread(self.finish, campaign_key, campaign_id, campaign_remote)
+            campaign_remote = {
+                "id": campaign_id,
+                "name": f"{prefix} campaign",
+                "status": "PAUSED",
+            }
+            await asyncio.to_thread(
+                self.finish, campaign_key, campaign_id, campaign_remote
+            )
         else:
-            campaign_remote = {"id": campaign_id, "name": f"{prefix} campaign", "status": "PAUSED"}
+            campaign_remote = {
+                "id": campaign_id,
+                "name": f"{prefix} campaign",
+                "status": "PAUSED",
+            }
 
         # 2. Ad Group
         group_key = "ad_group"
-        step_group = await asyncio.to_thread(self.begin, group_key, {"name": f"{prefix} ad set"})
+        step_group = await asyncio.to_thread(
+            self.begin, group_key, {"name": f"{prefix} ad set"}
+        )
         group_id = step_group.get("native_id")
         if not group_id:
             res_group = await self.request(
@@ -177,14 +219,36 @@ class TikTokBuilder:
             )
             data = res_group.get("data", {})
             group_id = str(data.get("adgroup_id", "238491029385"))
-            group_remote = {"id": group_id, "name": f"{prefix} ad set", "status": "PAUSED", "campaign_id": campaign_id}
+            group_remote = {
+                "id": group_id,
+                "name": f"{prefix} ad set",
+                "status": "PAUSED",
+                "campaign_id": campaign_id,
+            }
             await asyncio.to_thread(self.finish, group_key, group_id, group_remote)
         else:
-            group_remote = {"id": group_id, "name": f"{prefix} ad set", "status": "PAUSED", "campaign_id": campaign_id}
+            group_remote = {
+                "id": group_id,
+                "name": f"{prefix} ad set",
+                "status": "PAUSED",
+                "campaign_id": campaign_id,
+            }
 
         objects = [
-            {"level": "campaign", "key": "campaign", "remote": campaign_remote, "parent_key": None, "creative_id": None},
-            {"level": "ad_group", "key": "ad_group", "remote": group_remote, "parent_key": "campaign", "creative_id": None},
+            {
+                "level": "campaign",
+                "key": "campaign",
+                "remote": campaign_remote,
+                "parent_key": None,
+                "creative_id": None,
+            },
+            {
+                "level": "ad_group",
+                "key": "ad_group",
+                "remote": group_remote,
+                "parent_key": "campaign",
+                "creative_id": None,
+            },
         ]
 
         # 3. Ads
@@ -192,7 +256,9 @@ class TikTokBuilder:
             cid = creative["id"]
             ad_key = f"ad:{cid}"
             copy = creative.get("copy", {}).get("tiktok", {})
-            step_ad = await asyncio.to_thread(self.begin, ad_key, {"name": f"{prefix} ad {cid}"})
+            step_ad = await asyncio.to_thread(
+                self.begin, ad_key, {"name": f"{prefix} ad {cid}"}
+            )
             ad_id = step_ad.get("native_id")
             if not ad_id:
                 res_ad = await self.request(
@@ -209,13 +275,29 @@ class TikTokBuilder:
                 )
                 data = res_ad.get("data", {})
                 ad_id = str(data.get("ad_id", "238491029387"))
-                ad_remote = {"id": ad_id, "name": f"{prefix} ad {cid}", "status": "PAUSED", "ad_group_id": group_id}
+                ad_remote = {
+                    "id": ad_id,
+                    "name": f"{prefix} ad {cid}",
+                    "status": "PAUSED",
+                    "ad_group_id": group_id,
+                }
                 await asyncio.to_thread(self.finish, ad_key, ad_id, ad_remote)
             else:
-                ad_remote = {"id": ad_id, "name": f"{prefix} ad {cid}", "status": "PAUSED", "ad_group_id": group_id}
+                ad_remote = {
+                    "id": ad_id,
+                    "name": f"{prefix} ad {cid}",
+                    "status": "PAUSED",
+                    "ad_group_id": group_id,
+                }
 
             objects.append(
-                {"level": "ad", "key": ad_key, "remote": ad_remote, "parent_key": "ad_group", "creative_id": cid}
+                {
+                    "level": "ad",
+                    "key": ad_key,
+                    "remote": ad_remote,
+                    "parent_key": "ad_group",
+                    "creative_id": cid,
+                }
             )
 
         return objects

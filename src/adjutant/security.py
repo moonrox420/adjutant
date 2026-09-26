@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     NoEncryption,
@@ -22,7 +25,11 @@ from adjutant.errors import DomainError
 def canonical_bytes(value: Any) -> bytes:
     """Canonical wire encoding; money enters this format as decimal strings."""
     return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
     ).encode("utf-8")
 
 
@@ -43,7 +50,12 @@ def password_matches(password: str, encoded: str) -> bool:
     if algorithm != "scrypt":
         raise ValueError("Unsupported password hash")
     actual = hashlib.scrypt(
-        password.encode(), salt=bytes.fromhex(salt), n=32768, r=8, p=1, maxmem=64 * 1024 * 1024
+        password.encode(),
+        salt=bytes.fromhex(salt),
+        n=32768,
+        r=8,
+        p=1,
+        maxmem=64 * 1024 * 1024,
     )
     return hmac.compare_digest(actual.hex(), expected)
 
@@ -66,7 +78,9 @@ class ApprovalSigner:
 
     def __init__(self, path: Path) -> None:
         self._key = Ed25519PrivateKey.from_private_bytes(path.read_bytes())
-        self.public_bytes = self._key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        self.public_bytes = self._key.public_key().public_bytes(
+            Encoding.Raw, PublicFormat.Raw
+        )
         self.key_id = hashlib.sha256(self.public_bytes).hexdigest()[:24]
 
     def sign(self, claims: dict[str, Any]) -> bytes:
@@ -74,12 +88,20 @@ class ApprovalSigner:
 
 
 def verify_claims(
-    public_key: bytes, claims: dict[str, Any], signature: bytes, *, now: datetime | None = None
+    public_key: bytes,
+    claims: dict[str, Any],
+    signature: bytes,
+    *,
+    now: datetime | None = None,
 ) -> None:
     try:
-        Ed25519PublicKey.from_public_bytes(public_key).verify(signature, canonical_bytes(claims))
+        Ed25519PublicKey.from_public_bytes(public_key).verify(
+            signature, canonical_bytes(claims)
+        )
     except (InvalidSignature, ValueError) as exc:
-        raise DomainError("InvalidSignature", "Approval signature is invalid.", 403) from exc
+        raise DomainError(
+            "InvalidSignature", "Approval signature is invalid.", 403
+        ) from exc
     current = int((now or datetime.now(UTC)).timestamp())
     issued, expires = claims.get("iat"), claims.get("exp")
     if (
@@ -89,7 +111,9 @@ def verify_claims(
         or expires <= current
         or not 0 < expires - issued <= 72 * 3600
     ):
-        raise DomainError("TokenExpired", "Approval is outside its absolute validity window.", 403)
+        raise DomainError(
+            "TokenExpired", "Approval is outside its absolute validity window.", 403
+        )
 
 
 def public_key_text(value: bytes) -> str:

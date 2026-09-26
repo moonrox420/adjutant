@@ -80,7 +80,10 @@ def verify_export(bundle: dict[str, Any], trusted_keys: dict[str, bytes]) -> Non
             raise ValueError("Export digest or format mismatch")
         key = trusted_keys[manifest["signing_key_id"]]
         Ed25519PublicKey.from_public_bytes(key).verify(
-            base64.b64decode(bundle["signature"], validate=True), canonical_bytes(manifest)
+            base64.b64decode(bundle["signature"], validate=True),
+            canonical_bytes(manifest),
         )
     except (KeyError, TypeError, ValueError, InvalidSignature) as exc:
-        raise DomainError("InvalidAuditExport", "Audit export verification failed.", 422) from exc
+        raise DomainError(
+            "InvalidAuditExport", "Audit export verification failed.", 422
+        ) from exc

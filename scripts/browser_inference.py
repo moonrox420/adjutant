@@ -43,7 +43,11 @@ def browser_inference(marker: Path) -> Iterator[str]:
                 return
             payload = json.loads(self.rfile.read(length))
             context = json.loads(payload["messages"][-1]["content"])
-            receipt = {"brief": context["brief"], "model": payload["model"], "disconnected": False}
+            receipt = {
+                "brief": context["brief"],
+                "model": payload["model"],
+                "disconnected": False,
+            }
 
             def record() -> None:
                 temporary = marker.with_suffix(".tmp")
@@ -70,7 +74,9 @@ def browser_inference(marker: Path) -> Iterator[str]:
             """The marker records the fixture's lifecycle without logging prompt contents."""
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, name="browser-inference", daemon=True)
+    thread = threading.Thread(
+        target=server.serve_forever, name="browser-inference", daemon=True
+    )
     thread.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}"

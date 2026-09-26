@@ -30,8 +30,12 @@ def validate_image_model(model: str) -> None:
 class VisualsGenerator:
     """Generate image-only backgrounds; copy remains editable text in the scene graph."""
 
-    def __init__(self, api_key: str | None = None, *, model: str = DEFAULT_IMAGE_MODEL) -> None:
-        self._api_key = api_key if api_key is not None else os.getenv("GEMINI_API_KEY", "")
+    def __init__(
+        self, api_key: str | None = None, *, model: str = DEFAULT_IMAGE_MODEL
+    ) -> None:
+        self._api_key = (
+            api_key if api_key is not None else os.getenv("GEMINI_API_KEY", "")
+        )
         self.model = model
 
     @property
@@ -51,10 +55,14 @@ class VisualsGenerator:
     async def generate_ad_image(self, prompt: str, aspect_ratio: str = "1:1") -> str:
         self.require_configuration()
         if aspect_ratio not in {"1:1", "4:5", "9:16", "16:9", "3:4", "4:3"}:
-            raise DomainError("InvalidAspectRatio", "Unsupported image aspect ratio.", 422)
+            raise DomainError(
+                "InvalidAspectRatio", "Unsupported image aspect ratio.", 422
+            )
         if not prompt.strip() or len(prompt) > 4000:
             raise DomainError(
-                "InvalidVisualPrompt", "A visual prompt of 1–4000 characters is required.", 422
+                "InvalidVisualPrompt",
+                "A visual prompt of 1–4000 characters is required.",
+                422,
             )
         image_prompt = (
             "Create a professional commercial advertising photograph or illustration. "
@@ -78,10 +86,14 @@ class VisualsGenerator:
                     ),
                 )
                 for candidate in response.candidates or []:
-                    for part in (candidate.content.parts or []) if candidate.content else []:
+                    for part in (
+                        (candidate.content.parts or []) if candidate.content else []
+                    ):
                         blob = part.inline_data
                         if blob and blob.data:
-                            return self.data_uri(blob.data, blob.mime_type or "image/jpeg")
+                            return self.data_uri(
+                                blob.data, blob.mime_type or "image/jpeg"
+                            )
         except ValueError as exc:
             raise DomainError(
                 "ImageModelUnavailable",
@@ -105,7 +117,8 @@ class VisualsGenerator:
                 )
             elif exc.code == 429:
                 message = (
-                    "Google image generation quota was reached. Retry after your quota resets."
+                    "Google image generation quota was reached. "
+                    "Retry after your quota resets."
                 )
             else:
                 message = (
@@ -131,15 +144,22 @@ class VisualsGenerator:
     @staticmethod
     def data_uri(content: bytes, mime: str | None) -> str:
         mime = mime or "image/jpeg"
-        if mime not in {"image/png", "image/jpeg", "image/webp"} or len(content) > 20 * 1024 * 1024:
-            raise DomainError("InvalidGeneratedImage", "Google returned an unsupported image.", 502)
+        if (
+            mime not in {"image/png", "image/jpeg", "image/webp"}
+            or len(content) > 20 * 1024 * 1024
+        ):
+            raise DomainError(
+                "InvalidGeneratedImage", "Google returned an unsupported image.", 502
+            )
         signatures = {
             "image/png": content.startswith(b"\x89PNG\r\n\x1a\n"),
             "image/jpeg": content.startswith(b"\xff\xd8\xff"),
             "image/webp": content.startswith(b"RIFF") and content[8:12] == b"WEBP",
         }
         if not signatures[mime]:
-            raise DomainError("InvalidGeneratedImage", "Google returned invalid image bytes.", 502)
+            raise DomainError(
+                "InvalidGeneratedImage", "Google returned invalid image bytes.", 502
+            )
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -160,6 +180,8 @@ class VisualsGenerator:
             Image.DecompressionBombWarning,
         ) as exc:
             raise DomainError(
-                "InvalidGeneratedImage", "Google returned an image that cannot be decoded.", 502
+                "InvalidGeneratedImage",
+                "Google returned an image that cannot be decoded.",
+                502,
             ) from exc
         return f"data:{mime};base64,{base64.b64encode(content).decode('ascii')}"

@@ -1,0 +1,15 @@
+From: accounts@example.com
+To: account-8774c613-1c0d-4e70-983e-f0cda396dbcb@example.com
+Subject: Verify your Adjutant account
+Message-ID: <5c9a0da7-ab43-408a-8791-74f004283d69@adjutant.local>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Use this link to verify your email address:
+
+http://localhost:3000/account#verify=3D2UFpEAo1yVeCFCnfumNgwsN-F8iMTbxxPW_GDw=
+sT4jRVzkWlptfUp9ar-_bSKxxl
+
+This link expires in one hour and works once. If you did not request it, igno=
+re it.

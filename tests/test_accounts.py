@@ -18,7 +18,8 @@ def account_data():
 
 def mail_token(admin, email, purpose):
     row = admin.execute(
-        "SELECT body FROM mail_outbox WHERE recipient=%s ORDER BY created_at DESC LIMIT 1", (email,)
+        "SELECT body FROM mail_outbox WHERE recipient=%s ORDER BY created_at DESC LIMIT 1",
+        (email,),
     ).fetchone()
     return re.search(rf"#{purpose}=([A-Za-z0-9_-]+)", row["body"])[1]
 
@@ -64,7 +65,9 @@ def test_signup_account_type_is_persisted_and_duplicate_does_not_change_it(
         "daily_ceiling": "100",
     }
     assert client.post("/api/brands", json=new_brand).status_code == 201
-    second = client.post("/api/brands", json={**new_brand, "display_name": "Second test brand"})
+    second = client.post(
+        "/api/brands", json={**new_brand, "display_name": "Second test brand"}
+    )
     assert second.status_code == (201 if account_type == "agency" else 409)
 
 
@@ -95,7 +98,9 @@ def reset_signup_rate(admin):
     admin.execute("DELETE FROM login_attempt")
 
 
-def test_account_lifecycle_exact_password_single_use_and_session_recovery(client, admin):
+def test_account_lifecycle_exact_password_single_use_and_session_recovery(
+    client, admin
+):
     data = account_data()
     response = client.post("/api/auth/register", json=data)
     assert response.status_code == 202, response.text
@@ -133,13 +138,18 @@ def test_account_lifecycle_exact_password_single_use_and_session_recovery(client
     assert client.post("/api/auth/reset-password", json=body).status_code == 200
     for cookie in (first_cookie, second_cookie):
         assert (
-            client.get("/api/me", headers={"cookie": f"adjutant_session={cookie}"}).status_code
+            client.get(
+                "/api/me", headers={"cookie": f"adjutant_session={cookie}"}
+            ).status_code
             == 401
         )
     assert client.post("/api/auth/reset-password", json=body).status_code == 400
     assert client.post("/api/auth/login", json=login).status_code == 401
     assert (
-        client.post("/api/auth/login", json={**login, "password": new_password}).status_code == 200
+        client.post(
+            "/api/auth/login", json={**login, "password": new_password}
+        ).status_code
+        == 200
     )
     signed_in = client.cookies.get("adjutant_session")
     logout = client.post("/api/auth/logout")
@@ -151,7 +161,9 @@ def test_account_lifecycle_exact_password_single_use_and_session_recovery(client
         .lower()
     )
     assert (
-        client.get("/api/me", headers={"cookie": f"adjutant_session={signed_in}"}).status_code
+        client.get(
+            "/api/me", headers={"cookie": f"adjutant_session={signed_in}"}
+        ).status_code
         == 401
     )
 
@@ -183,9 +195,12 @@ def test_expiry_resend_duplicate_registration_and_enumeration(client, admin):
     )
     assert client.post("/api/auth/verify", json={"token": second}).status_code == 400
     unknown = client.post(
-        "/api/auth/request-link?purpose=reset", json={"email": f"unknown-{uuid4()}@example.com"}
+        "/api/auth/request-link?purpose=reset",
+        json={"email": f"unknown-{uuid4()}@example.com"},
     )
-    known = client.post("/api/auth/request-link?purpose=reset", json={"email": data["email"]})
+    known = client.post(
+        "/api/auth/request-link?purpose=reset", json={"email": data["email"]}
+    )
     assert unknown.json() == known.json()
 
 
@@ -202,7 +217,12 @@ def test_expiry_resend_duplicate_registration_and_enumeration(client, admin):
     ],
 )
 def test_registration_validation_rejects_untrusted_fields(client, changes):
-    assert client.post("/api/auth/register", json={**account_data(), **changes}).status_code == 422
+    assert (
+        client.post(
+            "/api/auth/register", json={**account_data(), **changes}
+        ).status_code
+        == 422
+    )
 
 
 def test_registration_rate_limit_is_persistent(client):
@@ -224,7 +244,12 @@ def test_registration_rate_limit_is_persistent(client):
 
 def test_private_auth_and_worker_tables_are_not_readable(database_urls):
     with psycopg.connect(database_urls[1], autocommit=True) as conn:
-        for table in ("local_credential", "auth_session", "account_token", "mail_outbox"):
+        for table in (
+            "local_credential",
+            "auth_session",
+            "account_token",
+            "mail_outbox",
+        ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 conn.execute(f"SELECT * FROM adjutant.{table}")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
@@ -235,7 +260,8 @@ def test_logout_all_revokes_every_cookie(client, identity):
     first = client.cookies.get("adjutant_session")
     assert (
         client.post(
-            "/api/auth/login", json={"email": identity["email"], "password": identity["password"]}
+            "/api/auth/login",
+            json={"email": identity["email"], "password": identity["password"]},
         ).status_code
         == 200
     )
@@ -243,6 +269,8 @@ def test_logout_all_revokes_every_cookie(client, identity):
     assert client.post("/api/auth/logout-all").status_code == 200
     for cookie in (first, second):
         assert (
-            client.get("/api/me", headers={"cookie": f"adjutant_session={cookie}"}).status_code
+            client.get(
+                "/api/me", headers={"cookie": f"adjutant_session={cookie}"}
+            ).status_code
             == 401
         )

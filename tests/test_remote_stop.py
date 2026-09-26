@@ -51,7 +51,10 @@ def provider_row(channel, paused):
             "code": 0,
             "data": {
                 "list": [
-                    {"campaign_id": "123", "operation_status": "DISABLE" if paused else "ENABLE"}
+                    {
+                        "campaign_id": "123",
+                        "operation_status": "DISABLE" if paused else "ENABLE",
+                    }
                 ]
             },
         }
@@ -65,7 +68,11 @@ def provider_row(channel, paused):
             "campaigns": [{"sub_request_status": "SUCCESS", "campaign": row}],
         }
     if channel == "amazon_ads":
-        return {"campaigns": [{"campaignId": "123", "state": "PAUSED" if paused else "ENABLED"}]}
+        return {
+            "campaigns": [
+                {"campaignId": "123", "state": "PAUSED" if paused else "ENABLED"}
+            ]
+        }
     return row
 
 
@@ -91,7 +98,9 @@ def test_pause_requires_independent_read_back_for_every_channel(channel):
                 {"op": "replace", "path": "/status", "value": "PAUSED"}
             ]
         if channel in {"google_ads", "youtube"}:
-            assert json.loads(request.content)["operations"][0]["updateMask"] == "status"
+            assert (
+                json.loads(request.content)["operations"][0]["updateMask"] == "status"
+            )
         return httpx.Response(200, json={})
 
     async def exercise():
@@ -104,7 +113,11 @@ def test_pause_requires_independent_read_back_for_every_channel(channel):
                     "123",
                     {"customer_id": "789", "ad_product": "SPONSORED_PRODUCTS"},
                 ),
-                {"developer_token": "test-developer", "client_id": "test-client", "region": "NA"},
+                {
+                    "developer_token": "test-developer",
+                    "client_id": "test-client",
+                    "region": "NA",
+                },
                 {"access_token": "test-token"},
             )
             result = await control.pause()
@@ -140,7 +153,10 @@ def test_resume_requires_independent_read_back_for_every_channel(channel):
                 {"op": "replace", "path": "/status", "value": "ACTIVE"}
             ]
         if channel in {"google_ads", "youtube"}:
-            assert json.loads(request.content)["operations"][0]["update"]["status"] == "ENABLED"
+            assert (
+                json.loads(request.content)["operations"][0]["update"]["status"]
+                == "ENABLED"
+            )
         return httpx.Response(200, json={})
 
     async def exercise():
@@ -153,7 +169,11 @@ def test_resume_requires_independent_read_back_for_every_channel(channel):
                     "123",
                     {"customer_id": "789", "ad_product": "SPONSORED_PRODUCTS"},
                 ),
-                {"developer_token": "test-developer", "client_id": "test-client", "region": "NA"},
+                {
+                    "developer_token": "test-developer",
+                    "client_id": "test-client",
+                    "region": "NA",
+                },
                 {"access_token": "test-token"},
             )
             result = await control.resume()
@@ -165,7 +185,6 @@ def test_resume_requires_independent_read_back_for_every_channel(channel):
             assert len(calls) == 1
 
     asyncio.run(exercise())
-
 
 
 @pytest.mark.parametrize(
@@ -187,13 +206,17 @@ def test_provider_failures_never_return_verified_pause(failure):
         if failure == "unauthorized":
             return httpx.Response(401, json={"error": "secret-token-never-display"})
         if failure == "redirect":
-            return httpx.Response(302, headers={"Location": "https://untrusted.example/token"})
+            return httpx.Response(
+                302, headers={"Location": "https://untrusted.example/token"}
+            )
         if request.method == "POST":
             return httpx.Response(
                 200,
-                json={"partialFailureError": {"message": "secret-token-never-display"}}
-                if failure == "partial_failure"
-                else {},
+                json=(
+                    {"partialFailureError": {"message": "secret-token-never-display"}}
+                    if failure == "partial_failure"
+                    else {}
+                ),
             )
         return httpx.Response(
             200,
@@ -211,7 +234,10 @@ def test_provider_failures_never_return_verified_pause(failure):
             transport=httpx.MockTransport(provider), follow_redirects=False
         ) as client:
             control = CampaignControl(
-                client, CampaignTarget("meta", "456", "123", {}), {}, {"access_token": "test-token"}
+                client,
+                CampaignTarget("meta", "456", "123", {}),
+                {},
+                {"access_token": "test-token"},
             )
             with pytest.raises(DomainError) as raised:
                 await control.pause()
@@ -238,7 +264,9 @@ def managed_campaign(admin, brand, channel):
     return connection, campaign
 
 
-def test_all_missing_credentials_report_failures_without_false_pause(client, admin, brand):
+def test_all_missing_credentials_report_failures_without_false_pause(
+    client, admin, brand
+):
     for channel in CHANNELS:
         managed_campaign(admin, brand, channel)
     started = time.monotonic()
@@ -257,19 +285,25 @@ def test_all_missing_credentials_report_failures_without_false_pause(client, adm
         for i in report["items"]
     )
     assert admin.execute(
-        "SELECT count(*) AS n FROM campaign_object WHERE brand_id=%s AND state='active'", (brand,)
+        "SELECT count(*) AS n FROM campaign_object WHERE brand_id=%s AND state='active'",
+        (brand,),
     ).fetchone()["n"] == len(CHANNELS)
     persisted = client.get(f"/api/brands/{brand}/remote-stop").json()
     assert persisted["run"]["id"] == report["run"]["id"]
     assert client.get(f"/api/brands/{uuid4()}/remote-stop").status_code == 404
     assert admin.execute(
-        "SELECT count(*) AS n FROM action WHERE brand_id=%s AND action_type='pause'", (brand,)
+        "SELECT count(*) AS n FROM action WHERE brand_id=%s AND action_type='pause'",
+        (brand,),
     ).fetchone()["n"] == len(CHANNELS)
 
 
-def test_stop_includes_unselected_managed_accounts_and_exposes_orphans(client, admin, brand):
+def test_stop_includes_unselected_managed_accounts_and_exposes_orphans(
+    client, admin, brand
+):
     connection, campaign = managed_campaign(admin, brand, "meta")
-    admin.execute("UPDATE channel_connection SET selected=false WHERE id=%s", (connection,))
+    admin.execute(
+        "UPDATE channel_connection SET selected=false WHERE id=%s", (connection,)
+    )
     child = admin.execute(
         "INSERT INTO "
         "campaign_object(brand_id,connection_id,channel,level,native_id,state,parent_id) "
@@ -282,11 +316,15 @@ def test_stop_includes_unselected_managed_accounts_and_exposes_orphans(client, a
         (brand, connection),
     ).fetchone()["id"]
     response = client.post(
-        f"/api/brands/{brand}/kill", json={"reason": "Stop all formerly selected managed campaigns"}
+        f"/api/brands/{brand}/kill",
+        json={"reason": "Stop all formerly selected managed campaigns"},
     )
     assert response.status_code == 200, response.text
     items = {i["campaign_object_id"]: i for i in response.json()["items"]}
-    assert set(items[str(campaign)]["covered_object_ids"]) == {str(campaign), str(child)}
+    assert set(items[str(campaign)]["covered_object_ids"]) == {
+        str(campaign),
+        str(child),
+    }
     assert items[str(orphan)]["error_code"] == "CampaignParentMissing"
     assert response.json()["remote_pause_verified"] is False
 
@@ -296,7 +334,8 @@ def test_remote_stop_inventory_cannot_cross_account_scope(admin, brand, identity
     run = enqueue_stop(admin, UUID(brand), identity["user"])
     with pytest.raises(psycopg.errors.CheckViolation):
         admin.execute(
-            "UPDATE remote_stop_item SET account_id='other-account' WHERE run_id=%s", (run,)
+            "UPDATE remote_stop_item SET account_id='other-account' WHERE run_id=%s",
+            (run,),
         )
 
 
@@ -315,7 +354,9 @@ def test_durable_runner_executes_saved_work_and_persists_observed_state(
         "app",
         {"client_id": "fixture", "client_secret": "fixture"},
     )
-    write_credential(admin, store, UUID(brand), "meta", "token", {"access_token": "fixture"})
+    write_credential(
+        admin, store, UUID(brand), "meta", "token", {"access_token": "fixture"}
+    )
     admin.execute(
         "INSERT INTO channel_authorization(brand_id,channel,accounts) VALUES(%s,'meta',%s)",
         (brand, Jsonb([{"id": "456"}])),
@@ -361,7 +402,9 @@ def test_durable_runner_executes_saved_work_and_persists_observed_state(
     try:
         with admin.transaction():
             run = enqueue_stop(admin, UUID(brand), identity["user"])
-            admin.execute("UPDATE remote_stop_run SET state='running' WHERE id=%s", (run,))
+            admin.execute(
+                "UPDATE remote_stop_run SET state='running' WHERE id=%s", (run,)
+            )
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             report = client.get(f"/api/brands/{brand}/remote-stop").json()
@@ -382,7 +425,8 @@ def test_durable_runner_executes_saved_work_and_persists_observed_state(
     assert row["state"] == "paused" and row["last_verified_at"]
     assert (
         admin.execute(
-            "SELECT count(*) AS n FROM action WHERE brand_id=%s AND action_type='pause'", (brand,)
+            "SELECT count(*) AS n FROM action WHERE brand_id=%s AND action_type='pause'",
+            (brand,),
         ).fetchone()["n"]
         == 1
     )

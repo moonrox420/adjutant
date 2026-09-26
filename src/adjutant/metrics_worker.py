@@ -8,7 +8,6 @@ from uuid import UUID
 
 from psycopg import Connection
 
-from adjutant.db import Database
 from adjutant.metrics import (
     RawMetricFact,
     advance_channel_watermark,
@@ -65,30 +64,50 @@ def sync_brand_channel_metrics(
                     impressions=int(metrics_payload.get("impressions", 0)),
                     clicks=int(metrics_payload.get("clicks", 0)),
                     spend_usd=Decimal(str(metrics_payload.get("spend_usd", "0.00"))),
-                    conversions=Decimal(str(metrics_payload.get("conversions", "0.00"))),
+                    conversions=Decimal(
+                        str(metrics_payload.get("conversions", "0.00"))
+                    ),
                     conversion_value_usd=Decimal(
                         str(metrics_payload.get("conversion_value_usd", "0.00"))
                     ),
-                    frequency=Decimal(str(metrics_payload.get("frequency", "1.00")))
-                    if metrics_payload.get("frequency") is not None
-                    else None,
-                    reach=int(metrics_payload.get("reach", 0))
-                    if metrics_payload.get("reach") is not None
-                    else None,
-                    video_views=int(metrics_payload.get("video_views", 0))
-                    if metrics_payload.get("video_views") is not None
-                    else None,
-                    video_completions=int(metrics_payload.get("video_completions", 0))
-                    if metrics_payload.get("video_completions") is not None
-                    else None,
-                    engagements=int(metrics_payload.get("engagements", 0))
-                    if metrics_payload.get("engagements") is not None
-                    else None,
+                    frequency=(
+                        Decimal(str(metrics_payload.get("frequency", "1.00")))
+                        if metrics_payload.get("frequency") is not None
+                        else None
+                    ),
+                    reach=(
+                        int(metrics_payload.get("reach", 0))
+                        if metrics_payload.get("reach") is not None
+                        else None
+                    ),
+                    video_views=(
+                        int(metrics_payload.get("video_views", 0))
+                        if metrics_payload.get("video_views") is not None
+                        else None
+                    ),
+                    video_completions=(
+                        int(metrics_payload.get("video_completions", 0))
+                        if metrics_payload.get("video_completions") is not None
+                        else None
+                    ),
+                    engagements=(
+                        int(metrics_payload.get("engagements", 0))
+                        if metrics_payload.get("engagements") is not None
+                        else None
+                    ),
                     native_metrics=metrics_payload.get("native_metrics", {}),
-                    attribution_window=str(metrics_payload.get("attribution_window", "7d_click")),
-                    attribution_model=str(metrics_payload.get("attribution_model", "last_click")),
-                    conversion_event=str(metrics_payload.get("conversion_event", "purchase")),
-                    view_through_policy=str(metrics_payload.get("view_through_policy", "none")),
+                    attribution_window=str(
+                        metrics_payload.get("attribution_window", "7d_click")
+                    ),
+                    attribution_model=str(
+                        metrics_payload.get("attribution_model", "last_click")
+                    ),
+                    conversion_event=str(
+                        metrics_payload.get("conversion_event", "purchase")
+                    ),
+                    view_through_policy=str(
+                        metrics_payload.get("view_through_policy", "none")
+                    ),
                 )
                 raw_facts.append(fact)
 

@@ -47,9 +47,13 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
         raise ValueError("Gateway service secret must have at least 32 characters")
     encoded_keys = json.loads(config.public_keys_path.read_text(encoding="utf-8"))
     keys = {
-        key_id: base64.b64decode(value, validate=True) for key_id, value in encoded_keys.items()
+        key_id: base64.b64decode(value, validate=True)
+        for key_id, value in encoded_keys.items()
     }
-    if any(hashlib.sha256(value).hexdigest()[:24] != key_id for key_id, value in keys.items()):
+    if any(
+        hashlib.sha256(value).hexdigest()[:24] != key_id
+        for key_id, value in keys.items()
+    ):
         raise ValueError("Public key identifier does not match its key material")
     authority = SpendAuthority(keys)
     db = Database(config.database_url.get_secret_value())
@@ -64,29 +68,46 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
                     conn.execute("SELECT current_user AS name").fetchone()["name"]
                     != "adjutant_gateway"
                 ):
-                    raise RuntimeError("The gateway requires the adjutant_gateway database role")
+                    raise RuntimeError(
+                        "The gateway requires the adjutant_gateway database role"
+                    )
             yield
         finally:
             db.pool.close()
 
     app = FastAPI(
-        title="Adjutant channel gateway", lifespan=lifespan, docs_url=None, redoc_url=None
+        title="Adjutant channel gateway",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
     )
 
     def authenticate(authorization: Annotated[str | None, Header()] = None) -> None:
-        if not authorization or not hmac.compare_digest(authorization, f"Bearer {secret}"):
+        if not authorization or not hmac.compare_digest(
+            authorization, f"Bearer {secret}"
+        ):
             raise DomainError(
                 "Unauthorized", "A valid gateway service credential is required.", 401
             )
 
     @app.exception_handler(DomainError)
     async def domain_error(request: Any, exc: DomainError) -> JSONResponse:
-        return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, exc.status)
+        return JSONResponse(
+            {"error": {"code": exc.code, "message": exc.message}}, exc.status
+        )
 
     @app.exception_handler(RequestValidationError)
-    async def validation_error(request: Any, exc: RequestValidationError) -> JSONResponse:
+    async def validation_error(
+        request: Any, exc: RequestValidationError
+    ) -> JSONResponse:
         return JSONResponse(
-            {"error": {"code": "InvalidSpendIntent", "message": "Spend intent is invalid."}}, 422
+            {
+                "error": {
+                    "code": "InvalidSpendIntent",
+                    "message": "Spend intent is invalid.",
+                }
+            },
+            422,
         )
 
     @app.exception_handler(psycopg.Error)
@@ -129,10 +150,14 @@ def create_app(settings: GatewaySettings | None = None) -> FastAPI:
     def consume_launch(brand_id: UUID, authorization_id: UUID) -> dict[str, Any]:
         try:
             with db.transaction(extra_brand=brand_id) as conn:
-                return consume_launch_authorization(conn, keys, brand_id, authorization_id)
+                return consume_launch_authorization(
+                    conn, keys, brand_id, authorization_id
+                )
         except DomainError as exc:
             if exc.code == "LaunchTokenReplay":
-                logger.error("security.launch_token_replay", extra={"brand_id": str(brand_id)})
+                logger.error(
+                    "security.launch_token_replay", extra={"brand_id": str(brand_id)}
+                )
                 with db.transaction(extra_brand=brand_id) as conn:
                     action = conn.execute(
                         "INSERT INTO action(brand_id,actor_kind,action_type,target_kind,target_id,"

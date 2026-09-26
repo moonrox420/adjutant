@@ -113,9 +113,15 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
             lock_active_session(conn, token_hash)
             brand = locked_brand(conn, data.brand_id)
             if job_id is not None:
-                job = one(conn, "SELECT cancel_requested_at FROM studio_job WHERE id=%s", (job_id,))
+                job = one(
+                    conn,
+                    "SELECT cancel_requested_at FROM studio_job WHERE id=%s",
+                    (job_id,),
+                )
                 if job["cancel_requested_at"]:
-                    raise DomainError("GenerationCancelled", "Studio generation cancelled.", 409)
+                    raise DomainError(
+                        "GenerationCancelled", "Studio generation cancelled.", 409
+                    )
             require_role(conn, data.brand_id, EDIT_ROLES)
             generation_gate(conn, brand)
             image_provider = visual_generator(conn, data.brand_id, config)
@@ -195,7 +201,9 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
             ).fetchone()
         try:
             supplied = data.url_or_prompt.strip()
-            if "://" not in supplied and re.fullmatch(r"[\w.-]+\.[a-zA-Z]{2,}(/\S*)?", supplied):
+            if "://" not in supplied and re.fullmatch(
+                r"[\w.-]+\.[a-zA-Z]{2,}(/\S*)?", supplied
+            ):
                 supplied = "https://" + supplied
             source_url = None
             context_text = supplied
@@ -211,19 +219,26 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
                 "business_context": context_text,
                 "facts": facts,
                 "constraints": constraints,
-                "brand_understanding": understanding["document"] if understanding else None,
+                "brand_understanding": (
+                    understanding["document"] if understanding else None
+                ),
             }
             fingerprint = digest(context)
             if concept:
                 context["creative_direction"] = concept
                 context["previous_concepts_to_differ_from"] = [
-                    {"headline": p["meta"]["headline"], "visual": p["meta"]["image_prompt"]}
+                    {
+                        "headline": p["meta"]["headline"],
+                        "visual": p["meta"]["image_prompt"],
+                    }
                     for p in previous or []
                 ]
             if checkpoint.get("copy"):
                 if checkpoint["fingerprint"] != fingerprint:
                     raise DomainError(
-                        "BrandChanged", "Brand context changed. Start a new generation.", 409
+                        "BrandChanged",
+                        "Brand context changed. Start a new generation.",
+                        409,
                     )
                 bundle = AdCopyBundle.model_validate(checkpoint["copy"])
             elif resume_id is not None:
@@ -289,7 +304,9 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
                 header, encoded = image_uri.split(",", 1)
                 mime = header.removeprefix("data:").removesuffix(";base64")
                 content = base64.b64decode(encoded, validate=True)
-                checkpoint.update(image_key=storage.put(data.brand_id, content), image_mime=mime)
+                checkpoint.update(
+                    image_key=storage.put(data.brand_id, content), image_mime=mime
+                )
                 with db.transaction(actor) as conn:
                     conn.execute(
                         "UPDATE studio_draft SET work_checkpoint=%s WHERE id=%s",
@@ -367,7 +384,8 @@ def studio_generator(db: Database, config: Settings, storage: ObjectStore):
                     ),
                 )
                 conn.execute(
-                    "UPDATE brand SET brand_graph_confirmed_at=now() WHERE id=%s", (data.brand_id,)
+                    "UPDATE brand SET brand_graph_confirmed_at=now() WHERE id=%s",
+                    (data.brand_id,),
                 )
                 for ratio in SIZES:
                     persist_render(conn, storage, data.brand_id, row, ratio)
@@ -461,7 +479,9 @@ def campaign_router(
             return draft_response(row, storage, conn)
 
     @router.put("/api/brands/{brand_id}/studio/{draft_id}")
-    def edit(brand_id: UUID, draft_id: UUID, data: DraftEdit, actor: actor_type) -> dict:
+    def edit(
+        brand_id: UUID, draft_id: UUID, data: DraftEdit, actor: actor_type
+    ) -> dict:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, EDIT_ROLES)
@@ -473,7 +493,9 @@ def campaign_router(
             )
             if row["revision"] != data.expected_revision:
                 raise DomainError(
-                    "RevisionConflict", "This ad was edited elsewhere. Reload before saving.", 409
+                    "RevisionConflict",
+                    "This ad was edited elsewhere. Reload before saving.",
+                    409,
                 )
             if (
                 row.get("job_id")
@@ -483,7 +505,9 @@ def campaign_router(
                 ).fetchone()
             ):
                 raise DomainError(
-                    "GenerationInProgress", "Wait for the concept set before editing its copy.", 409
+                    "GenerationInProgress",
+                    "Wait for the concept set before editing its copy.",
+                    409,
                 )
             document = {
                 **row["document"],
@@ -495,7 +519,11 @@ def campaign_router(
                 "UPDATE studio_draft SET "
                 "document=%s,scene_graph=%s,revision=revision+1,updated_at=now() WHERE id=%s "
                 "RETURNING *",
-                (Jsonb(document), Jsonb(scene_graph(document, row["image_key"])), draft_id),
+                (
+                    Jsonb(document),
+                    Jsonb(scene_graph(document, row["image_key"])),
+                    draft_id,
+                ),
             )
             audit(
                 conn,

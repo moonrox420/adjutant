@@ -9,7 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Explicit runtime configuration; secrets are never included in repr output."""
 
-    model_config = SettingsConfigDict(env_prefix="ADJUTANT_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="ADJUTANT_", env_file=".env", extra="ignore"
+    )
     database_url: SecretStr
     workflow_enabled: bool = True
     object_store_path: Path = Path(".local/objects")
@@ -74,7 +76,9 @@ class Settings(BaseSettings):
                 and approval.hostname not in {"localhost", "127.0.0.1", "::1"}
             )
         ):
-            raise ValueError("APPROVAL_URL requires HTTPS outside loopback and must be an origin")
+            raise ValueError(
+                "APPROVAL_URL requires HTTPS outside loopback and must be an origin"
+            )
         gateway = urlsplit(self.gateway_url)
         if (
             gateway.scheme not in {"http", "https"}
@@ -89,12 +93,18 @@ class Settings(BaseSettings):
                 and gateway.hostname not in {"localhost", "127.0.0.1", "::1"}
             )
         ):
-            raise ValueError("GATEWAY_URL requires HTTPS outside loopback and must be an origin")
+            raise ValueError(
+                "GATEWAY_URL requires HTTPS outside loopback and must be an origin"
+            )
         if self.mail_transport == "smtp" and not self.smtp_host:
             raise ValueError("SMTP_HOST is required for SMTP account delivery")
         if origin.hostname not in {"localhost", "127.0.0.1", "::1"}:
             if origin.scheme != "https" or not self.secure_cookies:
-                raise ValueError("Consumer deployments require HTTPS and SECURE_COOKIES=true")
+                raise ValueError(
+                    "Consumer deployments require HTTPS and SECURE_COOKIES=true"
+                )
             if self.mail_transport != "smtp" or not self.worker_database_url:
-                raise ValueError("Consumer deployments require SMTP and WORKER_DATABASE_URL")
+                raise ValueError(
+                    "Consumer deployments require SMTP and WORKER_DATABASE_URL"
+                )
         return self

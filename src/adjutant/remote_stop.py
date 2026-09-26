@@ -42,7 +42,10 @@ def enqueue_stop(conn: Connection, brand_id: UUID, actor_id: UUID) -> UUID:
         visited = {obj["id"]}
         while root["level"] != "campaign" and root["parent_id"] in by_id:
             parent = by_id[root["parent_id"]]
-            if parent["id"] in visited or parent["connection_id"] != obj["connection_id"]:
+            if (
+                parent["id"] in visited
+                or parent["connection_id"] != obj["connection_id"]
+            ):
                 break
             visited.add(parent["id"])
             root = parent
@@ -65,15 +68,18 @@ def enqueue_stop(conn: Connection, brand_id: UUID, actor_id: UUID) -> UUID:
                 covered,
                 "failed" if missing_parent else "pending",
                 "CampaignParentMissing" if missing_parent else None,
-                "The managed object has no valid campaign ancestor. Pause it in the platform "
-                "console."
-                if missing_parent
-                else None,
+                (
+                    "The managed object has no valid campaign ancestor. Pause it in the platform "
+                    "console."
+                    if missing_parent
+                    else None
+                ),
             ),
         )
     if not roots:
         conn.execute(
-            "UPDATE remote_stop_run SET state='completed',finished_at=now() WHERE id=%s", (run_id,)
+            "UPDATE remote_stop_run SET state='completed',finished_at=now() WHERE id=%s",
+            (run_id,),
         )
     return run_id
 
@@ -81,7 +87,9 @@ def enqueue_stop(conn: Connection, brand_id: UUID, actor_id: UUID) -> UUID:
 def stop_report(db: Database, actor: Principal, brand_id: UUID, run_id: UUID) -> dict:
     with db.transaction(actor) as conn:
         run = one(
-            conn, "SELECT * FROM remote_stop_run WHERE brand_id=%s AND id=%s", (brand_id, run_id)
+            conn,
+            "SELECT * FROM remote_stop_run WHERE brand_id=%s AND id=%s",
+            (brand_id, run_id),
         )
         items = conn.execute(
             "SELECT * FROM remote_stop_item WHERE brand_id=%s AND run_id=%s ORDER BY "
@@ -92,7 +100,8 @@ def stop_report(db: Database, actor: Principal, brand_id: UUID, run_id: UUID) ->
         "run": run,
         "items": items,
         "scope": "managed_campaigns",
-        "remote_pause_verified": bool(items) and all(i["state"] == "verified" for i in items),
+        "remote_pause_verified": bool(items)
+        and all(i["state"] == "verified" for i in items),
     }
 
 
@@ -102,7 +111,10 @@ def wait_for_stop(
     deadline = time.monotonic() + timeout
     while True:
         report = stop_report(db, actor, brand_id, run_id)
-        if report["run"]["state"] not in {"queued", "running"} or time.monotonic() >= deadline:
+        if (
+            report["run"]["state"] not in {"queued", "running"}
+            or time.monotonic() >= deadline
+        ):
             return report
         time.sleep(0.1)
 
@@ -118,7 +130,9 @@ def record_result(
     """Commit observed state, audit, and activity event together; never infer child status."""
     with db.transaction(extra_brand=brand_id) as conn:
         current = one(
-            conn, "SELECT state FROM remote_stop_item WHERE id=%s FOR UPDATE", (item["id"],)
+            conn,
+            "SELECT state FROM remote_stop_item WHERE id=%s FOR UPDATE",
+            (item["id"],),
         )
         if current["state"] != "pending":
             return
@@ -161,9 +175,11 @@ def record_result(
                 item["channel"],
                 item["native_id"],
                 Jsonb(detail),
-                error.message
-                if error
-                else "Provider campaign state independently verified after brand stop",
+                (
+                    error.message
+                    if error
+                    else "Provider campaign state independently verified after brand stop"
+                ),
                 Jsonb(
                     {
                         "operation": "resume",
@@ -235,14 +251,19 @@ async def pause_items(
             except Exception as exc:
                 logger.error(
                     "remote_stop.provider_failed",
-                    extra={"error_type": type(exc).__name__, "item_id": str(item["id"])},
+                    extra={
+                        "error_type": type(exc).__name__,
+                        "item_id": str(item["id"]),
+                    },
                 )
                 error = DomainError(
                     "PauseExecutionFailed",
                     "Pause failed before remote verification. Inspect service logs and retry.",
                     502,
                 )
-            await asyncio.to_thread(record_result, db, events, brand_id, item, result, error)
+            await asyncio.to_thread(
+                record_result, db, events, brand_id, item, result, error
+            )
 
         await asyncio.gather(*(pause_one(item) for item in items))
 
@@ -254,16 +275,21 @@ def execute_stop(
     deadline = time.monotonic() + 45
     with db.pool.connection() as lock:
         acquired = lock.execute(
-            "SELECT pg_try_advisory_lock(hashtextextended(%s,28)) AS acquired", (str(run_id),)
+            "SELECT pg_try_advisory_lock(hashtextextended(%s,28)) AS acquired",
+            (str(run_id),),
         ).fetchone()["acquired"]
         if not acquired:
             return
         try:
             with db.transaction(extra_brand=brand_id) as conn:
-                run = one(conn, "SELECT state FROM remote_stop_run WHERE id=%s", (run_id,))
+                run = one(
+                    conn, "SELECT state FROM remote_stop_run WHERE id=%s", (run_id,)
+                )
                 if run["state"] not in {"queued", "running"}:
                     return
-                conn.execute("UPDATE remote_stop_run SET state='running' WHERE id=%s", (run_id,))
+                conn.execute(
+                    "UPDATE remote_stop_run SET state='running' WHERE id=%s", (run_id,)
+                )
                 items = conn.execute(
                     "SELECT i.*,o.native_payload FROM remote_stop_item i JOIN campaign_object "
                     "o ON o.id=i.campaign_object_id WHERE i.run_id=%s AND i.state='pending'",
@@ -294,7 +320,12 @@ def execute_stop(
                             (brand_id, item["channel"]),
                         )
                         metadata = next(
-                            (a for a in auth["accounts"] if a["id"] == item["account_id"]), {}
+                            (
+                                a
+                                for a in auth["accounts"]
+                                if a["id"] == item["account_id"]
+                            ),
+                            {},
                         )
                         credentials[connection_id] = (app, token, metadata)
                 except DomainError as exc:
@@ -302,10 +333,16 @@ def execute_stop(
             pending = []
             for item in items:
                 if item["connection_id"] in errors:
-                    record_result(db, events, brand_id, item, None, errors[item["connection_id"]])
+                    record_result(
+                        db, events, brand_id, item, None, errors[item["connection_id"]]
+                    )
                 else:
                     pending.append(item)
-            asyncio.run(pause_items(db, config, events, brand_id, pending, credentials, deadline))
+            asyncio.run(
+                pause_items(
+                    db, config, events, brand_id, pending, credentials, deadline
+                )
+            )
             with db.transaction(extra_brand=brand_id) as conn:
                 conn.execute(
                     "UPDATE remote_stop_run SET state=CASE WHEN EXISTS(SELECT 1 FROM "
@@ -333,7 +370,9 @@ def execute_stop(
                     (run_id,),
                 )
         finally:
-            lock.execute("SELECT pg_advisory_unlock(hashtextextended(%s,28))", (str(run_id),))
+            lock.execute(
+                "SELECT pg_advisory_unlock(hashtextextended(%s,28))", (str(run_id),)
+            )
 
 
 class RemoteStopRunner:
@@ -342,7 +381,9 @@ class RemoteStopRunner:
     def __init__(self, db: Database, config: Settings, events: EventRegistry):
         self.db, self.config, self.events = db, config, events
         self.stop = threading.Event()
-        self.thread = threading.Thread(target=self.run, name="remote-stop-runner", daemon=True)
+        self.thread = threading.Thread(
+            target=self.run, name="remote-stop-runner", daemon=True
+        )
 
     def start(self) -> None:
         self.thread.start()
@@ -355,10 +396,14 @@ class RemoteStopRunner:
         self.stop.set()
         self.thread.join(timeout=55)
         if self.thread.is_alive():
-            raise RuntimeError("Remote stop worker has not finished its bounded shutdown")
+            raise RuntimeError(
+                "Remote stop worker has not finished its bounded shutdown"
+            )
 
     def run(self) -> None:
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="remote-stop") as pool:
+        with ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="remote-stop"
+        ) as pool:
             active = {}
             while not self.stop.is_set():
                 for key, future in list(active.items()):
@@ -368,12 +413,17 @@ class RemoteStopRunner:
                         except Exception as exc:
                             logger.error(
                                 "remote_stop.worker_failed",
-                                extra={"run_id": str(key), "error_type": type(exc).__name__},
+                                extra={
+                                    "run_id": str(key),
+                                    "error_type": type(exc).__name__,
+                                },
                             )
                         del active[key]
                 try:
                     with self.db.transaction() as conn:
-                        rows = conn.execute("SELECT * FROM runnable_remote_stops()").fetchall()
+                        rows = conn.execute(
+                            "SELECT * FROM runnable_remote_stops()"
+                        ).fetchall()
                     for row in rows:
                         if len(active) >= 2:
                             break
@@ -388,6 +438,7 @@ class RemoteStopRunner:
                             )
                 except Exception as exc:
                     logger.error(
-                        "remote_stop.poll_failed", extra={"error_type": type(exc).__name__}
+                        "remote_stop.poll_failed",
+                        extra={"error_type": type(exc).__name__},
                     )
                 self.stop.wait(0.2)

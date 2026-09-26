@@ -1,11 +1,6 @@
 """S4.3 and S4.4 verification: dynamic capability registry limits and field-specific preflight rejection."""
 
-from uuid import uuid4
-
-import pytest
-
 from adjutant.adapters.meta_build import load_placement_spec_limits, preflight
-from test_autonomy import selected_account
 
 
 def test_meta_preflight_specific_character_limit_violations():
@@ -161,7 +156,8 @@ def test_placement_spec_limits_loaded_from_data_registry(admin):
                 "storage_key": "dummy-key",
                 "copy": {
                     "meta": {
-                        "headline": "H" * 30,  # exceeds custom 25 limit, but would be valid under default 40
+                        "headline": "H"
+                        * 30,  # exceeds custom 25 limit, but would be valid under default 40
                         "primary_text": "Valid primary text",
                         "description": "Valid desc",
                     }
@@ -175,13 +171,19 @@ def test_placement_spec_limits_loaded_from_data_registry(admin):
     assert "exceeds allowed limit of 25 characters" in failures[0]
 
 
-def test_deployment_preflight_reports_character_limits(client, admin, brand, plan, selected_account):
+def test_deployment_preflight_reports_character_limits(
+    client, admin, brand, plan, selected_account
+):
     """S4.3/S4.4: deployment_preflight endpoint checks creative copy against placement_spec registry limits."""
     preflight_res = client.post(f"/api/brands/{brand}/plans/{plan['id']}/preflight")
     assert preflight_res.status_code == 200, preflight_res.text
     data = preflight_res.json()
     char_check = next(
-        (c for c in data["checks"] if c["key"] == "character_limits" and c["channel"] == "meta"),
+        (
+            c
+            for c in data["checks"]
+            if c["key"] == "character_limits" and c["channel"] == "meta"
+        ),
         None,
     )
     assert char_check is not None

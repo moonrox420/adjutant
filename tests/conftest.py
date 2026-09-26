@@ -1,22 +1,37 @@
+import io
 import secrets
+import socket
 import sys
+import threading
+import time
 from pathlib import Path
 from urllib.parse import quote
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
+from PIL import Image
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from adjutant.api import create_app
 from adjutant.config import Settings
 from adjutant.credentials import provision_master_key
-from adjutant.security import password_hash
+from adjutant.campaign_api import scene_graph
+from adjutant.gateway_api import GatewaySettings, create_app as create_gateway_app
+from adjutant.security import digest, password_hash
+from adjutant.storage import ObjectStore
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap import provision_runtime, provision_worker  # noqa: E402
+from bootstrap import (  # noqa: E402
+    provision_gateway,
+    provision_gateway_files,
+    provision_runtime,
+    provision_worker,
+)
 from migrate import migrate  # noqa: E402
 from test_approval_server import approval_test_server  # noqa: E402
 
@@ -39,7 +54,9 @@ def database_urls():
 
 @pytest.fixture
 def admin(database_urls):
-    with psycopg.connect(database_urls[0], autocommit=True, row_factory=dict_row) as conn:
+    with psycopg.connect(
+        database_urls[0], autocommit=True, row_factory=dict_row
+    ) as conn:
         conn.execute("SET search_path=adjutant,public")
         yield conn
 
@@ -65,7 +82,9 @@ def identity(admin):
         "INSERT INTO account(id,account_type,display_name) VALUES(%s,'agency','Test agency')",
         (account,),
     )
-    admin.execute("INSERT INTO local_credential VALUES(%s,%s)", (user, password_hash(password)))
+    admin.execute(
+        "INSERT INTO local_credential VALUES(%s,%s)", (user, password_hash(password))
+    )
     admin.execute(
         """INSERT INTO seat(account_id,user_id,role,accepted_at,
                   approval_daily_usd_cap,approval_total_usd_cap)
@@ -88,9 +107,12 @@ def client(database_urls, identity, approval_server, tmp_path):
         approval_url=approval_server,
     )
     with TestClient(create_app(config)) as client:
-        client.headers.update({"x-adjutant-client": "console", "origin": "http://localhost:3000"})
+        client.headers.update(
+            {"x-adjutant-client": "console", "origin": "http://localhost:3000"}
+        )
         response = client.post(
-            "/api/auth/login", json={"email": identity["email"], "password": identity["password"]}
+            "/api/auth/login",
+            json={"email": identity["email"], "password": identity["password"]},
         )
         assert response.status_code == 200, response.text
         yield client
@@ -147,7 +169,11 @@ def plan_input():
         "audience": "Local homeowners needing emergency plumbing",
         "hypothesis": "Clear availability information increases qualified repair inquiries.",
         "allocations": [
-            {"channel": "meta", "monthly_budget_usd": "3000.00", "daily_budget_usd": "100.00"}
+            {
+                "channel": "meta",
+                "monthly_budget_usd": "3000.00",
+                "daily_budget_usd": "100.00",
+            }
         ],
     }
 
@@ -167,3 +193,98 @@ def approval(client, confirmed_brand, plan):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.fixture
+def launch_gateway(database_urls, client):
+    password = provision_gateway_files(ROOT / ".local")
+    with psycopg.connect(database_urls[0]) as conn:
+        provision_gateway(conn, password)
+    url = f"postgresql://adjutant_gateway:{quote(password)}@{database_urls[0].split('@', 1)[1]}"
+    server = uvicorn.Server(
+        uvicorn.Config(
+            create_gateway_app(GatewaySettings(database_url=url)), log_level="warning"
+        )
+    )
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(32)
+        thread = threading.Thread(
+            target=server.run, kwargs={"sockets": [listener]}, daemon=True
+        )
+        thread.start()
+        try:
+            deadline = time.monotonic() + 15
+            while not server.started:
+                if not thread.is_alive() or time.monotonic() >= deadline:
+                    raise RuntimeError("Gateway did not start")
+                time.sleep(0.02)
+            client.app.state.config.gateway_url = (
+                f"http://127.0.0.1:{listener.getsockname()[1]}"
+            )
+            yield url
+        finally:
+            server.should_exit = True
+            thread.join(timeout=20)
+            assert not thread.is_alive(), "Gateway did not stop"
+
+
+@pytest.fixture
+def selected_account(admin, brand, plan, client, identity):
+    document = {
+        "brand_name": "Test Plumbing",
+        "destination_url": "https://example.com",
+        "meta": {
+            "headline": "Plumbing repairs",
+            "primary_text": "Local residential plumbing.",
+            "description": "Book a service visit.",
+            "cta": "Contact us",
+            "image_prompt": "Copper pipes",
+        },
+        "google": {
+            "headlines": ["Plumbing repairs", "Local service", "Request a visit"],
+            "descriptions": [
+                "Get help with your home's plumbing.",
+                "Contact our team.",
+            ],
+            "destination_path": "repairs",
+        },
+        "tiktok": {
+            "hook": "Need plumbing help?",
+            "visual_script": "Show a tap being repaired.",
+            "cta": "Contact us",
+        },
+    }
+    buffer = io.BytesIO()
+    Image.new("RGB", (128, 128), "#456789").save(buffer, format="PNG")
+    store = ObjectStore(client.app.state.config.object_store_path)
+    key = store.put(UUID(brand), buffer.getvalue())
+    context = admin.execute(
+        "INSERT INTO brand_context(brand_id,version,input_hash,source_kind,document) "
+        "VALUES(%s,1,%s,'prompt','{}') RETURNING id",
+        (brand, digest(document)),
+    ).fetchone()["id"]
+    draft = admin.execute(
+        "INSERT INTO studio_draft(brand_id,context_id,actor_user_id,state,document,scene_graph,"
+        "image_key,image_mime,image_model) VALUES(%s,%s,%s,'completed',%s,%s,%s,'image/png',"
+        "'local-test-fixture') RETURNING id",
+        (
+            brand,
+            context,
+            identity["user"],
+            Jsonb(document),
+            Jsonb(scene_graph(document, key)),
+            key,
+        ),
+    ).fetchone()["id"]
+    attached = client.post(
+        f"/api/brands/{brand}/studio/{draft}/attach",
+        json={"expected_revision": 1, "plan_id": plan["id"]},
+    )
+    assert attached.status_code == 201, attached.text
+    return admin.execute(
+        "INSERT INTO channel_connection(brand_id,channel,external_ad_account_id,"
+        "external_account_name,selected,health,verified_at) "
+        "VALUES(%s,'meta',%s,'Isolated authorization fixture',true,'healthy',now()) RETURNING id",
+        (brand, str(uuid4())),
+    ).fetchone()["id"]

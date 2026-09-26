@@ -41,13 +41,23 @@ def read_credential(
 
 
 def write_credential(
-    conn: Connection, store: CredentialStore, brand_id: UUID, channel: str, kind: str, value: dict
+    conn: Connection,
+    store: CredentialStore,
+    brand_id: UUID,
+    channel: str,
+    kind: str,
+    value: dict,
 ) -> None:
     store.write(conn, brand_id, credential_name(channel, kind), json.dumps(value))
 
 
 def authorization_for(
-    conn: Connection, config: Settings, brand_id: UUID, channel: str, *, refresh_timeout: float = 30
+    conn: Connection,
+    config: Settings,
+    brand_id: UUID,
+    channel: str,
+    *,
+    refresh_timeout: float = 30,
 ) -> tuple[dict, dict]:
     """Caller holds the brand lock so refresh and disconnect cannot race."""
     store = CredentialStore(config.credential_master_key_path)
@@ -65,12 +75,18 @@ def authorization_for(
         expiry = token.get("expires_at")
         conn.execute(
             "UPDATE channel_connection SET token_expires_at=%s WHERE brand_id=%s AND channel=%s",
-            (datetime.fromtimestamp(expiry, UTC) if expiry else None, brand_id, channel),
+            (
+                datetime.fromtimestamp(expiry, UTC) if expiry else None,
+                brand_id,
+                channel,
+            ),
         )
     return app, token
 
 
-def invalidate_connection(conn: Connection, brand_id: UUID, connection_id: UUID, reason: str) -> None:
+def invalidate_connection(
+    conn: Connection, brand_id: UUID, connection_id: UUID, reason: str
+) -> None:
     """A remote authorization failure revokes both displayed access and launch generation."""
     conn.execute(
         "UPDATE channel_connection SET health='revoked',selected=false,verified_at=NULL,"

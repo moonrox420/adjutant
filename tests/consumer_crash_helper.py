@@ -17,9 +17,9 @@ def main():
     with psycopg.connect(config["url"], autocommit=True, row_factory=dict_row) as conn:
         with conn.transaction():
             if config["kind"] == "activity":
-                while conn.execute("SELECT adjutant.consume_activity_batch(100) AS n").fetchone()[
-                    "n"
-                ]:
+                while conn.execute(
+                    "SELECT adjutant.consume_activity_batch(100) AS n"
+                ).fetchone()["n"]:
                     continue
             else:
                 item = conn.execute(

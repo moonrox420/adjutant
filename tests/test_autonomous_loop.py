@@ -16,8 +16,10 @@ from adjutant.runner import run_tick
 def create_test_creative(admin, brand):
     import secrets
     from pathlib import Path
-    from adjutant.security import ApprovalSigner
+
     from psycopg.types.json import Jsonb
+
+    from adjutant.security import ApprovalSigner
 
     user = admin.execute("SELECT id FROM app_user LIMIT 1").fetchone()
     user_id = user["id"]
@@ -243,7 +245,13 @@ def test_two_signal_fatigue_condition_does_not_trigger_refresh(admin, brand, cli
     # Database level check: attempting to insert finding with only 2 signals violates check constraint
     obj_id = uuid4()
     with pytest.raises(Exception):
-        record_finding(admin, UUID(brand), "fatigue", obj_id, ["frequency_above_3", "ctr_declining_15pct"])
+        record_finding(
+            admin,
+            UUID(brand),
+            "fatigue",
+            obj_id,
+            ["frequency_above_3", "ctr_declining_15pct"],
+        )
 
     # Verify with 3 signals it succeeds
     signals_3 = FatigueSignals(
@@ -254,7 +262,11 @@ def test_two_signal_fatigue_condition_does_not_trigger_refresh(admin, brand, cli
         half_life_exceeded=False,
     )
     assert len(signals_3.active_signals()) == 3
-    assert detect_fatigue(signals_3) == ["frequency_above_3", "ctr_declining_15pct", "cpa_rising_20pct"]
+    assert detect_fatigue(signals_3) == [
+        "frequency_above_3",
+        "ctr_declining_15pct",
+        "cpa_rising_20pct",
+    ]
 
 
 def test_guardrail_breach_rejected_and_recorded_never_executed(admin, brand):
@@ -267,7 +279,9 @@ def test_guardrail_breach_rejected_and_recorded_never_executed(admin, brand):
     ).fetchone()["id"]
 
     # Set daily spend cap to 100 USD
-    admin.execute("UPDATE guardrail SET daily_spend_cap_usd=100.00 WHERE brand_id=%s", (brand,))
+    admin.execute(
+        "UPDATE guardrail SET daily_spend_cap_usd=100.00 WHERE brand_id=%s", (brand,)
+    )
 
     # Breach 1: Proposing daily spend increase that breaches daily_spend_cap_usd
     breaching_spend = {
@@ -400,7 +414,9 @@ def test_budget_never_moves_across_mismatched_comparability_classes(admin, brand
     assert res_matching["approved"] is True
 
 
-def test_budget_increase_exceeding_max_daily_spend_increase_clamped_and_logged(admin, brand):
+def test_budget_increase_exceeding_max_daily_spend_increase_clamped_and_logged(
+    admin, brand
+):
     """S8.7: A budget increase exceeding max_daily_spend_increase_pct is clamped, not rejected, and the clamp is logged."""
     conn_id = setup_active_brand(admin, brand)
     obj_id = admin.execute(
@@ -410,7 +426,10 @@ def test_budget_increase_exceeding_max_daily_spend_increase_clamped_and_logged(a
     ).fetchone()["id"]
 
     # Guardrail has max_daily_spend_increase_pct = 25%
-    admin.execute("UPDATE guardrail SET max_daily_spend_increase_pct=25.0 WHERE brand_id=%s", (brand,))
+    admin.execute(
+        "UPDATE guardrail SET max_daily_spend_increase_pct=25.0 WHERE brand_id=%s",
+        (brand,),
+    )
 
     # Candidate proposes a 60% increase ($100 -> $160)
     candidate = {
@@ -426,7 +445,10 @@ def test_budget_increase_exceeding_max_daily_spend_increase_clamped_and_logged(a
     assert res["approved"] is True
     assert res["params"]["clamped"] is True
     assert res["params"]["proposed_daily_usd"] == "125.00"
-    assert "Clamped spend increase from 60.0% to allowed limit of 25.0%" in res["params"]["clamp_logged_reason"]
+    assert (
+        "Clamped spend increase from 60.0% to allowed limit of 25.0%"
+        in res["params"]["clamp_logged_reason"]
+    )
 
 
 def test_crashed_tick_resume_does_not_double_execute_actions(admin, brand, client):
@@ -446,32 +468,35 @@ def test_crashed_tick_resume_does_not_double_execute_actions(admin, brand, clien
 
     now = datetime(2026, 9, 22, 12, 0, 0, tzinfo=UTC)
     with admin.transaction():
-        record_metric_facts(admin, [
-            RawMetricFact(
-                brand_id=UUID(brand),
-                campaign_object_id=fatigued_ad,
-                channel="meta",
-                date_hour=now - timedelta(days=2),
-                impressions=10000,
-                clicks=200,
-                spend_usd=Decimal("400.00"),
-                conversions=Decimal("10.00"),
-                conversion_value_usd=Decimal("500.00"),
-                frequency=Decimal("3.50"),
-            ),
-            RawMetricFact(
-                brand_id=UUID(brand),
-                campaign_object_id=fatigued_ad,
-                channel="meta",
-                date_hour=now - timedelta(days=10),
-                impressions=10000,
-                clicks=500,
-                spend_usd=Decimal("200.00"),
-                conversions=Decimal("10.00"),
-                conversion_value_usd=Decimal("500.00"),
-                frequency=Decimal("2.00"),
-            ),
-        ])
+        record_metric_facts(
+            admin,
+            [
+                RawMetricFact(
+                    brand_id=UUID(brand),
+                    campaign_object_id=fatigued_ad,
+                    channel="meta",
+                    date_hour=now - timedelta(days=2),
+                    impressions=10000,
+                    clicks=200,
+                    spend_usd=Decimal("400.00"),
+                    conversions=Decimal("10.00"),
+                    conversion_value_usd=Decimal("500.00"),
+                    frequency=Decimal("3.50"),
+                ),
+                RawMetricFact(
+                    brand_id=UUID(brand),
+                    campaign_object_id=fatigued_ad,
+                    channel="meta",
+                    date_hour=now - timedelta(days=10),
+                    impressions=10000,
+                    clicks=500,
+                    spend_usd=Decimal("200.00"),
+                    conversions=Decimal("10.00"),
+                    conversion_value_usd=Decimal("500.00"),
+                    frequency=Decimal("2.00"),
+                ),
+            ],
+        )
 
     config = client.app.state.config
     events = EventRegistry(config.registry_path)
@@ -520,7 +545,9 @@ def test_cross_channel_budget_reallocation_under_comparability(admin, brand):
         (brand, google_conn),
     ).fetchone()["id"]
 
-    admin.execute("UPDATE guardrail SET daily_spend_cap_usd=500.00 WHERE brand_id=%s", (brand,))
+    admin.execute(
+        "UPDATE guardrail SET daily_spend_cap_usd=500.00 WHERE brand_id=%s", (brand,)
+    )
 
     # 1. Attempt cross-channel reallocation across mismatched comparability classes: MUST BE REJECTED
     mismatched_cand = {
@@ -558,4 +585,3 @@ def test_cross_channel_budget_reallocation_under_comparability(admin, brand):
         res_matching = evaluate_guardrails(admin, UUID(brand), matching_cand)
     assert res_matching["approved"] is True
     assert res_matching["state"] == "executed"
-

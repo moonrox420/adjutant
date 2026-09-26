@@ -47,7 +47,12 @@ from adjutant.models import (
     PlanInput,
 )
 from adjutant.processes import generate_in_process, lock_active_session
-from adjutant.remote_stop import RemoteStopRunner, enqueue_stop, stop_report, wait_for_stop
+from adjutant.remote_stop import (
+    RemoteStopRunner,
+    enqueue_stop,
+    stop_report,
+    wait_for_stop,
+)
 from adjutant.research import fetch_website
 from adjutant.revert import execute_revert
 from adjutant.security import (
@@ -115,10 +120,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     db = Database(config.database_url.get_secret_value())
     storage = ObjectStore(config.object_store_path)
     workflows = WorkflowRunner(db, storage) if config.workflow_enabled else None
-    studio_jobs = StudioJobRunner(db, config, storage) if config.workflow_enabled else None
+    studio_jobs = (
+        StudioJobRunner(db, config, storage) if config.workflow_enabled else None
+    )
     events = EventRegistry(config.registry_path)
     campaign_builds = (
-        CampaignBuildRunner(db, config, storage, events) if config.workflow_enabled else None
+        CampaignBuildRunner(db, config, storage, events)
+        if config.workflow_enabled
+        else None
     )
     remote_stops = RemoteStopRunner(db, config, events)
     planner = OllamaPlanner(config.ollama_url)
@@ -184,7 +193,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             invalid_origin = request.method not in {"GET", "HEAD", "OPTIONS"} and (
                 request.headers.get("x-adjutant-client") != "console"
-                or request.headers.get("origin", config.public_origin) != config.public_origin
+                or request.headers.get("origin", config.public_origin)
+                != config.public_origin
             )
             if invalid_origin:
                 response = JSONResponse(
@@ -201,7 +211,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as exc:
             logger.error("request.failed", extra={"error_type": type(exc).__name__})
             response = JSONResponse(
-                {"error": {"code": "InternalError", "message": "Request could not be completed."}},
+                {
+                    "error": {
+                        "code": "InternalError",
+                        "message": "Request could not be completed.",
+                    }
+                },
                 500,
             )
         finally:
@@ -223,10 +238,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(DomainError)
     async def domain_error(request: Request, exc: DomainError) -> JSONResponse:
-        return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, exc.status)
+        return JSONResponse(
+            {"error": {"code": exc.code, "message": exc.message}}, exc.status
+        )
 
     @app.exception_handler(RequestValidationError)
-    async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         messages = []
         for issue in exc.errors():
             field = ".".join(map(str, issue["loc"][1:])).replace("_", " ")
@@ -238,7 +257,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request: Request, exc: psycopg.Error) -> JSONResponse:
-        logger.error("database.operation_failed", extra={"error_type": type(exc).__name__})
+        logger.error(
+            "database.operation_failed", extra={"error_type": type(exc).__name__}
+        )
         if isinstance(exc, psycopg.IntegrityError):
             return JSONResponse(
                 {
@@ -268,13 +289,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.transaction() as conn:
             conn.execute("SELECT 1 FROM plan LIMIT 1")
         if workflows and not workflows.alive:
-            raise DomainError("WorkerUnavailable", "Workflow runner is unavailable.", 503)
+            raise DomainError(
+                "WorkerUnavailable", "Workflow runner is unavailable.", 503
+            )
         if studio_jobs and not studio_jobs.alive:
-            raise DomainError("StudioWorkerUnavailable", "Studio worker is unavailable.", 503)
+            raise DomainError(
+                "StudioWorkerUnavailable", "Studio worker is unavailable.", 503
+            )
         if not remote_stops.alive:
-            raise DomainError("StopWorkerUnavailable", "Remote pause worker is unavailable.", 503)
+            raise DomainError(
+                "StopWorkerUnavailable", "Remote pause worker is unavailable.", 503
+            )
         if campaign_builds and not campaign_builds.thread.is_alive():
-            raise DomainError("CampaignWorkerUnavailable", "Campaign worker is unavailable.", 503)
+            raise DomainError(
+                "CampaignWorkerUnavailable", "Campaign worker is unavailable.", 503
+            )
         return {"status": "ready"}
 
     @app.post("/api/auth/login")
@@ -287,7 +316,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )["allowed"]
         if not permitted:
             raise DomainError(
-                "RateLimited", "Too many sign-in attempts. Try again in 15 minutes.", 429
+                "RateLimited",
+                "Too many sign-in attempts. Try again in 15 minutes.",
+                429,
             )
         with db.transaction() as conn:
             identity = conn.execute(
@@ -296,10 +327,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             encoded = identity["password_hash"] if identity else dummy_password
             valid = password_matches(data.password, encoded)
             if not identity or not valid:
-                raise DomainError("InvalidCredentials", "Email or password is incorrect.", 401)
+                raise DomainError(
+                    "InvalidCredentials", "Email or password is incorrect.", 401
+                )
             token = secrets.token_urlsafe(48)
             conn.execute(
-                "SELECT create_session(%s,%s)", (identity["user_id"], session_digest(token))
+                "SELECT create_session(%s,%s)",
+                (identity["user_id"], session_digest(token)),
             )
         response.set_cookie(
             "adjutant_session",
@@ -322,11 +356,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.delete_cookie("adjutant_session", path="/")
         return {
             "status": "signed_out",
-            **cancellation_report(db, session_digest(request.cookies.get("adjutant_session", ""))),
+            **cancellation_report(
+                db, session_digest(request.cookies.get("adjutant_session", ""))
+            ),
         }
 
     @app.post("/api/auth/logout-all")
-    def logout_all(request: Request, response: Response, actor: Actor) -> dict[str, Any]:
+    def logout_all(
+        request: Request, response: Response, actor: Actor
+    ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             hashes = one(
                 conn,
@@ -369,7 +407,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (actor.user_id,),
             ).fetchall()
             return sorted(
-                [*generation, *studio, *campaigns], key=lambda row: row["started_at"], reverse=True
+                [*generation, *studio, *campaigns],
+                key=lambda row: row["started_at"],
+                reverse=True,
             )[:30]
 
     @app.post("/api/jobs/{run_id}/cancel")
@@ -386,12 +426,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/consumer-activity")
     def consumer_activity(actor: Actor) -> dict[str, Any]:
         with db.transaction(actor) as conn:
-            receipts = conn.execute("""SELECT event_id,event_type,processed_at FROM consumer_receipt
-                ORDER BY processed_at DESC LIMIT 20""").fetchall()
-            processes = conn.execute("""SELECT instance_id,started_at,heartbeat_at,exit_code,
+            receipts = conn.execute(
+                """SELECT event_id,event_type,processed_at FROM consumer_receipt
+                ORDER BY processed_at DESC LIMIT 20"""
+            ).fetchall()
+            processes = conn.execute(
+                """SELECT instance_id,started_at,heartbeat_at,exit_code,
                 exit_verified_at,(heartbeat_at>now()-interval '30 seconds'
                 AND exited_at IS NULL) AS healthy
-                FROM consumer_process ORDER BY started_at DESC LIMIT 5""").fetchall()
+                FROM consumer_process ORDER BY started_at DESC LIMIT 5"""
+            ).fetchall()
         return {
             "receipts": receipts,
             "processes": processes,
@@ -405,9 +449,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             accounts = conn.execute(
                 "SELECT id,display_name,account_type FROM account ORDER BY created_at"
             ).fetchall()
-            seats = conn.execute("""SELECT account_id,brand_id,role,approval_daily_usd_cap,
+            seats = conn.execute(
+                """SELECT account_id,brand_id,role,approval_daily_usd_cap,
                                  approval_total_usd_cap FROM seat WHERE revoked_at IS NULL
-                                 AND accepted_at IS NOT NULL""").fetchall()
+                                 AND accepted_at IS NOT NULL"""
+            ).fetchall()
         return {
             "id": actor.user_id,
             "email": actor.email,
@@ -456,24 +502,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         matrix = []
         for r in rows:
             ch = r["channel"]
-            matrix.append({
-                **r,
-                "access_review_required": reviews_required.get(ch, False),
-                "adapter_status": "production_ready",
-            })
+            matrix.append(
+                {
+                    **r,
+                    "access_review_required": reviews_required.get(ch, False),
+                    "adapter_status": "production_ready",
+                }
+            )
         return matrix
 
     @app.get("/api/brands/{brand_id}/access-applications")
     def list_access_applications(brand_id: UUID, actor: Actor) -> list[dict[str, Any]]:
         with db.transaction(actor) as conn:
-            return conn.execute("""
+            return conn.execute(
+                """
                 SELECT id, brand_id, channel, access_tier, status,
                        filing_date, decision_date, notes, metadata,
                        created_at, updated_at
                 FROM platform_access_application
                 WHERE brand_id=%s
                 ORDER BY channel, created_at DESC
-            """, (brand_id,)).fetchall()
+            """,
+                (brand_id,),
+            ).fetchall()
 
     @app.post("/api/brands/{brand_id}/access-applications", status_code=201)
     def create_access_application(
@@ -481,7 +532,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         filing_dt = payload.filing_date or datetime.now(UTC)
         with db.transaction(actor) as conn:
-            row = conn.execute("""
+            row = conn.execute(
+                """
                 INSERT INTO platform_access_application(
                     brand_id, channel, access_tier, status, filing_date, notes, metadata
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -492,20 +544,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     metadata = EXCLUDED.metadata,
                     updated_at = now()
                 RETURNING *
-            """, (
-                brand_id, payload.channel, payload.access_tier, payload.status,
-                filing_dt, payload.notes, Jsonb(payload.metadata)
-            )).fetchone()
+            """,
+                (
+                    brand_id,
+                    payload.channel,
+                    payload.access_tier,
+                    payload.status,
+                    filing_dt,
+                    payload.notes,
+                    Jsonb(payload.metadata),
+                ),
+            ).fetchone()
             return row
 
     @app.patch("/api/brands/{brand_id}/access-applications/{application_id}")
     def update_access_application(
-        brand_id: UUID, application_id: UUID, payload: AccessApplicationUpdate, actor: Actor
+        brand_id: UUID,
+        application_id: UUID,
+        payload: AccessApplicationUpdate,
+        actor: Actor,
     ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             app_row = conn.execute(
                 "SELECT * FROM platform_access_application WHERE id=%s AND brand_id=%s",
-                (application_id, brand_id)
+                (application_id, brand_id),
             ).fetchone()
             if not app_row:
                 raise DomainError("NotFound", "Access application not found.", 404)
@@ -532,8 +594,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 updates.append("updated_at = now()")
                 params.extend([application_id, brand_id])
                 row = conn.execute(
-                    f"UPDATE platform_access_application SET {', '.join(updates)} WHERE id=%s AND brand_id=%s RETURNING *",
-                    tuple(params)
+                    f"UPDATE platform_access_application SET {', '.join(updates)} "
+                    "WHERE id=%s AND brand_id=%s RETURNING *",
+                    tuple(params),
                 ).fetchone()
                 return row
             return app_row
@@ -578,7 +641,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         brand_id = uuid4()
         with db.transaction(actor, extra_brand=brand_id) as conn:
             conn.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (str(data.account_id),)
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (str(data.account_id),),
             )
             account = one(conn, "SELECT * FROM account WHERE id=%s", (data.account_id,))
             owner = conn.execute(
@@ -597,7 +661,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT 1 FROM brand WHERE account_id=%s", (data.account_id,)
                 ).fetchone()
             ):
-                raise DomainError("SingleBrandAccount", "A business workspace supports one brand.")
+                raise DomainError(
+                    "SingleBrandAccount", "A business workspace supports one brand."
+                )
             restricted = [data.vertical] if data.vertical in RESTRICTED else []
             brand = one(
                 conn,
@@ -691,7 +757,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/api/brands/{brand_id}/assertions", status_code=201)
-    def add_assertion(brand_id: UUID, data: AssertionInput, actor: Actor) -> dict[str, Any]:
+    def add_assertion(
+        brand_id: UUID, data: AssertionInput, actor: Actor
+    ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, EDIT_ROLES | {"creative"})
@@ -717,7 +785,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "UPDATE brand_graph_assertion SET superseded_by=%s WHERE id=%s",
                     (row["id"], prior["id"]),
                 )
-            conn.execute("UPDATE brand SET brand_graph_confirmed_at=NULL WHERE id=%s", (brand_id,))
+            conn.execute(
+                "UPDATE brand SET brand_graph_confirmed_at=NULL WHERE id=%s",
+                (brand_id,),
+            )
             conn.execute(
                 """UPDATE approval_token SET voided_at=now(),voided_reason='brand_graph_changed'
                             WHERE brand_id=%s AND voided_at IS NULL""",
@@ -743,7 +814,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "field_path": data.field_path,
                     "value": data.value,
-                    "provenance_uri": str(data.provenance_uri) if data.provenance_uri else None,
+                    "provenance_uri": (
+                        str(data.provenance_uri) if data.provenance_uri else None
+                    ),
                 },
             )
         return row
@@ -763,10 +836,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             WHERE brand_id=%s AND superseded_by IS NULL""",
                 (actor.user_id, brand_id),
             )
-            conn.execute("UPDATE brand SET brand_graph_confirmed_at=now() WHERE id=%s", (brand_id,))
+            conn.execute(
+                "UPDATE brand SET brand_graph_confirmed_at=now() WHERE id=%s",
+                (brand_id,),
+            )
             paths = [row["field_path"] for row in rows]
             audit(
-                conn, events, brand_id, "brand_graph_confirm", "brand", brand_id, {"paths": paths}
+                conn,
+                events,
+                brand_id,
+                "brand_graph_confirm",
+                "brand",
+                brand_id,
+                {"paths": paths},
             )
             events.append(
                 conn,
@@ -790,7 +872,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return persist_plan(conn, events, brand_id, data)
 
     @app.put("/api/brands/{brand_id}/plans/{plan_id}")
-    def edit_plan(brand_id: UUID, plan_id: UUID, data: PlanEdit, actor: Actor) -> dict[str, Any]:
+    def edit_plan(
+        brand_id: UUID, plan_id: UUID, data: PlanEdit, actor: Actor
+    ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, EDIT_ROLES)
@@ -800,10 +884,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (plan_id, brand_id),
             )
             if old["plan_hash"] != data.expected_hash:
-                raise DomainError("SubjectChanged", "The plan changed. Reload before editing.")
+                raise DomainError(
+                    "SubjectChanged", "The plan changed. Reload before editing."
+                )
             if old["state"] in {"live", "deploying", "paused", "archived"}:
                 raise DomainError(
-                    "InvalidTransition", "Create a new plan to change an operational campaign."
+                    "InvalidTransition",
+                    "Create a new plan to change an operational campaign.",
                 )
             return persist_plan(
                 conn,
@@ -814,18 +901,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
     @app.post("/api/brands/{brand_id}/plans/{plan_id}/submit")
-    def submit(brand_id: UUID, plan_id: UUID, data: ApprovalInput, actor: Actor) -> dict[str, Any]:
+    def submit(
+        brand_id: UUID, plan_id: UUID, data: ApprovalInput, actor: Actor
+    ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             return request_approval(
-                conn, events, brand_id, plan_id, data.expected_hash, data.requires_client_approval
+                conn,
+                events,
+                brand_id,
+                plan_id,
+                data.expected_hash,
+                data.requires_client_approval,
             )
 
     @app.post("/api/brands/{brand_id}/approvals/{approval_id}/decide")
     def decision(
-        brand_id: UUID, approval_id: UUID, data: Decision, actor: Actor, request: Request
+        brand_id: UUID,
+        approval_id: UUID,
+        data: Decision,
+        actor: Actor,
+        request: Request,
     ) -> dict[str, Any]:
         return decide_remotely(
-            config, brand_id, approval_id, request.cookies.get("adjutant_session", ""), data
+            config,
+            brand_id,
+            approval_id,
+            request.cookies.get("adjutant_session", ""),
+            data,
         )
 
     @app.put("/api/brands/{brand_id}/ceiling")
@@ -835,7 +937,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             require_role(conn, brand_id, {"owner", "admin"})
             old_ceiling = one(
                 conn,
-                "SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling WHERE brand_id=%s AND scope_kind='brand'",
+                """SELECT monthly_usd_max, daily_usd_max FROM budget_ceiling
+                WHERE brand_id=%s AND scope_kind='brand'""",
                 (brand_id,),
             )
             conn.execute(
@@ -853,9 +956,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "before": {
                         "monthly_ceiling": float(old_ceiling["monthly_usd_max"]),
-                        "daily_ceiling": float(old_ceiling["daily_usd_max"])
-                        if old_ceiling["daily_usd_max"] is not None
-                        else None,
+                        "daily_ceiling": (
+                            float(old_ceiling["daily_usd_max"])
+                            if old_ceiling["daily_usd_max"] is not None
+                            else None
+                        ),
                     },
                     "after": data.model_dump(mode="json"),
                 },
@@ -863,9 +968,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "kind": "ceiling_set",
                     "brand_id": str(brand_id),
                     "scope_kind": "brand",
-                    "daily_ceiling": float(old_ceiling["daily_usd_max"])
-                    if old_ceiling["daily_usd_max"] is not None
-                    else None,
+                    "daily_ceiling": (
+                        float(old_ceiling["daily_usd_max"])
+                        if old_ceiling["daily_usd_max"] is not None
+                        else None
+                    ),
                     "monthly_ceiling": float(old_ceiling["monthly_usd_max"]),
                 },
             )
@@ -924,7 +1031,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                    AND cancel_requested_at IS NOT NULL""",
                 (brand_id, brand_id),
             ).fetchall()
-            audit(conn, events, brand_id, "kill_switch", "brand", brand_id, {}, data.reason)
+            audit(
+                conn,
+                events,
+                brand_id,
+                "kill_switch",
+                "brand",
+                brand_id,
+                {},
+                data.reason,
+            )
             run_id = enqueue_stop(conn, brand_id, actor.user_id)
             events.append(
                 conn,
@@ -946,14 +1062,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db, actor, brand_id, run_id, max(0, 48 - (time.monotonic() - started))
         )
         return {
-            "status": "brand_stopped"
-            if report["remote_pause_verified"]
-            else "local_operations_stopped",
+            "status": (
+                "brand_stopped"
+                if report["remote_pause_verified"]
+                else "local_operations_stopped"
+            ),
             **cancelled,
             **report,
-            "message": "Review the per-campaign report for verified pauses and failures."
-            if report["items"]
-            else "Local work stopped. No managed platform campaigns are recorded.",
+            "message": (
+                "Review the per-campaign report for verified pauses and failures."
+                if report["items"]
+                else "Local work stopped. No managed platform campaigns are recorded."
+            ),
         }
 
     @app.get("/api/brands/{brand_id}/remote-stop")
@@ -970,11 +1090,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def status(actor: Actor) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             pending = one(
-                conn, "SELECT count(*) AS count FROM event_outbox WHERE published_at IS NULL"
+                conn,
+                "SELECT count(*) AS count FROM event_outbox WHERE published_at IS NULL",
             )["count"]
         signing = "unavailable"
         try:
-            service_secret = config.approval_service_secret_path.read_text(encoding="utf-8").strip()
+            service_secret = config.approval_service_secret_path.read_text(
+                encoding="utf-8"
+            ).strip()
             response = httpx.get(
                 config.approval_url.rstrip("/") + "/readyz",
                 headers={"Authorization": f"Bearer {service_secret}"},
@@ -1028,14 +1151,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "local_operations_resumed"}
 
     @app.get("/api/models")
-    def models(actor: Actor, provider: Literal["local", "cloud"] = "local") -> dict[str, Any]:
+    def models(
+        actor: Actor, provider: Literal["local", "cloud"] = "local"
+    ) -> dict[str, Any]:
         selected = cloud_planner if provider == "cloud" else planner
         return {
             "models": selected.models(),
             "provider": provider,
-            "configured_model": config.ollama_cloud_model
-            if provider == "cloud"
-            else config.ollama_model,
+            "configured_model": (
+                config.ollama_cloud_model
+                if provider == "cloud"
+                else config.ollama_model
+            ),
         }
 
     @app.get("/api/model-providers")
@@ -1052,7 +1179,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "id": "cloud",
                     "label": "Ollama Cloud",
-                    "credentials_saved": bool(config.ollama_cloud_api_key.get_secret_value()),
+                    "credentials_saved": bool(
+                        config.ollama_cloud_api_key.get_secret_value()
+                    ),
                     "configured_model": config.ollama_cloud_model,
                 },
             ],
@@ -1093,7 +1222,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "brand_graph_edit",
                 "website_evidence",
                 row["id"],
-                {"source_url": evidence.source_url, "content_hash": evidence.content_hash},
+                {
+                    "source_url": evidence.source_url,
+                    "content_hash": evidence.content_hash,
+                },
                 "Imported website text for human review; no assertions were auto-confirmed.",
             )
             return row
@@ -1113,7 +1245,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         brand_id: UUID, data: GenerateInput, actor: Actor, request: Request
     ) -> dict[str, Any]:
         token_hash = session_digest(request.cookies.get("adjutant_session", ""))
-        if data.provider == "cloud" and not config.ollama_cloud_api_key.get_secret_value():
+        if (
+            data.provider == "cloud"
+            and not config.ollama_cloud_api_key.get_secret_value()
+        ):
             raise DomainError(
                 "CloudNotConfigured", "Configure the Ollama Cloud API key first.", 503
             )
@@ -1151,8 +1286,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     WHERE brand_id=%s AND scope_kind='brand'""",
                 (brand_id,),
             )
-            capabilities = conn.execute("""SELECT channel,objectives FROM channel_capability
-                                           ORDER BY channel""").fetchall()
+            capabilities = conn.execute(
+                """SELECT channel,objectives FROM channel_capability
+                                           ORDER BY channel"""
+            ).fetchall()
             snapshot = digest(facts)
             run = one(
                 conn,
@@ -1192,11 +1329,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 lock_active_session(conn, token_hash)
                 brand = locked_brand(conn, brand_id)
                 state = one(
-                    conn, "SELECT cancel_requested_at FROM agent_run WHERE id=%s FOR UPDATE", (run,)
+                    conn,
+                    "SELECT cancel_requested_at FROM agent_run WHERE id=%s FOR UPDATE",
+                    (run,),
                 )
                 if state["cancel_requested_at"]:
                     raise DomainError(
-                        "GenerationCancelled", "Generation stopped; no draft was saved.", 409
+                        "GenerationCancelled",
+                        "Generation stopped; no draft was saved.",
+                        409,
                     )
                 require_role(conn, brand_id, EDIT_ROLES)
                 generation_gate(conn, brand)
@@ -1208,10 +1349,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ).fetchall()
                 if digest(current) != snapshot:
                     raise DomainError(
-                        "BrandChanged", "The brand changed during generation. Try again."
+                        "BrandChanged",
+                        "The brand changed during generation. Try again.",
                     )
                 plan = persist_plan(conn, events, brand_id, result.plan)
-                conn.execute("UPDATE plan SET created_by_actor='agent' WHERE id=%s", (plan["id"],))
+                conn.execute(
+                    "UPDATE plan SET created_by_actor='agent' WHERE id=%s",
+                    (plan["id"],),
+                )
             return plan
         except DomainError as exc:
             failure = exc.code

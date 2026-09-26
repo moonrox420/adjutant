@@ -89,7 +89,9 @@ def execute_revert(
         conn.execute("DELETE FROM plan_allocation WHERE plan_id=%s", (plan_id,))
         for allocation in plan_doc.get("allocations", []):
             conn.execute(
-                """INSERT INTO plan_allocation(plan_id, brand_id, channel, monthly_budget_usd, daily_budget_usd)
+                """INSERT INTO plan_allocation(
+                    plan_id, brand_id, channel, monthly_budget_usd, daily_budget_usd
+                )
                 VALUES(%s, %s, %s, %s, %s)""",
                 (
                     plan_id,
@@ -102,13 +104,18 @@ def execute_revert(
     elif kind in {"campaign_object_state", "budget_set", "pause", "creative_swap"}:
         obj_id = UUID(str(revert_path["object_id"]))
         state = revert_path.get("state") or revert_path.get("before_state")
-        daily_budget = revert_path.get("before_daily_budget_usd") or revert_path.get("before_daily_usd") or revert_path.get("daily_budget_usd")
+        daily_budget = (
+            revert_path.get("before_daily_budget_usd")
+            or revert_path.get("before_daily_usd")
+            or revert_path.get("daily_budget_usd")
+        )
 
         if state is not None:
             # Map 'deleted' before_state to 'paused' or 'archived'
             effective_state = "paused" if state == "deleted" else state
             conn.execute(
-                "UPDATE campaign_object SET state=%s, intended_state=%s WHERE id=%s AND brand_id=%s",
+                """UPDATE campaign_object SET state=%s, intended_state=%s
+                WHERE id=%s AND brand_id=%s""",
                 (effective_state, effective_state, obj_id, brand_id),
             )
         if daily_budget is not None:

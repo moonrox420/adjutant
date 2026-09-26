@@ -12,7 +12,6 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from test_autonomy import selected_account  # noqa: F401
 
 from adjutant.adapters import meta_build
 from adjutant.campaign_builds import BuildJournal, CampaignBuildRunner, run_build
@@ -50,20 +49,32 @@ def graph_server(monkeypatch):
 
         def do_GET(self):
             if state["authorization_error"]:
-                return self.send({"error": {"code": 190, "message": "Expired simulated-secret"}}, 403)
+                return self.send(
+                    {"error": {"code": 190, "message": "Expired simulated-secret"}}, 403
+                )
             url = urlsplit(self.path)
             key = url.path.rsplit("/", 1)[-1]
             if key == "act_12345":
-                return self.send({"account_id": "12345", "account_status": 1, "currency": "USD"})
+                return self.send(
+                    {"account_id": "12345", "account_status": 1, "currency": "USD"}
+                )
             if key == "adimages":
                 return self.send({"data": list(state["images"].values())})
             if key in {"campaigns", "adsets", "adcreatives", "ads"}:
                 return self.send(
-                    {"data": [obj for obj in state["objects"].values() if obj["edge"] == key]}
+                    {
+                        "data": [
+                            obj
+                            for obj in state["objects"].values()
+                            if obj["edge"] == key
+                        ]
+                    }
                 )
             row = state["objects"].get(key)
             if row is None:
-                return self.send({"error": {"message": "Object missing", "code": 100}}, 400)
+                return self.send(
+                    {"error": {"message": "Object missing", "code": 100}}, 400
+                )
             row = json.loads(json.dumps(row))
             if state["wrong_campaign_state"] and row.get("edge") == "campaigns":
                 row["status"] = "ACTIVE"
@@ -79,7 +90,15 @@ def graph_server(monkeypatch):
             raw = self.rfile.read(int(self.headers["Content-Length"]))
             state["posts"].append(edge)
             if edge == "adcreatives" and state["reject_creative"]:
-                return self.send({"error": {"code": 100, "message": "Fixture creative rejected — revise the offer."}}, 400)
+                return self.send(
+                    {
+                        "error": {
+                            "code": 100,
+                            "message": "Fixture creative rejected — revise the offer.",
+                        }
+                    },
+                    400,
+                )
             if edge == "adimages":
                 message = BytesParser(policy=policy.default).parsebytes(
                     (
@@ -147,7 +166,12 @@ def deployment(client, admin, brand, plan, request):
             {"client_id": "fixture", "client_secret": "fixture"},
         )
         write_credential(
-            conn, store, UUID(brand), "meta", "token", {"access_token": "simulated-secret"}
+            conn,
+            store,
+            UUID(brand),
+            "meta",
+            "token",
+            {"access_token": "simulated-secret"},
         )
     yield {
         "request_key": str(uuid4()),
@@ -180,7 +204,9 @@ def tick(client):
 
 
 def queue(client, brand, plan, deployment):
-    response = client.post(f"/api/brands/{brand}/plans/{plan['id']}/deployments", json=deployment)
+    response = client.post(
+        f"/api/brands/{brand}/plans/{plan['id']}/deployments", json=deployment
+    )
     assert response.status_code == 202, response.text
     return response.json()
 
@@ -200,9 +226,18 @@ def test_paused_build_has_verified_ancestry_and_no_duplicate_writes(
     result = report(client, brand, plan)
     assert result["state"] == "paused", result
     assert len(result["objects"]) == 3
-    assert all(item["state"] == "paused" and item["last_verified_at"] for item in result["objects"])
+    assert all(
+        item["state"] == "paused" and item["last_verified_at"]
+        for item in result["objects"]
+    )
     assert all(item["verified_at"] and item["native_id"] for item in result["steps"])
-    assert graph_server["posts"] == ["campaigns", "adsets", "adimages", "adcreatives", "ads"]
+    assert graph_server["posts"] == [
+        "campaigns",
+        "adsets",
+        "adimages",
+        "adcreatives",
+        "ads",
+    ]
     again = queue(client, brand, plan, deployment)
     tick(client)
     assert again["id"] == first["id"]
@@ -227,7 +262,9 @@ def test_lost_create_response_is_reconciled_without_repeating_post(
     queue(client, brand, plan, deployment)
     tick(client)
     failed = report(client, brand, plan)
-    assert failed["state"] == "failed" and failed["error_code"] == "ProviderStateUncertain"
+    assert (
+        failed["state"] == "failed" and failed["error_code"] == "ProviderStateUncertain"
+    )
     retry = client.post(f"/api/brands/{brand}/deployments/{failed['id']}/retry")
     assert retry.status_code == 200, retry.text
     tick(client)
@@ -260,30 +297,44 @@ def test_cancel_before_worker_prevents_all_remote_writes(
     assert graph_server["posts"] == []
 
 
-def test_database_refuses_changed_scope_and_step_identity(client, brand, plan, deployment, admin):
+def test_database_refuses_changed_scope_and_step_identity(
+    client, brand, plan, deployment, admin
+):
     job = queue(client, brand, plan, deployment)
     journal = BuildJournal(client.app.state.db, UUID(brand), UUID(job["id"]))
     assert journal.begin("campaign", {"name": "test"})["fresh"]
     with pytest.raises(psycopg.errors.CheckViolation):
-        admin.execute("UPDATE campaign_build_step SET request='{}' WHERE build_id=%s", (job["id"],))
+        admin.execute(
+            "UPDATE campaign_build_step SET request='{}' WHERE build_id=%s",
+            (job["id"],),
+        )
     admin.execute(
-        "UPDATE guardrail SET max_new_ads_per_day=max_new_ads_per_day+1 WHERE brand_id=%s", (brand,)
+        "UPDATE guardrail SET max_new_ads_per_day=max_new_ads_per_day+1 WHERE brand_id=%s",
+        (brand,),
     )
     with pytest.raises(psycopg.errors.CheckViolation):
         journal.begin("ad:test", {"name": "test"})
 
 
-def test_database_enforces_rolling_creation_limit(client, brand, plan, deployment, admin):
-    admin.execute("UPDATE guardrail SET max_new_ads_per_day=1 WHERE brand_id=%s", (brand,))
+def test_database_enforces_rolling_creation_limit(
+    client, brand, plan, deployment, admin
+):
+    admin.execute(
+        "UPDATE guardrail SET max_new_ads_per_day=1 WHERE brand_id=%s", (brand,)
+    )
     deployment["expected_guardrail_version"] = 2
     job = queue(client, brand, plan, deployment)
     journal = BuildJournal(client.app.state.db, UUID(brand), UUID(job["id"]))
     journal.begin("ad:first", {"name": "first"})
-    with pytest.raises(psycopg.errors.CheckViolation, match="Rolling ad creation limit"):
+    with pytest.raises(
+        psycopg.errors.CheckViolation, match="Rolling ad creation limit"
+    ):
         journal.begin("ad:second", {"name": "second"})
 
 
-def test_worker_shutdown_leaves_job_resumable(client, brand, plan, deployment, graph_server):
+def test_worker_shutdown_leaves_job_resumable(
+    client, brand, plan, deployment, graph_server
+):
     job = queue(client, brand, plan, deployment)
     stop = threading.Event()
     stop.set()
@@ -326,14 +377,21 @@ def test_false_completion_and_cross_plan_object_insertion_fail_at_database(
     job = queue(client, brand, plan, deployment)
     with pytest.raises(psycopg.errors.CheckViolation, match="fully verified"):
         admin.execute(
-            "UPDATE campaign_build SET state='paused',verified_at=now() WHERE id=%s", (job["id"],)
+            "UPDATE campaign_build SET state='paused',verified_at=now() WHERE id=%s",
+            (job["id"],),
         )
     with pytest.raises(psycopg.errors.CheckViolation, match="execution receipt"):
         admin.execute(
             "INSERT INTO campaign_object(brand_id,connection_id,channel,level,native_id,"
             "plan_id,build_id,idem_key,state) "
             "VALUES(%s,%s,'meta','campaign','fake',%s,%s,%s,'paused')",
-            (brand, deployment["connection_id"], plan["id"], job["id"], f"{job['id']}:campaign"),
+            (
+                brand,
+                deployment["connection_id"],
+                plan["id"],
+                job["id"],
+                f"{job['id']}:campaign",
+            ),
         )
 
 
@@ -352,31 +410,46 @@ def test_failed_campaign_readback_keeps_native_identity_for_stop(
     assert result["objects"][0]["last_verified_at"] is None
 
 
-def test_provider_authorization_failure_revokes_runtime_access(client, brand, plan, deployment, graph_server, admin):
+def test_provider_authorization_failure_revokes_runtime_access(
+    client, brand, plan, deployment, graph_server, admin
+):
     job = queue(client, brand, plan, deployment)
-    original = admin.execute("SELECT authorization_generation FROM channel_connection WHERE id=%s", (deployment["connection_id"],)).fetchone()["authorization_generation"]
+    original = admin.execute(
+        "SELECT authorization_generation FROM channel_connection WHERE id=%s",
+        (deployment["connection_id"],),
+    ).fetchone()["authorization_generation"]
     graph_server["authorization_error"] = True
     tick(client)
     result = report(client, brand, plan)
     assert result["error_code"] == "PlatformAuthorization"
     assert "simulated-secret" not in json.dumps(result)
     assert result["provider_errors"][0]["raw_message"] == "Expired [redacted]"
-    connection = admin.execute("SELECT * FROM channel_connection WHERE id=%s", (deployment["connection_id"],)).fetchone()
+    connection = admin.execute(
+        "SELECT * FROM channel_connection WHERE id=%s", (deployment["connection_id"],)
+    ).fetchone()
     assert connection["health"] == "revoked" and not connection["selected"]
     assert connection["verified_at"] is None
     assert connection["authorization_generation"] == original + 1
     assert result["id"] == job["id"]
 
 
-def test_provider_rejection_text_is_preserved_and_visible_after_retry(client, brand, plan, deployment, graph_server):
+def test_provider_rejection_text_is_preserved_and_visible_after_retry(
+    client, brand, plan, deployment, graph_server
+):
     graph_server["reject_creative"] = True
     job = queue(client, brand, plan, deployment)
     tick(client)
     result = report(client, brand, plan)
-    assert result["provider_errors"][0]["raw_message"] == "Fixture creative rejected — revise the offer."
+    assert (
+        result["provider_errors"][0]["raw_message"]
+        == "Fixture creative rejected — revise the offer."
+    )
     assert result["provider_errors"][0]["raw_code"] == "100"
     assert "ads" not in graph_server["posts"]
-    assert client.post(f"/api/brands/{brand}/deployments/{job['id']}/retry").status_code == 200
+    assert (
+        client.post(f"/api/brands/{brand}/deployments/{job['id']}/retry").status_code
+        == 200
+    )
     tick(client)
     retried = report(client, brand, plan)
     assert retried["provider_errors"] == result["provider_errors"]

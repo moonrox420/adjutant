@@ -1,22 +1,18 @@
-"""Compliance surface: Jurisdictional AI disclosures, claim substantiation, policy rejection routing, and signed compliance exports."""
+"""Compliance surface: Jurisdictional AI disclosures, claim checks, and signed exports."""
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
-from decimal import Decimal
 import hashlib
 import json
 import re
+from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
-from adjutant.errors import DomainError
 from adjutant.security import ApprovalSigner
 
-
-# Jurisdiction and platform AI transparency disclosure requirements (EU AI Act Art. 50, FTC 16 CFR 255, Google/Meta policy)
+# Jurisdiction and platform AI transparency disclosure requirements (EU AI Act, FTC 16 CFR 255)
 DISCLOSURE_RULES = {
     "EU": {
         "text": "AI-generated synthetic media (EU AI Act Art. 50 Compliant)",
@@ -62,7 +58,7 @@ def apply_ai_disclosure(
     layers = list(updated.get("layers", []))
 
     # Check if disclosure layer already exists
-    if any(l.get("id") == "compliance_ai_disclosure" for l in layers):
+    if any(layer.get("id") == "compliance_ai_disclosure" for layer in layers):
         return updated
 
     pos = (
@@ -105,7 +101,8 @@ def verify_claim_substantiation(
                 continue
             return (
                 False,
-                f"UnsubstantiatedClaimError: Phrase '{matched_phrase}' is an unsubstantiated superlative or health claim prohibited without verified proof documentation.",
+                f"UnsubstantiatedClaimError: Phrase '{matched_phrase}' is an unsubstantiated "
+                f"superlative or health claim prohibited without verified proof documentation.",
             )
 
     return True, None
@@ -119,8 +116,14 @@ def route_policy_rejection(
     platform_rejection_payload: dict[str, Any],
 ) -> UUID:
     """S13.3: Route verbatim platform rejection text to a human escalation and never auto-retry."""
-    verbatim_text = platform_rejection_payload.get("rejection_reason") or platform_rejection_payload.get("error_message") or "Ad disapproved by platform policy review."
-    policy_code = platform_rejection_payload.get("policy_code", "GENERIC_POLICY_VIOLATION")
+    verbatim_text = (
+        platform_rejection_payload.get("rejection_reason")
+        or platform_rejection_payload.get("error_message")
+        or "Ad disapproved by platform policy review."
+    )
+    policy_code = platform_rejection_payload.get(
+        "policy_code", "GENERIC_POLICY_VIOLATION"
+    )
 
     escalation_id = conn.execute(
         """INSERT INTO escalation(
@@ -131,13 +134,15 @@ def route_policy_rejection(
         (
             brand_id,
             campaign_object_id,
-            Jsonb({
-                "channel": channel,
-                "policy_code": policy_code,
-                "verbatim_rejection_text": verbatim_text,
-                "raw_response": platform_rejection_payload,
-                "auto_retry_blocked": True,
-            }),
+            Jsonb(
+                {
+                    "channel": channel,
+                    "policy_code": policy_code,
+                    "verbatim_rejection_text": verbatim_text,
+                    "raw_response": platform_rejection_payload,
+                    "auto_retry_blocked": True,
+                }
+            ),
         ),
     ).fetchone()["id"]
 
@@ -157,7 +162,7 @@ def generate_signed_compliance_export(
     end_time: datetime,
     signer: ApprovalSigner | None = None,
 ) -> dict[str, Any]:
-    """S13.4: Generate byte-identical, deterministic signed compliance audit export for a fixed time window."""
+    """S13.4: Generate byte-identical signed compliance audit export for a fixed time window."""
     actions = conn.execute(
         """SELECT id, executed_at, actor_kind, action_type, target_kind, target_id,
                   channel, diff, rationale, revert_path
@@ -170,7 +175,8 @@ def generate_signed_compliance_export(
     ).fetchall()
 
     decisions = conn.execute(
-        """SELECT id, finding_id, kind, target_id, channel, params, state, rejection_reason, executed_at
+        """SELECT id, finding_id, kind, target_id, channel, params, state,
+                  rejection_reason, executed_at
         FROM autonomous_decision
         WHERE brand_id=%s
           AND created_at >= %s
@@ -219,12 +225,14 @@ def generate_signed_compliance_export(
 
     signature = None
     if signer:
-        signature = signer.sign({
-            "brand_id": str(brand_id),
-            "payload_sha256": payload_sha256,
-            "window_start": export_payload["window_start"],
-            "window_end": export_payload["window_end"],
-        })
+        signature = signer.sign(
+            {
+                "brand_id": str(brand_id),
+                "payload_sha256": payload_sha256,
+                "window_start": export_payload["window_start"],
+                "window_end": export_payload["window_end"],
+            }
+        )
 
     return {
         "manifest": export_payload,

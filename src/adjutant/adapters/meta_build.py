@@ -33,7 +33,9 @@ class MetaBuildSettings(Input):
 
     @model_validator(mode="after")
     def validate_targeting(self):
-        self.countries = sorted(set(country.strip().upper() for country in self.countries))
+        self.countries = sorted(
+            set(country.strip().upper() for country in self.countries)
+        )
         if any(
             len(country) != 2 or not country.isascii() or not country.isalpha()
             for country in self.countries
@@ -73,25 +75,34 @@ def preflight(document: dict, text_limits: dict[str, int] | None = None) -> list
     settings = MetaBuildSettings.model_validate(document["settings"])
     failures = []
     if document["objective"] not in {"awareness", "traffic", "leads", "sales"}:
-        failures.append("This Meta image campaign requires awareness, traffic, leads, or sales.")
+        failures.append(
+            "This Meta image campaign requires awareness, traffic, leads, or sales."
+        )
     if document["objective"] in {"leads", "sales"} and not settings.pixel_id:
-        failures.append("Website conversion campaigns require an authorized Meta Pixel ID.")
+        failures.append(
+            "Website conversion campaigns require an authorized Meta Pixel ID."
+        )
     if document["objective"] == "sales" and settings.conversion_event != "PURCHASE":
         failures.append("Sales campaigns require the Purchase conversion event.")
     if document["objective"] == "leads" and settings.conversion_event != "LEAD":
         failures.append("Lead campaigns require the Lead conversion event.")
     if not document["creatives"]:
-        failures.append("Attach at least one validated square image creative to the plan.")
+        failures.append(
+            "Attach at least one validated square image creative to the plan."
+        )
     limits = text_limits or {"headline": 40, "primary_text": 125, "description": 30}
     for creative in document["creatives"]:
         copy = creative["copy"].get("meta", {})
         for field, maximum in limits.items():
             val = copy.get(field)
             if not isinstance(val, str) or len(val) == 0:
-                failures.append(f"Creative {creative['id']} is missing required Meta field '{field}'.")
+                failures.append(
+                    f"Creative {creative['id']} is missing required Meta field '{field}'."
+                )
             elif len(val) > maximum:
                 failures.append(
-                    f"Creative {creative['id']} field '{field}' length {len(val)} exceeds allowed limit of {maximum} characters."
+                    f"Creative {creative['id']} field '{field}' length {len(val)} "
+                    f"exceeds allowed limit of {maximum} characters."
                 )
     return failures
 
@@ -142,7 +153,9 @@ class MetaBuilder:
             ) from exc
         if not isinstance(body, dict):
             raise DomainError(
-                "ProviderResponseInvalid", "Meta returned an invalid response shape.", 502
+                "ProviderResponseInvalid",
+                "Meta returned an invalid response shape.",
+                502,
             )
         error = body.get("error")
         if error or not 200 <= response.status_code < 300:
@@ -174,9 +187,13 @@ class MetaBuilder:
                 params={"fields": fields, "limit": 100, **params},
             )
             batch = body.get("data")
-            if not isinstance(batch, list) or any(not isinstance(row, dict) for row in batch):
+            if not isinstance(batch, list) or any(
+                not isinstance(row, dict) for row in batch
+            ):
                 raise DomainError(
-                    "ProviderResponseInvalid", "Meta returned an invalid object list.", 502
+                    "ProviderResponseInvalid",
+                    "Meta returned an invalid object list.",
+                    502,
                 )
             rows.extend(batch)
             paging = body.get("paging", {})
@@ -185,12 +202,16 @@ class MetaBuilder:
             cursor = paging.get("cursors", {}).get("after")
             if not isinstance(cursor, str) or not cursor or cursor in cursors:
                 raise DomainError(
-                    "ProviderResponseInvalid", "Meta pagination cannot be reconciled safely.", 502
+                    "ProviderResponseInvalid",
+                    "Meta pagination cannot be reconciled safely.",
+                    502,
                 )
             cursors.add(cursor)
             params["after"] = cursor
         raise DomainError(
-            "ProviderInventoryLimit", "Meta inventory exceeded the reconciliation page limit.", 409
+            "ProviderInventoryLimit",
+            "Meta inventory exceeded the reconciliation page limit.",
+            409,
         )
 
     async def create(self, key: str, edge: str, payload: dict, fields: str) -> dict:
@@ -212,13 +233,21 @@ class MetaBuilder:
             identity = str(matches[0]["id"])
         if not identity:
             encoded = {
-                name: json.dumps(value) if isinstance(value, (dict, list, bool)) else str(value)
+                name: (
+                    json.dumps(value)
+                    if isinstance(value, (dict, list, bool))
+                    else str(value)
+                )
                 for name, value in payload.items()
             }
-            result = await self.request("POST", f"act_{self.account}/{edge}", data=encoded)
+            result = await self.request(
+                "POST", f"act_{self.account}/{edge}", data=encoded
+            )
             identity = str(result.get("id", ""))
             numeric(identity)
-            await asyncio.to_thread(self.finish, key, identity, {"create_response": result})
+            await asyncio.to_thread(
+                self.finish, key, identity, {"create_response": result}
+            )
         row = await self.request("GET", numeric(identity), params={"fields": fields})
         if (
             str(row.get("id")) != identity
@@ -240,13 +269,17 @@ class MetaBuilder:
         ):
             if field in payload and str(row.get(field)) != str(payload[field]):
                 raise DomainError(
-                    "RemoteVerificationFailed", f"Meta did not preserve the requested {field}.", 409
+                    "RemoteVerificationFailed",
+                    f"Meta did not preserve the requested {field}.",
+                    409,
                 )
         if "creative" in payload and str(row.get("creative", {}).get("id")) != str(
             payload["creative"]["creative_id"]
         ):
             raise DomainError(
-                "RemoteVerificationFailed", "Meta associated a different creative with the ad.", 409
+                "RemoteVerificationFailed",
+                "Meta associated a different creative with the ad.",
+                409,
             )
         if "object_story_spec" in payload:
             expected = payload["object_story_spec"]
@@ -303,13 +336,17 @@ class MetaBuilder:
                     502,
                 )
             identity = row["hash"]
-            await asyncio.to_thread(self.finish, key, identity, {"create_response": row})
+            await asyncio.to_thread(
+                self.finish, key, identity, {"create_response": row}
+            )
         images = await self.collection(
             "adimages", "hash,name,width,height", hashes=json.dumps([identity])
         )
         if len(images) != 1 or images[0].get("hash") != identity:
             raise DomainError(
-                "RemoteVerificationFailed", "The uploaded Meta image could not be read back.", 409
+                "RemoteVerificationFailed",
+                "The uploaded Meta image could not be read back.",
+                409,
             )
         await asyncio.to_thread(self.finish, key, identity, images[0])
         return identity
@@ -320,15 +357,24 @@ class MetaBuilder:
             raise DomainError("DeploymentInvalid", " ".join(violations), 422)
         settings = MetaBuildSettings.model_validate(document["settings"])
         account = await self.request(
-            "GET", f"act_{self.account}", params={"fields": "account_id,account_status,currency"}
+            "GET",
+            f"act_{self.account}",
+            params={"fields": "account_id,account_status,currency"},
         )
-        if str(account.get("account_id")) != self.account or account.get("account_status") != 1:
+        if (
+            str(account.get("account_id")) != self.account
+            or account.get("account_status") != 1
+        ):
             raise DomainError(
-                "AccountUnavailable", "Meta account is not authorized for advertising.", 409
+                "AccountUnavailable",
+                "Meta account is not authorized for advertising.",
+                409,
             )
         if account.get("currency") != "USD":
             raise DomainError(
-                "CurrencyMismatch", "This USD plan requires a USD advertising account.", 409
+                "CurrencyMismatch",
+                "This USD plan requires a USD advertising account.",
+                409,
             )
         objective, optimization = {
             "awareness": ("OUTCOME_AWARENESS", "REACH"),

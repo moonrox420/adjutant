@@ -42,7 +42,9 @@ class CampaignBuildInput(Input):
 
 def build_report(conn, brand_id: UUID, build_id: UUID) -> dict:
     row = one(
-        conn, "SELECT * FROM campaign_build WHERE id=%s AND brand_id=%s", (build_id, brand_id)
+        conn,
+        "SELECT * FROM campaign_build WHERE id=%s AND brand_id=%s",
+        (build_id, brand_id),
     )
     row["steps"] = conn.execute(
         "SELECT step_key,native_id,sent_at,verified_at FROM campaign_build_step "
@@ -56,7 +58,8 @@ def build_report(conn, brand_id: UUID, build_id: UUID) -> dict:
     ).fetchall()
     row["provider_errors"] = conn.execute(
         "SELECT raw_code,raw_message,occurred_at FROM channel_rejection "
-        "WHERE build_id=%s AND brand_id=%s ORDER BY occurred_at,id", (build_id, brand_id)
+        "WHERE build_id=%s AND brand_id=%s ORDER BY occurred_at,id",
+        (build_id, brand_id),
     ).fetchall()
     return row
 
@@ -69,7 +72,8 @@ def queue_build(
     require_role(conn, brand_id, EDIT_ROLES)
     generation_gate(conn, brand)
     previous = conn.execute(
-        "SELECT * FROM campaign_build WHERE id=%s AND brand_id=%s", (data.request_key, brand_id)
+        "SELECT * FROM campaign_build WHERE id=%s AND brand_id=%s",
+        (data.request_key, brand_id),
     ).fetchone()
     if previous:
         if (
@@ -80,10 +84,14 @@ def queue_build(
             or previous["document"]["input_settings"] != data.settings
         ):
             raise DomainError(
-                "IdempotencyConflict", "This deployment key belongs to a different request.", 409
+                "IdempotencyConflict",
+                "This deployment key belongs to a different request.",
+                409,
             )
         return build_report(conn, brand_id, previous["id"])
-    plan = one(conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id))
+    plan = one(
+        conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id)
+    )
     limits = one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
     account = one(
         conn,
@@ -96,18 +104,24 @@ def queue_build(
         or limits["version"] != data.expected_guardrail_version
     ):
         raise DomainError(
-            "ReviewChanged", "Plan or guardrails changed. Reload before creating the campaign.", 409
+            "ReviewChanged",
+            "Plan or guardrails changed. Reload before creating the campaign.",
+            409,
         )
     try:
         settings = schema.model_validate(data.settings)
     except ValidationError as exc:
         raise DomainError(
             "CampaignSettingsInvalid",
-            "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()),
+            "; ".join(
+                f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()
+            ),
             422,
         ) from exc
     if settings.end_time <= datetime.now(UTC):
-        raise DomainError("CampaignEndTime", "Campaign end time must be in the future.", 422)
+        raise DomainError(
+            "CampaignEndTime", "Campaign end time must be in the future.", 422
+        )
     allocation = one(
         conn,
         "SELECT * FROM plan_allocation WHERE plan_id=%s AND channel=%s",
@@ -173,7 +187,11 @@ class BuildJournal:
     """Commit intent before network I/O, then preserve returned IDs before read-back."""
 
     def __init__(
-        self, db: Database, brand_id: UUID, build_id: UUID, stop: threading.Event | None = None
+        self,
+        db: Database,
+        brand_id: UUID,
+        build_id: UUID,
+        stop: threading.Event | None = None,
     ) -> None:
         self.db, self.brand_id, self.build_id = db, brand_id, build_id
         self.stop = stop
@@ -216,7 +234,9 @@ class BuildJournal:
                 (native_id, Jsonb(response), verified, self.build_id, key),
             )
             if key == "campaign":
-                build = one(conn, "SELECT * FROM campaign_build WHERE id=%s", (self.build_id,))
+                build = one(
+                    conn, "SELECT * FROM campaign_build WHERE id=%s", (self.build_id,)
+                )
                 intent = one(
                     conn,
                     "SELECT request FROM campaign_build_step WHERE build_id=%s AND step_key=%s",
@@ -259,7 +279,9 @@ async def run_build(
 ) -> None:
     journal = BuildJournal(db, brand_id, build_id, stop)
     with db.transaction(extra_brand=brand_id) as conn:
-        build = one(conn, "SELECT * FROM campaign_build WHERE id=%s FOR UPDATE", (build_id,))
+        build = one(
+            conn, "SELECT * FROM campaign_build WHERE id=%s FOR UPDATE", (build_id,)
+        )
         if build["state"] not in {"queued", "running"}:
             return
         conn.execute(
@@ -275,7 +297,9 @@ async def run_build(
                 conn, config, brand_id, build["channel"], refresh_timeout=10
             )
             account = one(
-                conn, "SELECT * FROM channel_connection WHERE id=%s", (build["connection_id"],)
+                conn,
+                "SELECT * FROM channel_connection WHERE id=%s",
+                (build["connection_id"],),
             )
         constructor, _, _ = builder_for(build["channel"])
         async with httpx.AsyncClient(
@@ -335,7 +359,10 @@ async def run_build(
                 "campaign_build",
                 "campaign_build",
                 build_id,
-                {"state": "paused", "objects": [str(value) for value in identities.values()]},
+                {
+                    "state": "paused",
+                    "objects": [str(value) for value in identities.values()],
+                },
                 "Created provider campaign in paused state and verified every object independently",
                 actor_kind="system",
             )
@@ -352,7 +379,8 @@ async def run_build(
         elif isinstance(exc, psycopg.IntegrityError):
             code, message = (
                 "CampaignGuardrailDenied",
-                exc.diag.message_primary or "Campaign guardrails denied this operation.",
+                exc.diag.message_primary
+                or "Campaign guardrails denied this operation.",
             )
         else:
             logger.error(
@@ -370,7 +398,13 @@ async def run_build(
                 conn.execute(
                     "INSERT INTO channel_rejection(brand_id,channel,raw_code,raw_message,"
                     "classified_as,build_id) VALUES(%s,%s,%s,%s,'provider_rejection',%s)",
-                    (brand_id, build["channel"], exc.provider_code, exc.raw_message, build_id),
+                    (
+                        brand_id,
+                        build["channel"],
+                        exc.provider_code,
+                        exc.raw_message,
+                        build_id,
+                    ),
                 )
             row = one(
                 conn,
@@ -396,11 +430,17 @@ class CampaignBuildRunner:
     """Resume queued work after process death using a session-scoped advisory lock."""
 
     def __init__(
-        self, db: Database, config: Settings, storage: ObjectStore, events: EventRegistry
+        self,
+        db: Database,
+        config: Settings,
+        storage: ObjectStore,
+        events: EventRegistry,
     ) -> None:
         self.db, self.config, self.storage, self.events = db, config, storage, events
         self.stop = threading.Event()
-        self.thread = threading.Thread(target=self.run, name="campaign-builds", daemon=True)
+        self.thread = threading.Thread(
+            target=self.run, name="campaign-builds", daemon=True
+        )
 
     def start(self) -> None:
         self.thread.start()
@@ -409,14 +449,19 @@ class CampaignBuildRunner:
         self.stop.set()
         self.thread.join(timeout=40)
         if self.thread.is_alive():
-            raise RuntimeError("Campaign worker did not stop before its shutdown deadline")
+            raise RuntimeError(
+                "Campaign worker did not stop before its shutdown deadline"
+            )
 
     def run(self) -> None:
         while not self.stop.is_set():
             try:
                 self.tick()
             except Exception as exc:
-                logger.error("campaign_build.poll_failed", extra={"error_type": type(exc).__name__})
+                logger.error(
+                    "campaign_build.poll_failed",
+                    extra={"error_type": type(exc).__name__},
+                )
             self.stop.wait(1)
 
     def tick(self) -> None:
@@ -446,7 +491,8 @@ class CampaignBuildRunner:
                     )
                 finally:
                     lock.execute(
-                        "SELECT pg_advisory_unlock(hashtextextended(%s,33))", (str(job["id"]),)
+                        "SELECT pg_advisory_unlock(hashtextextended(%s,33))",
+                        (str(job["id"]),),
                     )
 
 
@@ -458,9 +504,13 @@ def campaign_build_router(db: Database, principal) -> APIRouter:
     def options(brand_id: UUID, plan_id: UUID, actor: actor_type):
         with db.transaction(actor) as conn:
             plan = one(
-                conn, "SELECT plan_hash FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id)
+                conn,
+                "SELECT plan_hash FROM plan WHERE id=%s AND brand_id=%s",
+                (plan_id, brand_id),
             )
-            limits = one(conn, "SELECT version FROM guardrail WHERE brand_id=%s", (brand_id,))
+            limits = one(
+                conn, "SELECT version FROM guardrail WHERE brand_id=%s", (brand_id,)
+            )
             rows = conn.execute(
                 "SELECT a.channel,c.id AS connection_id,c.external_account_name,c.health,"
                 "c.verified_at,c.token_expires_at FROM plan_allocation a "
@@ -473,7 +523,8 @@ def campaign_build_router(db: Database, principal) -> APIRouter:
                 "plan_hash": plan["plan_hash"],
                 "guardrail_version": limits["version"],
                 "channels": [
-                    {**row, "configuration": build_configuration(row["channel"])} for row in rows
+                    {**row, "configuration": build_configuration(row["channel"])}
+                    for row in rows
                 ],
             }
 
@@ -490,14 +541,19 @@ def campaign_build_router(db: Database, principal) -> APIRouter:
         except psycopg.IntegrityError as exc:
             raise DomainError(
                 "CampaignGuardrailDenied",
-                exc.diag.message_primary or "Campaign creation violates an execution guardrail.",
+                exc.diag.message_primary
+                or "Campaign creation violates an execution guardrail.",
                 409,
             ) from exc
 
     @router.get("/plans/{plan_id}/deployments")
     def listing(brand_id: UUID, plan_id: UUID, actor: actor_type):
         with db.transaction(actor) as conn:
-            one(conn, "SELECT id FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id))
+            one(
+                conn,
+                "SELECT id FROM plan WHERE id=%s AND brand_id=%s",
+                (plan_id, brand_id),
+            )
             rows = conn.execute(
                 "SELECT id FROM campaign_build WHERE plan_id=%s AND brand_id=%s "
                 "ORDER BY created_at DESC",

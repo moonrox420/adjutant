@@ -30,9 +30,14 @@ def seed_identity(admin_url: str) -> dict[str, str]:
             "VALUES(%s,'Test operator',now()) RETURNING id",
             (email,),
         ).fetchone()[0]
-        account = conn.execute("""INSERT INTO account(account_type,display_name)
-                                  VALUES('agency','Canary workspace') RETURNING id""").fetchone()[0]
-        conn.execute("INSERT INTO local_credential VALUES(%s,%s)", (user, password_hash(password)))
+        account = conn.execute(
+            """INSERT INTO account(account_type,display_name)
+                                  VALUES('agency','Canary workspace') RETURNING id"""
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO local_credential VALUES(%s,%s)",
+            (user, password_hash(password)),
+        )
         conn.execute(
             """INSERT INTO seat(account_id,user_id,role,accepted_at,
                      approval_daily_usd_cap,approval_total_usd_cap)
@@ -57,7 +62,9 @@ def test_settings(origin: str = "http://localhost:3000") -> Settings:
 
 def run(model: str) -> None:
     identity = seed_identity(Path(".local/test-admin.url").read_text().strip())
-    with approval_test_server(Path(".local/test-admin.url").read_text().strip()) as approval_url:
+    with approval_test_server(
+        Path(".local/test-admin.url").read_text().strip()
+    ) as approval_url:
         config = test_settings()
         config.approval_url = approval_url
         run_workflow(identity, config, model)
@@ -68,7 +75,8 @@ def run_workflow(identity: dict[str, str], config: Settings, model: str) -> None
     with TestClient(create_app(config)) as client:
         client.headers.update({"x-adjutant-client": "console"})
         response = client.post(
-            "/api/auth/login", json={"email": identity["email"], "password": identity["password"]}
+            "/api/auth/login",
+            json={"email": identity["email"], "password": identity["password"]},
         )
         response.raise_for_status()
         response = client.post(
@@ -105,7 +113,9 @@ def run_workflow(identity: dict[str, str], config: Settings, model: str) -> None
             },
         )
         if response.status_code != 201:
-            raise RuntimeError(f"Live generation failed: {response.status_code} {response.text}")
+            raise RuntimeError(
+                f"Live generation failed: {response.status_code} {response.text}"
+            )
         plan = response.json()
         submission = client.post(
             f"/api/brands/{brand}/plans/{plan['id']}/submit",

@@ -2,17 +2,14 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 
-from adjutant.db import Database
 from adjutant.errors import DomainError
 from adjutant.metrics import (
     RawMetricFact,
-    aggregate_blended_cpa,
     aggregate_metric_sum,
-    compute_sync_windows,
     determine_comparability_class,
     get_channel_watermark,
     record_metric_facts,
@@ -25,7 +22,10 @@ def test_comparability_class_determination():
     assert determine_comparability_class("1d_click", "none") == "direct"
     assert determine_comparability_class("1d_view", "1d_view") == "caveated"
     assert determine_comparability_class("7d_click", "1d_view") == "caveated"
-    assert determine_comparability_class("7d_click", "none", source="first_party") == "first_party_only"
+    assert (
+        determine_comparability_class("7d_click", "none", source="first_party")
+        == "first_party_only"
+    )
 
 
 def test_metrics_land_hourly_no_duplicates_on_replay(admin, brand):
@@ -91,7 +91,9 @@ def test_metrics_land_hourly_no_duplicates_on_replay(admin, brand):
     assert norm_rows["n"] == 5  # spend, clicks, impressions, conversions, revenue
 
 
-def test_every_fact_carries_attribution_window_conversion_event_and_view_policy(admin, brand):
+def test_every_fact_carries_attribution_window_conversion_event_and_view_policy(
+    admin, brand
+):
     """S7.2: Every fact carries attribution window, conversion event, and view-through policy."""
     conn_id = admin.execute(
         "INSERT INTO channel_connection(brand_id, channel, external_ad_account_id, selected, verified_at) "

@@ -35,7 +35,10 @@ def approval_test_server(admin_url: str) -> Iterator[str]:
         listener.listen(128)
         port = listener.getsockname()[1]
         thread = threading.Thread(
-            target=server.run, kwargs={"sockets": [listener]}, name="test-approval", daemon=True
+            target=server.run,
+            kwargs={"sockets": [listener]},
+            name="test-approval",
+            daemon=True,
         )
         thread.start()
         try:

@@ -46,7 +46,8 @@ class AttachInput(Input):
 
 def visual_generator(conn, brand_id: UUID, config: Settings) -> VisualsGenerator:
     configured = conn.execute(
-        "SELECT 1 FROM tenant_secret WHERE brand_id=%s AND name='visual_provider'", (brand_id,)
+        "SELECT 1 FROM tenant_secret WHERE brand_id=%s AND name='visual_provider'",
+        (brand_id,),
     ).fetchone()
     if configured:
         value = json.loads(
@@ -60,7 +61,9 @@ def visual_generator(conn, brand_id: UUID, config: Settings) -> VisualsGenerator
     )
 
 
-def persist_render(conn, storage: ObjectStore, brand_id: UUID, row: dict, ratio: str) -> dict:
+def persist_render(
+    conn, storage: ObjectStore, brand_id: UUID, row: dict, ratio: str
+) -> dict:
     """Store a validated revision-specific PNG, SVG, and editable scene atomically."""
     enforce_blocked_claims(conn, brand_id, row["document"])
     existing = conn.execute(
@@ -119,7 +122,9 @@ def studio_operations_router(
             }
 
     @router.put("/visual-provider")
-    def configure_provider(brand_id: UUID, data: VisualConfiguration, actor: actor_type) -> dict:
+    def configure_provider(
+        brand_id: UUID, data: VisualConfiguration, actor: actor_type
+    ) -> dict:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, {"owner", "admin"})
@@ -137,9 +142,14 @@ def studio_operations_router(
                     else config.gemini_api_key.get_secret_value()
                 )
             if not key:
-                raise DomainError("GeminiNotConfigured", "Enter your Gemini API key.", 422)
+                raise DomainError(
+                    "GeminiNotConfigured", "Enter your Gemini API key.", 422
+                )
             store.write(
-                conn, brand_id, "visual_provider", json.dumps({"api_key": key, "model": data.model})
+                conn,
+                brand_id,
+                "visual_provider",
+                json.dumps({"api_key": key, "model": data.model}),
             )
             audit(
                 conn,
@@ -164,7 +174,9 @@ def studio_operations_router(
             ).fetchone()
 
     @router.put("/understanding")
-    def edit_understanding(brand_id: UUID, data: ContextEdit, actor: actor_type) -> dict:
+    def edit_understanding(
+        brand_id: UUID, data: ContextEdit, actor: actor_type
+    ) -> dict:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, EDIT_ROLES)
@@ -175,11 +187,15 @@ def studio_operations_router(
             )
             if previous["version"] != data.expected_version:
                 raise DomainError(
-                    "RevisionConflict", "Brand understanding changed. Reload before editing.", 409
+                    "RevisionConflict",
+                    "Brand understanding changed. Reload before editing.",
+                    409,
                 )
             document = data.document.model_dump()
             if previous["document"] == document:
-                return {k: previous[k] for k in ("id", "version", "document", "source_kind")}
+                return {
+                    k: previous[k] for k in ("id", "version", "document", "source_kind")
+                }
             row = one(
                 conn,
                 "INSERT INTO brand_context(brand_id,version,input_hash,source_kind,document) "
@@ -211,12 +227,16 @@ def studio_operations_router(
         )
         if row["revision"] != revision:
             raise DomainError(
-                "RevisionConflict", "The creative changed. Save or reload before continuing.", 409
+                "RevisionConflict",
+                "The creative changed. Save or reload before continuing.",
+                409,
             )
         return row
 
     @router.post("/studio/{draft_id}/render", status_code=201)
-    def render_draft(brand_id: UUID, draft_id: UUID, data: RenderInput, actor: actor_type) -> dict:
+    def render_draft(
+        brand_id: UUID, draft_id: UUID, data: RenderInput, actor: actor_type
+    ) -> dict:
         with db.transaction(actor) as conn:
             generation_gate(conn, locked_brand(conn, brand_id))
             require_role(conn, brand_id, EDIT_ROLES)
@@ -243,7 +263,10 @@ def studio_operations_router(
 
     @router.get("/renditions/{rendition_id}.{extension}")
     def download(
-        brand_id: UUID, rendition_id: UUID, extension: Literal["png", "svg"], actor: actor_type
+        brand_id: UUID,
+        rendition_id: UUID,
+        extension: Literal["png", "svg"],
+        actor: actor_type,
     ):
         with db.transaction(actor) as conn:
             row = one(
@@ -261,7 +284,9 @@ def studio_operations_router(
         )
 
     @router.post("/studio/{draft_id}/attach", status_code=201)
-    def attach(brand_id: UUID, draft_id: UUID, data: AttachInput, actor: actor_type) -> dict:
+    def attach(
+        brand_id: UUID, draft_id: UUID, data: AttachInput, actor: actor_type
+    ) -> dict:
         with db.transaction(actor) as conn:
             generation_gate(conn, locked_brand(conn, brand_id))
             require_role(conn, brand_id, EDIT_ROLES)
@@ -273,7 +298,9 @@ def studio_operations_router(
             )
             if plan["state"] != "draft":
                 raise DomainError(
-                    "PlanNotEditable", "Attach creative to a draft plan before activation.", 409
+                    "PlanNotEditable",
+                    "Attach creative to a draft plan before activation.",
+                    409,
                 )
             existing = conn.execute(
                 "SELECT creative_id FROM studio_plan_creative WHERE brand_id=%s "
@@ -288,13 +315,16 @@ def studio_operations_router(
                 (data.plan_id,),
             ).fetchall()
             rendered = {
-                ratio: persist_render(conn, storage, brand_id, row, ratio) for ratio in SIZES
+                ratio: persist_render(conn, storage, brand_id, row, ratio)
+                for ratio in SIZES
             }
             for spec in specs:
                 ratio = spec["aspect_ratio"]
                 if ratio not in SIZES:
                     raise DomainError(
-                        "UnsupportedPlacement", f"Unsupported placement ratio: {ratio}.", 422
+                        "UnsupportedPlacement",
+                        f"Unsupported placement ratio: {ratio}.",
+                        422,
                     )
                 rendered[ratio] = persist_render(conn, storage, brand_id, row, ratio)
                 result = rendered[ratio]
@@ -305,8 +335,10 @@ def studio_operations_router(
                     if (
                         layer["x"] < insets.get("left", 0)
                         or layer["y"] < insets.get("top", 0)
-                        or layer["x"] + layer["width"] > result["width"] - insets.get("right", 0)
-                        or layer["y"] + layer["height"] > result["height"] - insets.get("bottom", 0)
+                        or layer["x"] + layer["width"]
+                        > result["width"] - insets.get("right", 0)
+                        or layer["y"] + layer["height"]
+                        > result["height"] - insets.get("bottom", 0)
                     ):
                         raise DomainError(
                             "PlacementSafeArea",
@@ -324,9 +356,9 @@ def studio_operations_router(
                     )
                 for field, limit in spec["text_limits"].items():
                     key = "primary_text" if field == "primary" else field
-                    if key in row["document"]["meta"] and len(row["document"]["meta"][key]) > int(
-                        limit
-                    ):
+                    if key in row["document"]["meta"] and len(
+                        row["document"]["meta"][key]
+                    ) > int(limit):
                         raise DomainError(
                             "PlacementTextLimit",
                             f"{spec['placement_key']}: {key} exceeds {limit} characters.",
@@ -416,7 +448,13 @@ def studio_operations_router(
             conn.execute(
                 "INSERT INTO studio_plan_creative VALUES(%s,%s,%s,%s,%s,now()) "
                 "ON CONFLICT DO NOTHING",
-                (brand_id, draft_id, data.expected_revision, data.plan_id, creative["id"]),
+                (
+                    brand_id,
+                    draft_id,
+                    data.expected_revision,
+                    data.plan_id,
+                    creative["id"],
+                ),
             )
             audit(
                 conn,

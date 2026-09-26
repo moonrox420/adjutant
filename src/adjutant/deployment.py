@@ -20,7 +20,9 @@ def deployment_preflight(
     """Report a point-in-time preflight; this function never reserves authority or launches ads."""
     with db.transaction(actor) as conn:
         require_role(conn, brand_id, EDIT_ROLES)
-        plan = one(conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id))
+        plan = one(
+            conn, "SELECT * FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id)
+        )
         token = conn.execute(
             """SELECT id FROM approval_token WHERE brand_id=%s AND subject_type='plan'
             AND subject_id=%s AND subject_hash=%s AND voided_at IS NULL AND expires_at>now()
@@ -68,7 +70,9 @@ def deployment_preflight(
     checks: list[dict[str, Any]] = []
 
     def check(key: str, passed: bool, message: str, channel: str | None = None) -> None:
-        checks.append({"key": key, "passed": passed, "message": message, "channel": channel})
+        checks.append(
+            {"key": key, "passed": passed, "message": message, "channel": channel}
+        )
 
     authorized = bool(allocations) and all(
         any(
@@ -80,16 +84,24 @@ def deployment_preflight(
     check(
         "launch_authorization",
         authorized or bool(token),
-        "The selected accounts have first-launch authorization."
-        if authorized
-        else "Review and authorize the selected accounts for first launch.",
+        (
+            "The selected accounts have first-launch authorization."
+            if authorized
+            else "Review and authorize the selected accounts for first launch."
+        ),
     )
     secret = ""
     if token and not authorized:
         try:
-            secret = config.gateway_service_secret_path.read_text(encoding="utf-8").strip()
+            secret = config.gateway_service_secret_path.read_text(
+                encoding="utf-8"
+            ).strip()
         except OSError:
-            check("gateway_configuration", False, "Configure the gateway with scripts/upgrade.py.")
+            check(
+                "gateway_configuration",
+                False,
+                "Configure the gateway with scripts/upgrade.py.",
+            )
     now = datetime.now(UTC)
     with httpx.Client(timeout=10, trust_env=False, follow_redirects=False) as client:
         for allocation in allocations:
@@ -106,9 +118,11 @@ def deployment_preflight(
             check(
                 "channel_access",
                 connected,
-                "Channel access is recorded as healthy."
-                if connected
-                else "Connect an authorized advertising account for this channel.",
+                (
+                    "Channel access is recorded as healthy."
+                    if connected
+                    else "Connect an authorized advertising account for this channel."
+                ),
                 channel,
             )
             creative_attached = any(
@@ -117,19 +131,23 @@ def deployment_preflight(
             check(
                 "creative_attached",
                 creative_attached,
-                "Rendered creative is attached to this campaign plan."
-                if creative_attached
-                else "Attach rendered creative to this campaign plan.",
+                (
+                    "Rendered creative is attached to this campaign plan."
+                    if creative_attached
+                    else "Attach rendered creative to this campaign plan."
+                ),
                 channel,
             )
             validated = any(item["channel"] == channel for item in renditions)
             check(
                 "creative_approval",
                 validated,
-                "A channel-validated rendition is recorded."
-                if validated
-                else "Channel-specific creative validation is not recorded. "
-                "Attaching a Studio render does not establish platform conformance.",
+                (
+                    "A channel-validated rendition is recorded."
+                    if validated
+                    else "Channel-specific creative validation is not recorded. "
+                    "Attaching a Studio render does not establish platform conformance."
+                ),
                 channel,
             )
             channel_limits = spec_limits_by_channel.get(channel)
@@ -143,7 +161,8 @@ def deployment_preflight(
                         val = channel_copy.get(key)
                         if isinstance(val, str) and len(val) > max_len:
                             limit_failures.append(
-                                f"Creative {draft['id']} field '{key}' length {len(val)} exceeds allowed limit of {max_len} characters."
+                                f"Creative {draft['id']} field '{key}' length {len(val)} "
+                                f"exceeds allowed limit of {max_len} characters."
                             )
                 if limit_failures:
                     check("character_limits", False, "; ".join(limit_failures), channel)
@@ -165,9 +184,11 @@ def deployment_preflight(
             check(
                 "adapter",
                 build_available,
-                "A durable paused-campaign construction path is registered."
-                if build_available
-                else "Campaign construction for this channel is unavailable.",
+                (
+                    "A durable paused-campaign construction path is registered."
+                    if build_available
+                    else "Campaign construction for this channel is unavailable."
+                ),
                 channel,
             )
             if authorized:
@@ -206,7 +227,8 @@ def deployment_preflight(
                     body = response.json()
                     valid = response.status_code == 200 and body.get("valid") is True
                     message = (
-                        "Gateway verified the signature, revision, scope, and budget authority."
+                        "Gateway verified the signature, revision, scope, "
+                        "and budget authority."
                     )
                     if not valid:
                         message = body.get("error", {}).get(
@@ -222,11 +244,15 @@ def deployment_preflight(
                     )
     with db.transaction(actor) as conn:
         latest = one(
-            conn, "SELECT plan_hash FROM plan WHERE id=%s AND brand_id=%s", (plan_id, brand_id)
+            conn,
+            "SELECT plan_hash FROM plan WHERE id=%s AND brand_id=%s",
+            (plan_id, brand_id),
         )
         if latest["plan_hash"] != plan["plan_hash"]:
             raise DomainError(
-                "PlanChanged", "The plan changed during preflight. Check the latest revision.", 409
+                "PlanChanged",
+                "The plan changed during preflight. Check the latest revision.",
+                409,
             )
     return {
         "plan_id": plan_id,

@@ -21,7 +21,9 @@ def main() -> None:
     threading.Thread(target=watch_parent, daemon=True).start()
     try:
         result = OllamaPlanner(
-            data["url"], provider=data.get("provider", "local"), api_key=data.get("api_key", "")
+            data["url"],
+            provider=data.get("provider", "local"),
+            api_key=data.get("api_key", ""),
         ).generate(data["model"], data["context"])
         output = {
             "plan": result.plan.model_dump(mode="json"),
@@ -30,7 +32,9 @@ def main() -> None:
             "attempts": result.attempts,
         }
     except DomainError as exc:
-        output = {"error": {"code": exc.code, "message": exc.message, "status": exc.status}}
+        output = {
+            "error": {"code": exc.code, "message": exc.message, "status": exc.status}
+        }
     sys.stdout.write(json.dumps(output))
     sys.stdout.flush()
 

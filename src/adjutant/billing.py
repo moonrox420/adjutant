@@ -1,13 +1,13 @@
-"""Self-serve flat-tier billing, dunning state machines, and safe cancellation preventing stranded ad spend."""
+"""Self-serve flat-tier billing, dunning state machines, and safe cancellation
+preventing stranded ad spend.
+"""
 
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from psycopg import Connection
-from psycopg.types.json import Jsonb
 
 from adjutant.errors import DomainError
 
@@ -49,7 +49,9 @@ def create_subscription(
     """Create or update account subscription with flat-tier pricing."""
     tier = BILLING_TIERS.get(tier_id)
     if not tier:
-        raise DomainError("InvalidTier", f"Billing tier '{tier_id}' does not exist.", 400)
+        raise DomainError(
+            "InvalidTier", f"Billing tier '{tier_id}' does not exist.", 400
+        )
 
     now = datetime.now(UTC)
     period_end = now + timedelta(days=30)
@@ -95,7 +97,9 @@ def handle_billing_failure(
     account_id: UUID,
     failure_reason: str,
 ) -> dict[str, Any]:
-    """S14.3: Handle billing failure and transition to dunning without immediately killing campaigns."""
+    """S14.3: Handle billing failure and transition to dunning without
+    immediately killing campaigns.
+    """
     now = datetime.now(UTC)
     grace_period_end = now + timedelta(days=5)
 
@@ -117,7 +121,10 @@ def handle_billing_failure(
         "account_id": str(account_id),
         "status": "dunning",
         "grace_period_end": grace_period_end.isoformat(),
-        "warning": "Payment failed. Campaigns will remain running for 5 days before pause on cancellation.",
+        "warning": (
+            "Payment failed. Campaigns will remain running for 5 days "
+            "before pause on cancellation."
+        ),
     }
 
 
@@ -126,7 +133,9 @@ def cancel_subscription(
     account_id: UUID,
     immediate_pause_campaigns: bool = True,
 ) -> dict[str, Any]:
-    """S14.3: Cancel subscription safely without stranding live campaigns spending unmonitored money."""
+    """S14.3: Cancel subscription safely without stranding live campaigns
+    spending unmonitored money.
+    """
     conn.execute(
         """UPDATE account_subscription SET
             status = 'cancelled',

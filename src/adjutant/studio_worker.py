@@ -47,18 +47,26 @@ async def generate_copy(config: Settings, context: dict) -> AdCopyBundle:
     with tempfile.TemporaryFile() as output:
         child = launch("adjutant.studio_worker", output)
         try:
-            data = {"url": config.ollama_url, "model": config.ollama_model, "context": context}
+            data = {
+                "url": config.ollama_url,
+                "model": config.ollama_model,
+                "context": context,
+            }
             child.stdin.write((json.dumps(data, default=str) + "\n").encode())
             child.stdin.flush()
             async with asyncio.timeout(250):
                 while child.poll() is None:
                     if os.fstat(output.fileno()).st_size > 1024 * 1024:
                         raise DomainError(
-                            "GenerationInvalid", "Copy output exceeded its size limit.", 422
+                            "GenerationInvalid",
+                            "Copy output exceeded its size limit.",
+                            422,
                         )
                     await asyncio.sleep(0.15)
             if child.returncode != 0:
-                raise DomainError("GenerationWorkerFailed", "Studio inference process failed.", 503)
+                raise DomainError(
+                    "GenerationWorkerFailed", "Studio inference process failed.", 503
+                )
             output.seek(0)
             value = json.loads(output.read(1024 * 1024))
             if "error" in value:
@@ -95,7 +103,9 @@ def main() -> None:
         )
         output = {"copy": result.model_dump()}
     except DomainError as exc:
-        output = {"error": {"code": exc.code, "message": exc.message, "status": exc.status}}
+        output = {
+            "error": {"code": exc.code, "message": exc.message, "status": exc.status}
+        }
     sys.stdout.write(json.dumps(output))
     sys.stdout.flush()
 

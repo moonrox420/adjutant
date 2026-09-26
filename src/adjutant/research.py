@@ -60,13 +60,17 @@ def public_target(url: str) -> tuple[str, int, str]:
         or parsed.username is not None
         or parsed.password is not None
     ):
-        raise DomainError("UnsafeWebsite", "Use a public HTTP or HTTPS website URL.", 422)
+        raise DomainError(
+            "UnsafeWebsite", "Use a public HTTP or HTTPS website URL.", 422
+        )
     try:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
     except ValueError as exc:
         raise DomainError("UnsafeWebsite", "Website port is invalid.", 422) from exc
     if port != (443 if parsed.scheme == "https" else 80):
-        raise DomainError("UnsafeWebsite", "Only standard web ports are permitted.", 422)
+        raise DomainError(
+            "UnsafeWebsite", "Only standard web ports are permitted.", 422
+        )
     hostname = parsed.hostname.encode("idna").decode("ascii")
     try:
         addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
@@ -76,9 +80,13 @@ def public_target(url: str) -> tuple[str, int, str]:
         ) from exc
     ips = list(dict.fromkeys(address[4][0] for address in addresses))
     parsed_ips = [ipaddress.ip_address(ip) for ip in ips]
-    if not ips or any(not ip.is_global or ip.is_multicast or ip.is_reserved for ip in parsed_ips):
+    if not ips or any(
+        not ip.is_global or ip.is_multicast or ip.is_reserved for ip in parsed_ips
+    ):
         raise DomainError(
-            "UnsafeWebsite", "Private, loopback, and reserved network addresses are blocked.", 422
+            "UnsafeWebsite",
+            "Private, loopback, and reserved network addresses are blocked.",
+            422,
         )
     return hostname, port, ips[0]
 
@@ -97,7 +105,9 @@ def fetch_website(url: str) -> WebsiteEvidence:
             sock = socket.create_connection((ip, port), timeout=12)
             if parsed.scheme == "https":
                 try:
-                    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=hostname)
+                    sock = ssl.create_default_context().wrap_socket(
+                        sock, server_hostname=hostname
+                    )
                 except BaseException:
                     sock.close()
                     raise
@@ -117,16 +127,22 @@ def fetch_website(url: str) -> WebsiteEvidence:
                 location = response.getheader("Location")
                 if not location:
                     raise DomainError(
-                        "WebsiteUnavailable", "Website redirect has no destination.", 422
+                        "WebsiteUnavailable",
+                        "Website redirect has no destination.",
+                        422,
                     )
                 destination = urljoin(current, location)
                 if parsed.scheme == "https" and urlsplit(destination).scheme != "https":
-                    raise DomainError("UnsafeWebsite", "HTTPS downgrades are blocked.", 422)
+                    raise DomainError(
+                        "UnsafeWebsite", "HTTPS downgrades are blocked.", 422
+                    )
                 current = destination
                 continue
             if response.status != 200:
                 raise DomainError(
-                    "WebsiteUnavailable", f"Website returned HTTP {response.status}.", 422
+                    "WebsiteUnavailable",
+                    f"Website returned HTTP {response.status}.",
+                    422,
                 )
             if "text/html" not in (response.getheader("Content-Type") or "").lower():
                 raise DomainError(
@@ -134,22 +150,31 @@ def fetch_website(url: str) -> WebsiteEvidence:
                 )
             if response.getheader("Content-Encoding", "identity").lower() != "identity":
                 raise DomainError(
-                    "UnsupportedContent", "The website ignored uncompressed transfer.", 422
+                    "UnsupportedContent",
+                    "The website ignored uncompressed transfer.",
+                    422,
                 )
             raw = response.read(MAX_BYTES + 1)
             if len(raw) > MAX_BYTES:
                 raise DomainError(
-                    "WebsiteTooLarge", "Page exceeds the two-megabyte import limit.", 422
+                    "WebsiteTooLarge",
+                    "Page exceeds the two-megabyte import limit.",
+                    422,
                 )
             parser = VisibleText()
             parser.feed(raw.decode("utf-8", errors="replace"))
             text = "\n".join(parser.parts)[:16000]
             if len(text) < 40:
                 raise DomainError(
-                    "WebsiteEmpty", "No usable page text was found. Add brand facts manually.", 422
+                    "WebsiteEmpty",
+                    "No usable page text was found. Add brand facts manually.",
+                    422,
                 )
             return WebsiteEvidence(
-                current, " ".join(parser.title_parts)[:300], text, hashlib.sha256(raw).hexdigest()
+                current,
+                " ".join(parser.title_parts)[:300],
+                text,
+                hashlib.sha256(raw).hexdigest(),
             )
         except (OSError, http.client.HTTPException) as exc:
             raise DomainError(

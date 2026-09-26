@@ -106,7 +106,9 @@ def provider_for(channel: str) -> OAuthProvider:
     raise DomainError("UnknownChannel", "Unknown advertising channel.", 422)
 
 
-def authorization_url(provider: OAuthProvider, app: dict, redirect: str, state: str) -> str:
+def authorization_url(
+    provider: OAuthProvider, app: dict, redirect: str, state: str
+) -> str:
     params = {
         "client_id": app["client_id"],
         "redirect_uri": redirect,
@@ -127,7 +129,9 @@ def request_json(method: str, url: str, *, allow_empty: bool = False, **kwargs):
     """No automatic mutation retries or redirects; provider secrets never enter error messages."""
     try:
         with httpx.Client(
-            timeout=httpx.Timeout(30, connect=5), trust_env=False, follow_redirects=False
+            timeout=httpx.Timeout(30, connect=5),
+            trust_env=False,
+            follow_redirects=False,
         ) as client:
             response = client.request(method, url, **kwargs)
         if response.status_code in {401, 403}:
@@ -176,7 +180,9 @@ def request_json(method: str, url: str, *, allow_empty: bool = False, **kwargs):
         ) from exc
     except ValueError as exc:
         raise DomainError(
-            "PlatformResponseInvalid", "The platform returned an unexpected response.", 502
+            "PlatformResponseInvalid",
+            "The platform returned an unexpected response.",
+            502,
         ) from exc
 
 
@@ -199,7 +205,9 @@ def exchange(
     if refresh:
         if not previous or not previous.get("refresh_token"):
             raise DomainError(
-                "ReauthorizationRequired", "This platform requires renewed user authorization.", 403
+                "ReauthorizationRequired",
+                "This platform requires renewed user authorization.",
+                403,
             )
         form["refresh_token"] = previous["refresh_token"]
     else:
@@ -223,20 +231,28 @@ def exchange(
         result = request_json(
             "POST",
             provider.token_url,
-            json={"app_id": app["client_id"], "secret": app["client_secret"], "auth_code": code},
+            json={
+                "app_id": app["client_id"],
+                "secret": app["client_secret"],
+                "auth_code": code,
+            },
             headers=headers,
             timeout=timeout,
         )
         data = result.get("data") if isinstance(result, dict) else None
     else:
-        data = request_json("POST", provider.token_url, data=form, headers=headers, timeout=timeout)
+        data = request_json(
+            "POST", provider.token_url, data=form, headers=headers, timeout=timeout
+        )
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("access_token"), str)
         or not data["access_token"]
     ):
         raise DomainError(
-            "PlatformResponseInvalid", "The platform did not return an access token.", 502
+            "PlatformResponseInvalid",
+            "The platform did not return an access token.",
+            502,
         )
     token = {**(previous or {}), **data}
     try:
@@ -245,7 +261,9 @@ def exchange(
         )
     except (ValueError, TypeError, OverflowError) as exc:
         raise DomainError(
-            "PlatformResponseInvalid", "The token expiry returned by the platform is invalid.", 502
+            "PlatformResponseInvalid",
+            "The token expiry returned by the platform is invalid.",
+            502,
         ) from exc
     return token
 
@@ -263,7 +281,9 @@ def revoke(provider: OAuthProvider, app: dict, token: dict) -> dict:
             headers={**headers, "Authorization": "Bearer " + access},
         )
         if result.get("success") is not True:
-            raise DomainError("RevocationUnverified", "Meta did not confirm revocation.", 502)
+            raise DomainError(
+                "RevocationUnverified", "Meta did not confirm revocation.", 502
+            )
     elif channel in {"google_ads", "youtube"}:
         request_json(
             "POST",
@@ -273,7 +293,9 @@ def revoke(provider: OAuthProvider, app: dict, token: dict) -> dict:
             allow_empty=True,
         )
     elif channel in {"reddit", "pinterest"}:
-        basic = base64.b64encode(f"{app['client_id']}:{app['client_secret']}".encode()).decode()
+        basic = base64.b64encode(
+            f"{app['client_id']}:{app['client_secret']}".encode()
+        ).decode()
         headers["Authorization"] = "Basic " + basic
         endpoint = (
             "https://www.reddit.com/api/v1/revoke_token"
@@ -287,9 +309,9 @@ def revoke(provider: OAuthProvider, app: dict, token: dict) -> dict:
             allow_empty=True,
             data={
                 "token": credential,
-                "token_type_hint": "refresh_token"
-                if token.get("refresh_token")
-                else "access_token",
+                "token_type_hint": (
+                    "refresh_token" if token.get("refresh_token") else "access_token"
+                ),
             },
         )
     elif channel == "tiktok":
@@ -328,7 +350,9 @@ def discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
         return _discover(provider, app, token)
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         raise DomainError(
-            "PlatformResponseInvalid", "Account discovery returned an invalid response.", 502
+            "PlatformResponseInvalid",
+            "Account discovery returned an invalid response.",
+            502,
         ) from exc
 
 
@@ -349,7 +373,9 @@ def reddit_pages(method: str, path: str, headers: dict) -> list[dict]:
             or url in seen
         ):
             raise DomainError(
-                "PlatformResponseInvalid", "Reddit returned an invalid pagination URL.", 502
+                "PlatformResponseInvalid",
+                "Reddit returned an invalid pagination URL.",
+                502,
             )
         seen.add(url)
         body = {"json": {"data": {}}} if method == "POST" else {}
@@ -358,23 +384,34 @@ def reddit_pages(method: str, path: str, headers: dict) -> list[dict]:
         url = result.get("pagination", {}).get("next_url")
         if not url:
             return records
-    raise DomainError("AccountDiscoveryLimit", "Reddit account pagination exceeded 100 pages.", 502)
+    raise DomainError(
+        "AccountDiscoveryLimit", "Reddit account pagination exceeded 100 pages.", 502
+    )
 
 
 def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
-    headers = {"Authorization": "Bearer " + token["access_token"], "User-Agent": "Adjutant/2.0"}
+    headers = {
+        "Authorization": "Bearer " + token["access_token"],
+        "User-Agent": "Adjutant/2.0",
+    }
     channel = provider.channel
     accounts: list[dict] = []
 
     def account(value, identifier="id", name="name", **extra):
-        if not isinstance(value[identifier], (str, int)) or isinstance(value[identifier], bool):
+        if not isinstance(value[identifier], (str, int)) or isinstance(
+            value[identifier], bool
+        ):
             raise ValueError("Invalid account identifier type")
         identity = str(value[identifier])
         if not identity or len(identity) > 200:
             raise DomainError(
-                "PlatformResponseInvalid", "The platform returned an invalid account ID.", 502
+                "PlatformResponseInvalid",
+                "The platform returned an invalid account ID.",
+                502,
             )
-        accounts.append({"id": identity, "name": str(value.get(name) or identity), **extra})
+        accounts.append(
+            {"id": identity, "name": str(value.get(name) or identity), **extra}
+        )
 
     if channel == "meta":
         params = {"fields": "id,name,account_status,currency", "limit": 100}
@@ -387,7 +424,9 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
             )
             for item in result["data"]:
                 account(
-                    item, currency=item.get("currency"), provider_status=item.get("account_status")
+                    item,
+                    currency=item.get("currency"),
+                    provider_status=item.get("account_status"),
                 )
             if not result.get("paging", {}).get("next"):
                 return accounts
@@ -404,7 +443,9 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
             root = name.split("/")[-1]
             if not re.fullmatch(r"[0-9]+", root):
                 raise DomainError(
-                    "PlatformResponseInvalid", "Google returned an invalid customer ID.", 502
+                    "PlatformResponseInvalid",
+                    "Google returned an invalid customer ID.",
+                    502,
                 )
             pending.append((root, root))
         visited: set[tuple[str, str]] = set()
@@ -416,7 +457,9 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
             visited.add((customer, root))
             if len(visited) > 1000:
                 raise DomainError(
-                    "AccountDiscoveryLimit", "Google account hierarchy exceeded 1000 accounts.", 502
+                    "AccountDiscoveryLimit",
+                    "Google account hierarchy exceeded 1000 accounts.",
+                    502,
                 )
             headers["login-customer-id"] = root
             body = {
@@ -476,7 +519,9 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
             account(item, "advertiser_id", "advertiser_name")
         return accounts
     elif channel == "linkedin":
-        headers.update({"LinkedIn-Version": "202608", "X-Restli-Protocol-Version": "2.0.0"})
+        headers.update(
+            {"LinkedIn-Version": "202608", "X-Restli-Protocol-Version": "2.0.0"}
+        )
         for page in range(100):
             result = request_json(
                 "GET",
@@ -494,7 +539,9 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
             "DeveloperToken": app["developer_token"],
         }
         base = "https://clientcenter.api.bingads.microsoft.com/CustomerManagement/v13"
-        user = request_json("POST", base + "/User/Query", json={"UserId": None}, headers=headers)
+        user = request_json(
+            "POST", base + "/User/Query", json={"UserId": None}, headers=headers
+        )
         for page in range(100):
             result = request_json(
                 "POST",
@@ -502,7 +549,11 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
                 headers=headers,
                 json={
                     "Predicates": [
-                        {"Field": "UserId", "Operator": "Equals", "Value": str(user["User"]["Id"])}
+                        {
+                            "Field": "UserId",
+                            "Operator": "Equals",
+                            "Value": str(user["User"]["Id"]),
+                        }
                     ],
                     "PageInfo": {"Index": page, "Size": 100},
                 },
@@ -522,17 +573,24 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
         seen_accounts: set[str] = set()
         for business in businesses:
             identity = quote(str(business["id"]), safe="")
-            rows = reddit_pages("POST", f"/businesses/{identity}/ad_accounts/query", headers)
+            rows = reddit_pages(
+                "POST", f"/businesses/{identity}/ad_accounts/query", headers
+            )
             for item in rows:
                 if str(item["id"]) not in seen_accounts:
-                    account(item, currency=item.get("currency"), business_id=business["id"])
+                    account(
+                        item, currency=item.get("currency"), business_id=business["id"]
+                    )
                     seen_accounts.add(str(item["id"]))
         return accounts
     elif channel == "pinterest":
         params = {"page_size": 100}
         for _ in range(100):
             result = request_json(
-                "GET", "https://api.pinterest.com/v5/ad_accounts", params=params, headers=headers
+                "GET",
+                "https://api.pinterest.com/v5/ad_accounts",
+                params=params,
+                headers=headers,
             )
             for item in result["items"]:
                 account(item, currency=item.get("currency"))
@@ -550,7 +608,11 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
             organization = item["organization"]
             for entry in organization.get("ad_accounts", []):
                 value = entry.get("ad_account", entry)
-                account(value, organization_id=organization["id"], currency=value.get("currency"))
+                account(
+                    value,
+                    organization_id=organization["id"],
+                    currency=value.get("currency"),
+                )
         return accounts
     elif channel == "amazon_ads":
         origins = {
@@ -559,14 +621,21 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
             "FE": "https://advertising-api-fe.amazon.com",
         }
         headers["Amazon-Advertising-API-ClientId"] = app["client_id"]
-        result = request_json("GET", origins[app["region"]] + "/v2/profiles", headers=headers)
+        result = request_json(
+            "GET", origins[app["region"]] + "/v2/profiles", headers=headers
+        )
         for item in result:
             account(
-                {"id": str(item["profileId"]), "name": item.get("accountInfo", {}).get("name")},
+                {
+                    "id": str(item["profileId"]),
+                    "name": item.get("accountInfo", {}).get("name"),
+                },
                 currency=item.get("currencyCode"),
                 country=item.get("countryCode"),
             )
         return accounts
     raise DomainError(
-        "AccountDiscoveryLimit", "Account discovery exceeded the provider pagination limit.", 502
+        "AccountDiscoveryLimit",
+        "Account discovery exceeded the provider pagination limit.",
+        502,
     )

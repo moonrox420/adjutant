@@ -5,11 +5,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from psycopg.types.json import Jsonb
-
-from adjutant.errors import DomainError
-from adjutant.revert import execute_revert
-from test_autonomy import launch_gateway, review, selected_account
+from test_autonomy import review
 
 
 def test_action_immutability_trigger(admin, brand):
@@ -27,11 +23,15 @@ def test_action_immutability_trigger(admin, brand):
 
     # Direct UPDATE of rationale must be rejected by the trigger
     with pytest.raises(psycopg.errors.RaiseException, match="is append-only"):
-        admin.execute("UPDATE action SET rationale='tampered rationale' WHERE id=%s", (action_id,))
+        admin.execute(
+            "UPDATE action SET rationale='tampered rationale' WHERE id=%s", (action_id,)
+        )
 
     # Direct UPDATE of target_id must be rejected
     with pytest.raises(psycopg.errors.RaiseException, match="is append-only"):
-        admin.execute("UPDATE action SET target_id=%s WHERE id=%s", (uuid4(), action_id))
+        admin.execute(
+            "UPDATE action SET target_id=%s WHERE id=%s", (uuid4(), action_id)
+        )
 
     # Direct DELETE must be rejected
     with pytest.raises(psycopg.errors.RaiseException, match="is append-only"):
@@ -74,13 +74,16 @@ def test_brand_activation_and_revert(
     """Test brand activation upon launch authorization consumption, and reverting back to draft."""
     # Check initial brand state is draft with no activated_at
     b = admin.execute(
-        "SELECT status, activated_at, campaigns_enabled FROM brand WHERE id=%s", (brand,)
+        "SELECT status, activated_at, campaigns_enabled FROM brand WHERE id=%s",
+        (brand,),
     ).fetchone()
     assert b["status"] == "draft"
     assert b["activated_at"] is None
 
     # Perform launch authorization consumption
-    admin.execute("UPDATE brand SET brand_graph_confirmed_at=NULL WHERE id=%s", (brand,))
+    admin.execute(
+        "UPDATE brand SET brand_graph_confirmed_at=NULL WHERE id=%s", (brand,)
+    )
     data = review(client, brand, plan)
     path = f"/api/brands/{brand}/plans/{plan['id']}/authorize-launch"
     res = client.post(path, json=data)
@@ -88,7 +91,8 @@ def test_brand_activation_and_revert(
 
     # Brand should now be active with activated_at timestamp
     b_active = admin.execute(
-        "SELECT status, activated_at, campaigns_enabled FROM brand WHERE id=%s", (brand,)
+        "SELECT status, activated_at, campaigns_enabled FROM brand WHERE id=%s",
+        (brand,),
     ).fetchone()
     assert b_active["status"] == "active"
     assert b_active["activated_at"] is not None

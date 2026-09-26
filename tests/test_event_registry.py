@@ -30,9 +30,9 @@ def test_bundled_registry_covers_every_current_producer(tmp_path, monkeypatch):
                 and node.func.value.id == "events"
                 and node.func.attr == "append"
             ):
-                assert isinstance(node.args[1], ast.Constant), (
-                    "Dynamic event names need contract coverage"
-                )
+                assert isinstance(
+                    node.args[1], ast.Constant
+                ), "Dynamic event names need contract coverage"
                 emitted.add(node.args[1].value)
     assert emitted <= definitions
     monkeypatch.chdir(tmp_path)
@@ -68,4 +68,6 @@ def test_runtime_event_contract_rejects_malformed_authority(bad_field, bad_value
     }
     registry.payloads["approval.token.issued"].validate(payload)
     with pytest.raises(ValidationError):
-        registry.payloads["approval.token.issued"].validate({**payload, bad_field: bad_value})
+        registry.payloads["approval.token.issued"].validate(
+            {**payload, bad_field: bad_value}
+        )

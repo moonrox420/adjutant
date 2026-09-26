@@ -28,4 +28,4 @@ CREATE POLICY tenant_isolation ON platform_access_application
     WITH CHECK (brand_id = ANY(current_brand_ids()));
 
 -- Grant permissions to application roles
-GRANT SELECT, INSERT, UPDATE, DELETE ON platform_access_application TO adjutant_app, adjutant_worker, adjutant_gateway;
+GRANT SELECT, INSERT, UPDATE, DELETE ON platform_access_application TO adjutant_app, adjutant_gateway;

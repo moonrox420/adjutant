@@ -20,7 +20,16 @@ from adjutant.models import PlanInput
 
 def child_environment() -> dict[str, str]:
     """Inherit no application credentials; selected provider credentials use the private pipe."""
-    allowed = {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP", "LANG", "HOME", "USERPROFILE"}
+    allowed = {
+        "SYSTEMROOT",
+        "WINDIR",
+        "PATH",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "HOME",
+        "USERPROFILE",
+    }
     env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
     env["PYTHONUNBUFFERED"] = "1"
@@ -103,24 +112,35 @@ def generate_in_process(
                         (token_hash, run),
                     )
                     conn.execute(
-                        "UPDATE agent_run SET worker_heartbeat_at=now() WHERE id=%s", (run,)
+                        "UPDATE agent_run SET worker_heartbeat_at=now() WHERE id=%s",
+                        (run,),
                     )
-                if state["cancel_requested_at"] or not state["active"] or state["stopped"]:
+                if (
+                    state["cancel_requested_at"]
+                    or not state["active"]
+                    or state["stopped"]
+                ):
                     raise DomainError(
-                        "GenerationCancelled", "Generation stopped; no draft was saved.", 409
+                        "GenerationCancelled",
+                        "Generation stopped; no draft was saved.",
+                        409,
                     )
                 if time.monotonic() >= deadline:
                     raise DomainError(
                         "GenerationTimeout", "Generation exceeded its time limit.", 504
                     )
                 if os.fstat(output.fileno()).st_size > 1024 * 1024:
-                    raise DomainError("GenerationInvalid", "Model output exceeded its limit.", 422)
+                    raise DomainError(
+                        "GenerationInvalid", "Model output exceeded its limit.", 422
+                    )
                 if process.poll() is not None:
                     break
                 time.sleep(0.15)
             if process.returncode != 0:
                 raise DomainError(
-                    "GenerationWorkerFailed", "The generation worker exited unexpectedly.", 503
+                    "GenerationWorkerFailed",
+                    "The generation worker exited unexpectedly.",
+                    503,
                 )
             output.seek(0)
             try:
@@ -129,7 +149,9 @@ def generate_in_process(
                     raise ValueError("Expected worker response object")
             except (ValueError, UnicodeError) as exc:
                 raise DomainError(
-                    "GenerationInvalid", "The generation worker returned invalid output.", 502
+                    "GenerationInvalid",
+                    "The generation worker returned invalid output.",
+                    502,
                 ) from exc
             if "error" in body:
                 error = body["error"]
@@ -143,7 +165,9 @@ def generate_in_process(
                 )
             except (KeyError, TypeError, ValidationError) as exc:
                 raise DomainError(
-                    "GenerationInvalid", "The generation worker returned an invalid draft.", 502
+                    "GenerationInvalid",
+                    "The generation worker returned an invalid draft.",
+                    502,
                 ) from exc
         finally:
             code = terminate_owned(process)

@@ -18,13 +18,17 @@ from adjutant.service import audit, locked_brand
 from adjutant.storage import ObjectStore
 
 
-def consume_remotely(config: Settings, brand_id: UUID, authorization_id: str) -> dict[str, Any]:
+def consume_remotely(
+    config: Settings, brand_id: UUID, authorization_id: str
+) -> dict[str, Any]:
     """Consume once; the caller reconciles the review receipt before retrying."""
     try:
         secret = config.gateway_service_secret_path.read_text(encoding="utf-8").strip()
         if len(secret) < 32:
             raise ValueError("Invalid service credential")
-        with httpx.Client(timeout=15, trust_env=False, follow_redirects=False) as client:
+        with httpx.Client(
+            timeout=15, trust_env=False, follow_redirects=False
+        ) as client:
             response = client.post(
                 config.gateway_url.rstrip("/")
                 + f"/internal/brands/{brand_id}/launch-authorizations/{authorization_id}/consume",
@@ -72,16 +76,22 @@ def autonomy_router(
             )
         if asset["mime_type"] not in {"image/png", "image/jpeg", "image/webp"}:
             raise DomainError(
-                "UnsupportedPreview", "This asset cannot be displayed as an ad preview.", 422
+                "UnsupportedPreview",
+                "This asset cannot be displayed as an ad preview.",
+                422,
             )
         try:
             content = storage.read(brand_id, asset["storage_uri"])
         except (OSError, ValueError) as exc:
             raise DomainError(
-                "AssetUnavailable", "This ad asset is missing or failed its integrity check.", 409
+                "AssetUnavailable",
+                "This ad asset is missing or failed its integrity check.",
+                409,
             ) from exc
         return Response(
-            content, media_type=asset["mime_type"], headers={"Cache-Control": "private, no-store"}
+            content,
+            media_type=asset["mime_type"],
+            headers={"Cache-Control": "private, no-store"},
         )
 
     @router.get("/guardrails")
@@ -90,16 +100,22 @@ def autonomy_router(
             return one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
 
     @router.put("/guardrails")
-    def save_guardrails(brand_id: UUID, data: GuardrailInput, actor: actor_type) -> dict[str, Any]:
+    def save_guardrails(
+        brand_id: UUID, data: GuardrailInput, actor: actor_type
+    ) -> dict[str, Any]:
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, {"owner", "admin"})
             previous = one(
-                conn, "SELECT * FROM guardrail WHERE brand_id=%s FOR UPDATE", (brand_id,)
+                conn,
+                "SELECT * FROM guardrail WHERE brand_id=%s FOR UPDATE",
+                (brand_id,),
             )
             if previous["version"] != data.expected_version:
                 raise DomainError(
-                    "GuardrailsChanged", "These limits changed. Reload before saving.", 409
+                    "GuardrailsChanged",
+                    "These limits changed. Reload before saving.",
+                    409,
                 )
             values = data.model_dump(exclude={"expected_version"})
             updated = one(
@@ -108,7 +124,9 @@ def autonomy_router(
                     "UPDATE guardrail SET {},version=version+1,updated_at=now() "
                     "WHERE brand_id=%s RETURNING *"
                 ).format(
-                    sql.SQL(",").join(sql.SQL("{}=%s").format(sql.Identifier(k)) for k in values)
+                    sql.SQL(",").join(
+                        sql.SQL("{}=%s").format(sql.Identifier(k)) for k in values
+                    )
                 ),
                 (*values.values(), brand_id),
             )
@@ -149,7 +167,9 @@ def autonomy_router(
             consume_remotely(config, brand_id, result["authorization_id"])
         elif result.get("already_authorized") is not True:
             raise DomainError(
-                "ApprovalUnavailable", "The approval service returned no authorization.", 503
+                "ApprovalUnavailable",
+                "The approval service returned no authorization.",
+                503,
             )
         with db.transaction(actor) as conn:
             return launch_scope(conn, brand_id, plan_id)

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 from typing import Any
+
 import httpx
 
 
@@ -13,7 +14,11 @@ class CassetteError(RuntimeError):
 class Cassette:
     """Manages recorded HTTP request/response interactions."""
 
-    def __init__(self, path: Path | str | None = None, interactions: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | str | None = None,
+        interactions: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.path = Path(path) if path else None
         self.interactions: list[dict[str, Any]] = []
         if interactions:
@@ -22,7 +27,14 @@ class Cassette:
             content = self.path.read_text(encoding="utf-8")
             self.interactions = json.loads(content) if content.strip() else []
 
-    def record(self, method: str, url: str, status_code: int, response_data: Any, request_data: Any = None) -> None:
+    def record(
+        self,
+        method: str,
+        url: str,
+        status_code: int,
+        response_data: Any,
+        request_data: Any = None,
+    ) -> None:
         interaction = {
             "request": {
                 "method": method.upper(),
@@ -37,7 +49,9 @@ class Cassette:
         self.interactions.append(interaction)
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.interactions, indent=2), encoding="utf-8")
+            self.path.write_text(
+                json.dumps(self.interactions, indent=2), encoding="utf-8"
+            )
 
     def match(self, method: str, url: str) -> dict[str, Any] | None:
         norm_method = method.upper()
@@ -72,7 +86,9 @@ class CassetteTransport(httpx.AsyncBaseTransport):
             )
         status = resp_data.get("status_code", 200)
         body = resp_data.get("body", {})
-        content = json.dumps(body).encode("utf-8") if not isinstance(body, bytes) else body
+        content = (
+            json.dumps(body).encode("utf-8") if not isinstance(body, bytes) else body
+        )
         return httpx.Response(
             status_code=status,
             content=content,

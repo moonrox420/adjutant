@@ -39,7 +39,9 @@ class Database:
             ).fetchone()
             if role is None or role["rolsuper"] or role["rolbypassrls"]:
                 self.pool.close()
-                raise RuntimeError("Runtime database role must not bypass row-level security")
+                raise RuntimeError(
+                    "Runtime database role must not bypass row-level security"
+                )
 
     @contextmanager
     def transaction(
@@ -63,10 +65,14 @@ class Database:
 
     def authenticate(self, token_hash: str) -> Principal:
         with self.transaction() as conn:
-            row = conn.execute("SELECT * FROM authenticate_session(%s)", (token_hash,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM authenticate_session(%s)", (token_hash,)
+            ).fetchone()
         if not row:
             raise DomainError("Unauthorized", "Sign in to continue.", 401)
-        return Principal(row["user_id"], row["email"], row["full_name"], tuple(row["brand_ids"]))
+        return Principal(
+            row["user_id"], row["email"], row["full_name"], tuple(row["brand_ids"])
+        )
 
 
 def one(conn: Connection, sql: str, params: tuple = ()) -> dict[str, Any]:

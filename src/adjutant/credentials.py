@@ -17,7 +17,9 @@ def provision_master_key(path: Path) -> None:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         if len(path.read_bytes()) != 32:
-            raise ValueError("Credential master key must contain exactly 32 bytes") from None
+            raise ValueError(
+                "Credential master key must contain exactly 32 bytes"
+            ) from None
         return
     with os.fdopen(descriptor, "wb") as handle:
         handle.write(AESGCM.generate_key(bit_length=256))
@@ -52,7 +54,11 @@ class CredentialStore:
                 "ON CONFLICT (brand_id) DO NOTHING",
                 (brand_id, wrapped),
             )
-        row = one(conn, "SELECT wrapped_key FROM tenant_secret_key WHERE brand_id=%s", (brand_id,))
+        row = one(
+            conn,
+            "SELECT wrapped_key FROM tenant_secret_key WHERE brand_id=%s",
+            (brand_id,),
+        )
         return unseal(master, bytes(row["wrapped_key"]), context)
 
     def write(self, conn: Connection, brand_id: UUID, name: str, value: str) -> None:

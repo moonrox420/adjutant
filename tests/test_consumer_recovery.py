@@ -56,9 +56,16 @@ def test_activity_process_kill_restart_and_duplicate_receipt(
         terminate_owned(process)
         process.stdin.close()
     with psycopg.connect(worker_url, autocommit=True, row_factory=dict_row) as conn:
-        while conn.execute("SELECT adjutant.consume_activity_batch(100) AS n").fetchone()["n"]:
+        while conn.execute(
+            "SELECT adjutant.consume_activity_batch(100) AS n"
+        ).fetchone()["n"]:
             continue
-        assert conn.execute("SELECT adjutant.consume_activity_batch(100) AS n").fetchone()["n"] == 0
+        assert (
+            conn.execute("SELECT adjutant.consume_activity_batch(100) AS n").fetchone()[
+                "n"
+            ]
+            == 0
+        )
     assert (
         admin.execute(
             "SELECT count(*) AS n FROM consumer_receipt WHERE event_id=%s", (event,)
@@ -73,7 +80,9 @@ def test_activity_process_kill_restart_and_duplicate_receipt(
     )
 
 
-def test_mail_delivery_kill_before_commit_redelivers_one_local_file(worker_url, admin, tmp_path):
+def test_mail_delivery_kill_before_commit_redelivers_one_local_file(
+    worker_url, admin, tmp_path
+):
     item = admin.execute("""INSERT INTO mail_outbox(recipient,subject,body)
         VALUES('consumer@example.com','Crash recovery','A real test email')
         RETURNING id""").fetchone()["id"]
@@ -93,9 +102,9 @@ def test_mail_delivery_kill_before_commit_redelivers_one_local_file(worker_url, 
         wait_for(Path(config["marker"]).exists)
         assert (directory / f"{item}.eml").exists()
         assert (
-            admin.execute("SELECT delivered_at FROM mail_outbox WHERE id=%s", (item,)).fetchone()[
-                "delivered_at"
-            ]
+            admin.execute(
+                "SELECT delivered_at FROM mail_outbox WHERE id=%s", (item,)
+            ).fetchone()["delivered_at"]
             is None
         )
         process.kill()
@@ -135,7 +144,8 @@ def test_supervisor_verifies_killed_consumer_and_starts_replacement(
         replacement = wait_for(
             lambda: (
                 supervisor.process
-                if supervisor.process is not None and supervisor.process.pid != first.pid
+                if supervisor.process is not None
+                and supervisor.process.pid != first.pid
                 else None
             )
         )
@@ -186,7 +196,10 @@ def test_supervisor_connection_loss_terminates_child_without_fabricated_exit_rec
             mail_directory=tmp_path / "mail",
         )
     )
-    with patch("adjutant.consumer_supervisor.psycopg.connect", side_effect=controlled_connection):
+    with patch(
+        "adjutant.consumer_supervisor.psycopg.connect",
+        side_effect=controlled_connection,
+    ):
         supervisor.start()
         try:
             assert connected.wait(5)
@@ -206,7 +219,8 @@ def test_supervisor_connection_loss_terminates_child_without_fabricated_exit_rec
             wait_for(lambda: supervisor.process is None)
             assert first.returncode is not None
             missing = admin.execute(
-                "SELECT * FROM consumer_process WHERE instance_id=%s", (record["instance_id"],)
+                "SELECT * FROM consumer_process WHERE instance_id=%s",
+                (record["instance_id"],),
             ).fetchone()
             assert missing["exit_code"] is None
             assert missing["exited_at"] is None
@@ -287,10 +301,10 @@ def test_mail_failure_is_retried_with_bounded_backoff_and_no_secret_logging(
     with psycopg.connect(worker_url, autocommit=True, row_factory=dict_row) as conn:
         while consume_once(conn, config):
             continue
-        item = admin.execute("""INSERT INTO mail_outbox(recipient,subject,body)
-            VALUES('retry@example.com','Retry delivery','Private link') RETURNING id""").fetchone()[
-            "id"
-        ]
+        item = admin.execute(
+            """INSERT INTO mail_outbox(recipient,subject,body)
+            VALUES('retry@example.com','Retry delivery','Private link') RETURNING id"""
+        ).fetchone()["id"]
         smtp = {
             **config,
             "mail_transport": "smtp",
@@ -301,7 +315,8 @@ def test_mail_failure_is_retried_with_bounded_backoff_and_no_secret_logging(
             "smtp_password": "",
         }
         with patch(
-            "adjutant.consumer.smtplib.SMTP", side_effect=OSError("private-server-response")
+            "adjutant.consumer.smtplib.SMTP",
+            side_effect=OSError("private-server-response"),
         ):
             assert consume_once(conn, smtp) == 1
         row = admin.execute("SELECT * FROM mail_outbox WHERE id=%s", (item,)).fetchone()
@@ -309,8 +324,12 @@ def test_mail_failure_is_retried_with_bounded_backoff_and_no_secret_logging(
         assert row["last_error"] == "OSError"
         assert row["next_attempt_at"] > row["created_at"]
         assert consume_once(conn, config) == 0
-        admin.execute("UPDATE mail_outbox SET next_attempt_at=now() WHERE id=%s", (item,))
+        admin.execute(
+            "UPDATE mail_outbox SET next_attempt_at=now() WHERE id=%s", (item,)
+        )
         assert consume_once(conn, config) == 1
         row = admin.execute("SELECT * FROM mail_outbox WHERE id=%s", (item,)).fetchone()
-        assert row["delivered_at"] and row["attempts"] == 2 and row["last_error"] is None
+        assert (
+            row["delivered_at"] and row["attempts"] == 2 and row["last_error"] is None
+        )
         assert "Private link" not in row["body"]

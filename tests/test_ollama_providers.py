@@ -14,7 +14,9 @@ def test_cloud_uses_bearer_auth_and_validates_without_unsupported_format(plan_in
 
     def respond(request):
         requests.append(request)
-        return httpx.Response(200, json={"message": {"content": json.dumps(plan_input)}})
+        return httpx.Response(
+            200, json={"message": {"content": json.dumps(plan_input)}}
+        )
 
     transport = httpx.Client(transport=httpx.MockTransport(respond))
     with (
@@ -40,7 +42,9 @@ def test_cloud_invalid_drafts_are_never_accepted():
 
     def respond(request):
         calls.append(request)
-        return httpx.Response(200, json={"message": {"content": '{"unapproved":"value"}'}})
+        return httpx.Response(
+            200, json={"message": {"content": '{"unapproved":"value"}'}}
+        )
 
     transport = httpx.Client(transport=httpx.MockTransport(respond))
     with (
@@ -48,15 +52,16 @@ def test_cloud_invalid_drafts_are_never_accepted():
         patch("adjutant.generation.httpx.Client", return_value=transport),
         pytest.raises(DomainError) as error,
     ):
-        OllamaPlanner("https://ollama.com", provider="cloud", api_key="private-test-key").generate(
-            "cloud-model", {}
-        )
+        OllamaPlanner(
+            "https://ollama.com", provider="cloud", api_key="private-test-key"
+        ).generate("cloud-model", {})
     assert error.value.code == "GenerationInvalid"
     assert len(calls) == 3
 
 
 @pytest.mark.parametrize(
-    "url", ["http://ollama.com", "https://evil.example", "https://ollama.com.evil.example"]
+    "url",
+    ["http://ollama.com", "https://evil.example", "https://ollama.com.evil.example"],
 )
 def test_cloud_key_cannot_be_sent_to_another_origin(url):
     with pytest.raises(ValueError, match="Cloud credentials"):
@@ -64,7 +69,10 @@ def test_cloud_key_cannot_be_sent_to_another_origin(url):
 
 
 def test_unconfigured_cloud_fails_before_network():
-    with patch("adjutant.generation.httpx.get") as get, pytest.raises(DomainError) as error:
+    with (
+        patch("adjutant.generation.httpx.get") as get,
+        pytest.raises(DomainError) as error,
+    ):
         OllamaPlanner("https://ollama.com", provider="cloud").models()
     assert error.value.code == "CloudNotConfigured"
     get.assert_not_called()
@@ -83,9 +91,9 @@ def test_local_catalog_accepts_standard_tags_and_excludes_cloud_models():
         },
     )
     with patch("adjutant.generation.httpx.get", return_value=response) as get:
-        assert OllamaPlanner("http://localhost:11434", api_key="must-not-send").models() == [
-            "local-model"
-        ]
+        assert OllamaPlanner(
+            "http://localhost:11434", api_key="must-not-send"
+        ).models() == ["local-model"]
     assert get.call_args.kwargs["headers"] == {}
     assert get.call_args.kwargs["follow_redirects"] is False
 
@@ -109,13 +117,21 @@ def test_cloud_errors_are_actionable_without_response_or_key_leaks(status, code)
         patch("adjutant.generation.httpx.get", return_value=response),
         pytest.raises(DomainError) as error,
     ):
-        OllamaPlanner("https://ollama.com", provider="cloud", api_key="private-test-key").models()
+        OllamaPlanner(
+            "https://ollama.com", provider="cloud", api_key="private-test-key"
+        ).models()
     assert error.value.code == code
-    assert "secrets" not in error.value.message and "private-test-key" not in error.value.message
+    assert (
+        "secrets" not in error.value.message
+        and "private-test-key" not in error.value.message
+    )
 
 
 def test_provider_configuration_endpoint_never_returns_credentials(client):
     response = client.get("/api/model-providers")
     assert response.status_code == 200
-    assert {provider["id"] for provider in response.json()["providers"]} == {"local", "cloud"}
+    assert {provider["id"] for provider in response.json()["providers"]} == {
+        "local",
+        "cloud",
+    }
     assert "api_key" not in response.text and "password" not in response.text

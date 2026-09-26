@@ -39,7 +39,9 @@ from adjutant.service import audit, locked_brand
 class ApplicationInput(Input):
     client_id: str = Field(min_length=1, max_length=300)
     client_secret: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
-    developer_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+    developer_token: SecretStr | None = Field(
+        default=None, min_length=1, max_length=4096
+    )
     region: Literal["NA", "EU", "FE"] = "NA"
 
 
@@ -58,7 +60,9 @@ def channel_router(
     store = CredentialStore(config.credential_master_key_path)
 
     def redirect_uri(brand_id: UUID, channel: str) -> str:
-        return f"{config.public_origin}/api/brands/{brand_id}/channels/{channel}/callback"
+        return (
+            f"{config.public_origin}/api/brands/{brand_id}/channels/{channel}/callback"
+        )
 
     def read(conn, brand_id: UUID, channel: str, kind: str) -> dict:
         return read_credential(conn, store, brand_id, channel, kind)
@@ -69,7 +73,9 @@ def channel_router(
     def authorization_for(conn, brand_id: UUID, channel: str) -> tuple[dict, dict]:
         return channel_authorization(conn, config, brand_id, channel)
 
-    def record_error(actor: Principal, brand_id: UUID, channel: str, error: DomainError) -> None:
+    def record_error(
+        actor: Principal, brand_id: UUID, channel: str, error: DomainError
+    ) -> None:
         with db.transaction(actor) as conn:
             conn.execute(
                 "INSERT INTO channel_authorization(brand_id,channel,last_error) VALUES(%s,%s,%s) "
@@ -111,20 +117,25 @@ def channel_router(
                     "authorization": next(
                         (a for a in authorizations if a["channel"] == p.channel), None
                     ),
-                    "connections": [c for c in connections if c["channel"] == p.channel],
+                    "connections": [
+                        c for c in connections if c["channel"] == p.channel
+                    ],
                 }
                 for p in PROVIDERS
             ]
 
     @router.put("/{channel}/application")
-    def configure(brand_id: UUID, channel: str, data: ApplicationInput, actor: actor_type) -> dict:
+    def configure(
+        brand_id: UUID, channel: str, data: ApplicationInput, actor: actor_type
+    ) -> dict:
         provider = provider_for(channel)
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)
             require_role(conn, brand_id, {"owner", "admin"})
             name = credential_name(channel, "app")
             exists = conn.execute(
-                "SELECT 1 FROM tenant_secret WHERE brand_id=%s AND name=%s", (brand_id, name)
+                "SELECT 1 FROM tenant_secret WHERE brand_id=%s AND name=%s",
+                (brand_id, name),
             ).fetchone()
             prior = read(conn, brand_id, channel, "app") if exists else {}
             app = {"client_id": data.client_id, "region": data.region}
@@ -132,7 +143,8 @@ def channel_router(
                 value = getattr(data, key)
                 app[key] = value.get_secret_value() if value else prior.get(key, "")
             if not app["client_secret"] or (
-                "developer_token" in provider.extra_fields and not app["developer_token"]
+                "developer_token" in provider.extra_fields
+                and not app["developer_token"]
             ):
                 raise DomainError(
                     "ApplicationCredentialsRequired",
@@ -168,11 +180,18 @@ def channel_router(
                 {"channel": channel},
                 "Saved encrypted developer application",
             )
-        return {"application_saved": True, "redirect_uri": redirect_uri(brand_id, channel)}
+        return {
+            "application_saved": True,
+            "redirect_uri": redirect_uri(brand_id, channel),
+        }
 
     @router.post("/{channel}/authorize")
     def authorize(
-        brand_id: UUID, channel: str, request: Request, response: Response, actor: actor_type
+        brand_id: UUID,
+        channel: str,
+        request: Request,
+        response: Response,
+        actor: actor_type,
     ) -> dict:
         provider = provider_for(channel)
         state = secrets.token_urlsafe(32)
@@ -183,7 +202,12 @@ def channel_router(
             conn.execute(
                 "INSERT INTO channel_oauth_state(state_hash,brand_id,channel,actor_id) "
                 "VALUES(%s,%s,%s,%s)",
-                (hashlib.sha256(state.encode()).hexdigest(), brand_id, channel, actor.user_id),
+                (
+                    hashlib.sha256(state.encode()).hexdigest(),
+                    brand_id,
+                    channel,
+                    actor.user_id,
+                ),
             )
         response.set_cookie(
             "adjutant_session",
@@ -218,7 +242,12 @@ def channel_router(
                 "AND brand_id=%s "
                 "AND channel=%s AND actor_id=%s AND consumed_at IS NULL AND "
                 "expires_at>now() RETURNING state_hash",
-                (hashlib.sha256(state.encode()).hexdigest(), brand_id, channel, actor.user_id),
+                (
+                    hashlib.sha256(state.encode()).hexdigest(),
+                    brand_id,
+                    channel,
+                    actor.user_id,
+                ),
             ).fetchone()
             if not consumed:
                 raise DomainError(
@@ -335,11 +364,15 @@ def channel_router(
             raise
 
     @router.post("/{channel}/select")
-    def select(brand_id: UUID, channel: str, data: SelectAccount, actor: actor_type) -> dict:
+    def select(
+        brand_id: UUID, channel: str, data: SelectAccount, actor: actor_type
+    ) -> dict:
         result = discovery(brand_id, channel, actor)
         if data.account_id not in {item["id"] for item in result["accounts"]}:
             raise DomainError(
-                "AccountAccessDenied", "The authorized platform did not return this account.", 403
+                "AccountAccessDenied",
+                "The authorized platform did not return this account.",
+                403,
             )
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)

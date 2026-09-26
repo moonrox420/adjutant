@@ -1,48 +1,57 @@
 """Tests for S11 (Video), S12 (Agency Platform), S13 (Compliance), and S14 (Billing & Reports)."""
 
-from datetime import UTC, datetime, timedelta
-from decimal import Decimal
-from pathlib import Path
 from uuid import UUID, uuid4
+
 import pytest
 
 from adjutant.agency import (
-    compute_cross_client_rollup,
-    execute_bulk_brand_operation,
     verify_client_approver_brand_access,
 )
 from adjutant.billing import (
-    BILLING_TIERS,
     cancel_subscription,
     create_subscription,
     handle_billing_failure,
 )
 from adjutant.compliance import (
     apply_ai_disclosure,
-    generate_signed_compliance_export,
-    route_policy_rejection,
     verify_claim_substantiation,
 )
 from adjutant.errors import DomainError
 from adjutant.reports import generate_weekly_result_summary
-from adjutant.security import ApprovalSigner
 from adjutant.video import (
     VideoScene,
     VideoTimeline,
     generate_hook_variants,
-    render_video_timeline,
     validate_safe_areas,
 )
 
-
 # --- S11: Video Pipeline Tests ---
+
 
 def test_video_timeline_safe_area_validation():
     """S11.1: Verify scene graph text layers inside and outside safe areas."""
     valid_scene_graph = {
         "layers": [
-            {"id": "headline", "type": "headline", "position": {"top_pct": 0.15, "bottom_pct": 0.30, "left_pct": 0.10, "right_pct": 0.20}},
-            {"id": "cta", "type": "cta_button", "position": {"top_pct": 0.70, "bottom_pct": 0.85, "left_pct": 0.10, "right_pct": 0.20}},
+            {
+                "id": "headline",
+                "type": "headline",
+                "position": {
+                    "top_pct": 0.15,
+                    "bottom_pct": 0.30,
+                    "left_pct": 0.10,
+                    "right_pct": 0.20,
+                },
+            },
+            {
+                "id": "cta",
+                "type": "cta_button",
+                "position": {
+                    "top_pct": 0.70,
+                    "bottom_pct": 0.85,
+                    "left_pct": 0.10,
+                    "right_pct": 0.20,
+                },
+            },
         ]
     }
     violations = validate_safe_areas(valid_scene_graph, "9:16", "tiktok")
@@ -51,7 +60,16 @@ def test_video_timeline_safe_area_validation():
     # Violating layer (top too high into TikTok chrome)
     overflow_scene_graph = {
         "layers": [
-            {"id": "headline", "type": "headline", "position": {"top_pct": 0.02, "bottom_pct": 0.10, "left_pct": 0.02, "right_pct": 0.02}},
+            {
+                "id": "headline",
+                "type": "headline",
+                "position": {
+                    "top_pct": 0.02,
+                    "bottom_pct": 0.10,
+                    "left_pct": 0.02,
+                    "right_pct": 0.02,
+                },
+            },
         ]
     }
     violations_bad = validate_safe_areas(overflow_scene_graph, "9:16", "tiktok")
@@ -65,17 +83,23 @@ def test_video_hook_variants_generation():
     base_hook = VideoScene(
         id="hook_base",
         duration_seconds=3.0,
-        scene_graph={"layers": [{"id": "h1", "type": "headline", "content": "Original Hook"}]},
+        scene_graph={
+            "layers": [{"id": "h1", "type": "headline", "content": "Original Hook"}]
+        },
     )
     body1 = VideoScene(
         id="body_1",
         duration_seconds=5.0,
-        scene_graph={"layers": [{"id": "b1", "type": "text", "content": "Core Value Prop"}]},
+        scene_graph={
+            "layers": [{"id": "b1", "type": "text", "content": "Core Value Prop"}]
+        },
     )
     cta = VideoScene(
         id="cta",
         duration_seconds=2.0,
-        scene_graph={"layers": [{"id": "c1", "type": "text", "content": "Claim Offer"}]},
+        scene_graph={
+            "layers": [{"id": "c1", "type": "text", "content": "Claim Offer"}]
+        },
     )
     timeline = VideoTimeline(
         concept_id=concept_id,
@@ -95,22 +119,30 @@ def test_video_hook_variants_generation():
     # Body scene references remain identical
     assert variants[0].body_scenes == timeline.body_scenes
     assert variants[1].body_scenes == timeline.body_scenes
-    assert variants[0].hook_scene.scene_graph["layers"][0]["content"] == "Variant 1 Hook"
-    assert variants[2].hook_scene.scene_graph["layers"][0]["content"] == "Variant 3 Hook"
+    assert (
+        variants[0].hook_scene.scene_graph["layers"][0]["content"] == "Variant 1 Hook"
+    )
+    assert (
+        variants[2].hook_scene.scene_graph["layers"][0]["content"] == "Variant 3 Hook"
+    )
 
 
 # --- S12: Agency Platform Tests ---
 
+
 def test_client_approver_brand_isolation(admin, brand):
     """S12.1: Client approver can access only their assigned brand and no other brand."""
-    user_id = admin.execute("SELECT id FROM app_user LIMIT 1").fetchone()["id"]
+    user_id = admin.execute("""INSERT INTO app_user(email, full_name)
+        VALUES('client_approver_isolated@example.com', 'Client Approver')
+        ON CONFLICT (email) DO UPDATE SET full_name='Client Approver'
+        RETURNING id""").fetchone()["id"]
     other_brand_id = uuid4()
 
-    # Create account membership for client_approver
+    # Create seat for client_approver
     admin.execute(
-        """INSERT INTO account_membership(account_id, user_id, role, brand_id)
+        """INSERT INTO seat(account_id, user_id, role, brand_id)
         SELECT account_id, %s, 'client_approver', %s FROM brand WHERE id=%s
-        ON CONFLICT (account_id, user_id) DO UPDATE SET role='client_approver', brand_id=EXCLUDED.brand_id""",
+        ON CONFLICT (account_id, user_id, brand_id, role) DO NOTHING""",
         (user_id, brand, brand),
     )
 
@@ -124,6 +156,7 @@ def test_client_approver_brand_isolation(admin, brand):
 
 
 # --- S13: Compliance Surface Tests ---
+
 
 def test_claim_substantiation_blocks_unsubstantiated_superlatives():
     """S13.2: Unsubstantiated superlative or health claims block render."""
@@ -146,15 +179,20 @@ def test_ai_disclosure_layer_application():
     scene_graph = {"layers": [{"id": "img", "type": "image"}]}
     eu_graph = apply_ai_disclosure(scene_graph, "EU", "meta")
     assert any(l.get("id") == "compliance_ai_disclosure" for l in eu_graph["layers"])
-    disclosure_layer = next(l for l in eu_graph["layers"] if l["id"] == "compliance_ai_disclosure")
+    disclosure_layer = next(
+        l for l in eu_graph["layers"] if l["id"] == "compliance_ai_disclosure"
+    )
     assert "EU AI Act" in disclosure_layer["text"]
 
 
 # --- S14: Billing & Result Summaries Tests ---
 
+
 def test_flat_tier_billing_and_safe_cancellation(admin, brand):
     """S14.3: Flat tier billing creation, dunning, and cancellation without stranding spend."""
-    account_id = admin.execute("SELECT account_id FROM brand WHERE id=%s", (brand,)).fetchone()["account_id"]
+    account_id = admin.execute(
+        "SELECT account_id FROM brand WHERE id=%s", (brand,)
+    ).fetchone()["account_id"]
 
     # Create growth tier subscription
     sub = create_subscription(admin, account_id, "growth", "pm_card_test_123")
@@ -172,7 +210,9 @@ def test_flat_tier_billing_and_safe_cancellation(admin, brand):
     assert str(brand) in cancel_res["paused_brand_ids"]
 
     # Verify brand in DB is paused
-    b = admin.execute("SELECT status, campaigns_enabled FROM brand WHERE id=%s", (brand,)).fetchone()
+    b = admin.execute(
+        "SELECT status, campaigns_enabled FROM brand WHERE id=%s", (brand,)
+    ).fetchone()
     assert b["status"] == "paused"
     assert b["campaigns_enabled"] is False
 

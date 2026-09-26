@@ -23,20 +23,26 @@ class CampaignTarget:
 
 def identifier(value: str) -> str:
     if not value or len(value) > 200 or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
-        raise DomainError("InvalidRemoteIdentity", "The stored platform identity is invalid.", 422)
+        raise DomainError(
+            "InvalidRemoteIdentity", "The stored platform identity is invalid.", 422
+        )
     return quote(value, safe="")
 
 
 def numeric(value: str) -> str:
     if not re.fullmatch(r"[0-9]+", value):
-        raise DomainError("InvalidRemoteIdentity", "The platform requires a numeric identity.", 422)
+        raise DomainError(
+            "InvalidRemoteIdentity", "The platform requires a numeric identity.", 422
+        )
     return value
 
 
 class CampaignControl:
     """Only pause is exposed here; resuming must pass the spend gateway independently."""
 
-    def __init__(self, client: httpx.AsyncClient, target: CampaignTarget, app: dict, token: dict):
+    def __init__(
+        self, client: httpx.AsyncClient, target: CampaignTarget, app: dict, token: dict
+    ):
         provider_for(target.channel)
         self.client = client
         self.target = target
@@ -115,7 +121,9 @@ class CampaignControl:
             ) from exc
         if not isinstance(data, dict):
             raise DomainError(
-                "PlatformResponseInvalid", "The platform returned an invalid response shape.", 502
+                "PlatformResponseInvalid",
+                "The platform returned an invalid response shape.",
+                502,
             )
         if (
             data.get("error")
@@ -140,8 +148,14 @@ class CampaignControl:
         }
         family = self.target.metadata.get("ad_product")
         versions = {
-            "SPONSORED_PRODUCTS": ("/sp/campaigns", "application/vnd.spCampaign.v3+json"),
-            "SPONSORED_BRANDS": ("/sb/v4/campaigns", "application/vnd.sbcampaignresource.v4+json"),
+            "SPONSORED_PRODUCTS": (
+                "/sp/campaigns",
+                "application/vnd.spCampaign.v3+json",
+            ),
+            "SPONSORED_BRANDS": (
+                "/sb/v4/campaigns",
+                "application/vnd.sbcampaignresource.v4+json",
+            ),
         }
         if family not in versions:
             raise DomainError(
@@ -280,7 +294,9 @@ class CampaignControl:
         account, identity = self.account, self.identity
         if channel == "meta":
             await self.request(
-                "POST", f"https://graph.facebook.com/v26.0/{identity}", data={"status": "PAUSED"}
+                "POST",
+                f"https://graph.facebook.com/v26.0/{identity}",
+                data={"status": "PAUSED"},
             )
         elif channel in {"google_ads", "youtube"}:
             await self.request(
@@ -339,7 +355,9 @@ class CampaignControl:
             )
             if any(item.get("exceptions") for item in data.get("items", [])):
                 raise DomainError(
-                    "PlatformRequestRejected", "Pinterest rejected the campaign pause.", 502
+                    "PlatformRequestRejected",
+                    "Pinterest rejected the campaign pause.",
+                    502,
                 )
         elif channel == "snapchat":
             await self.request(
@@ -358,7 +376,9 @@ class CampaignControl:
             )
             if data.get("campaigns", {}).get("error"):
                 raise DomainError(
-                    "PlatformRequestRejected", "Amazon rejected the campaign pause.", 502
+                    "PlatformRequestRejected",
+                    "Amazon rejected the campaign pause.",
+                    502,
                 )
         for delay in (0, 0.5, 1):
             if delay:
@@ -382,7 +402,9 @@ class CampaignControl:
         account, identity = self.account, self.identity
         if channel == "meta":
             await self.request(
-                "POST", f"https://graph.facebook.com/v26.0/{identity}", data={"status": "ACTIVE"}
+                "POST",
+                f"https://graph.facebook.com/v26.0/{identity}",
+                data={"status": "ACTIVE"},
             )
         elif channel in {"google_ads", "youtube"}:
             await self.request(
@@ -441,7 +463,9 @@ class CampaignControl:
             )
             if any(item.get("exceptions") for item in data.get("items", [])):
                 raise DomainError(
-                    "PlatformRequestRejected", "Pinterest rejected the campaign resume.", 502
+                    "PlatformRequestRejected",
+                    "Pinterest rejected the campaign resume.",
+                    502,
                 )
         elif channel == "snapchat":
             await self.request(
@@ -460,7 +484,9 @@ class CampaignControl:
             )
             if data.get("campaigns", {}).get("error"):
                 raise DomainError(
-                    "PlatformRequestRejected", "Amazon rejected the campaign resume.", 502
+                    "PlatformRequestRejected",
+                    "Amazon rejected the campaign resume.",
+                    502,
                 )
         for delay in (0, 0.5, 1):
             if delay:

@@ -61,7 +61,9 @@ def foundation_router(
             )
             if row["delay_seconds"] != data.delay_seconds:
                 raise DomainError(
-                    "IdempotencyConflict", "Request key already has different input.", 409
+                    "IdempotencyConflict",
+                    "Request key already has different input.",
+                    409,
                 )
             return row
 

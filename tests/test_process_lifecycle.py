@@ -17,7 +17,13 @@ def inference_server(plan_input):
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            self.reply({"models": [{"name": "controlled-model", "capabilities": ["completion"]}]})
+            self.reply(
+                {
+                    "models": [
+                        {"name": "controlled-model", "capabilities": ["completion"]}
+                    ]
+                }
+            )
 
         def do_POST(self):
             self.rfile.read(int(self.headers["Content-Length"]))
@@ -71,7 +77,8 @@ def wait_for(predicate, timeout=10):
 
 
 @pytest.mark.parametrize(
-    "action", ["logout", "logout-all", "cancel", "brand-stop", "reset", "expire", "worker-kill"]
+    "action",
+    ["logout", "logout-all", "cancel", "brand-stop", "reset", "expire", "worker-kill"],
 )
 def test_real_generation_process_exit_and_no_late_plan(
     client, confirmed_brand, admin, identity, inference_server, action
@@ -86,7 +93,10 @@ def test_real_generation_process_exit_and_no_late_plan(
         return process
 
     body = {"model": "controlled-model", "brief": "Create a local repair campaign"}
-    with patch("adjutant.processes.launch", side_effect=capture), ThreadPoolExecutor(1) as executor:
+    with (
+        patch("adjutant.processes.launch", side_effect=capture),
+        ThreadPoolExecutor(1) as executor,
+    ):
         future = executor.submit(
             client.post, f"/api/brands/{confirmed_brand}/generate-plan", json=body
         )
@@ -115,7 +125,9 @@ def test_real_generation_process_exit_and_no_late_plan(
             # Provisioned .test identities cannot pass EmailStr validation; their database email
             # is replaced with a syntactically valid public-domain address for this recovery test.
             email = f"reset-{identity['user']}@example.com"
-            admin.execute("UPDATE app_user SET email=%s WHERE id=%s", (email, identity["user"]))
+            admin.execute(
+                "UPDATE app_user SET email=%s WHERE id=%s", (email, identity["user"])
+            )
             assert (
                 client.post(
                     "/api/auth/request-link?purpose=reset", json={"email": email}
@@ -136,7 +148,8 @@ def test_real_generation_process_exit_and_no_late_plan(
             )
         elif action == "expire":
             admin.execute(
-                "UPDATE auth_session SET expires_at=now() WHERE user_id=%s", (identity["user"],)
+                "UPDATE auth_session SET expires_at=now() WHERE user_id=%s",
+                (identity["user"],),
             )
         else:
             processes[0].kill()
@@ -144,7 +157,9 @@ def test_real_generation_process_exit_and_no_late_plan(
         response = future.result(timeout=12)
         assert response.status_code in (401, 409, 503), response.text
         release.set()
-    recorded = admin.execute("SELECT * FROM agent_run WHERE id=%s", (run["id"],)).fetchone()
+    recorded = admin.execute(
+        "SELECT * FROM agent_run WHERE id=%s", (run["id"],)
+    ).fetchone()
     assert recorded["finished_at"] and recorded["worker_exit_verified_at"]
     assert recorded["worker_exit_code"] == processes[0].returncode
     assert processes[0].poll() is not None
@@ -168,7 +183,9 @@ def test_real_worker_success_releases_process_and_records_usage(
         json={"model": "controlled-model", "brief": "Create a local repair campaign"},
     )
     assert result.status_code == 201, result.text
-    run = admin.execute("SELECT * FROM agent_run WHERE brand_id=%s", (confirmed_brand,)).fetchone()
+    run = admin.execute(
+        "SELECT * FROM agent_run WHERE brand_id=%s", (confirmed_brand,)
+    ).fetchone()
     assert run["worker_exit_code"] == 0 and run["worker_exit_verified_at"] is not None
     assert run["schema_valid"] and run["usage_complete"]
     assert run["input_tokens"] == 200 and run["output_tokens"] == 100
@@ -183,7 +200,10 @@ def test_inference_worker_exits_when_parent_pipe_is_lost(inference_server):
     process = launch("adjutant.generation_worker", subprocess.DEVNULL)
     try:
         process.stdin.write(
-            (json.dumps({"url": url, "model": "controlled-model", "context": {}}) + "\n").encode()
+            (
+                json.dumps({"url": url, "model": "controlled-model", "context": {}})
+                + "\n"
+            ).encode()
         )
         process.stdin.flush()
         assert entered.wait(10)

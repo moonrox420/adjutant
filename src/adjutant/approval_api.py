@@ -75,25 +75,42 @@ def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
             with db.transaction() as conn:
                 role = conn.execute("SELECT current_user AS name").fetchone()["name"]
                 if role != "adjutant_approval":
-                    raise RuntimeError("Approval service requires the adjutant_approval role")
+                    raise RuntimeError(
+                        "Approval service requires the adjutant_approval role"
+                    )
             yield
         finally:
             db.pool.close()
 
-    app = FastAPI(title="Adjutant approvals", lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Adjutant approvals", lifespan=lifespan, docs_url=None, redoc_url=None
+    )
 
     def authenticate(authorization: Annotated[str | None, Header()] = None) -> None:
-        if not authorization or not hmac.compare_digest(authorization, f"Bearer {secret}"):
-            raise DomainError("Unauthorized", "An approval service credential is required.", 401)
+        if not authorization or not hmac.compare_digest(
+            authorization, f"Bearer {secret}"
+        ):
+            raise DomainError(
+                "Unauthorized", "An approval service credential is required.", 401
+            )
 
     @app.exception_handler(DomainError)
     async def domain_error(request: Any, exc: DomainError) -> JSONResponse:
-        return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, exc.status)
+        return JSONResponse(
+            {"error": {"code": exc.code, "message": exc.message}}, exc.status
+        )
 
     @app.exception_handler(RequestValidationError)
-    async def invalid_request(request: Any, exc: RequestValidationError) -> JSONResponse:
+    async def invalid_request(
+        request: Any, exc: RequestValidationError
+    ) -> JSONResponse:
         return JSONResponse(
-            {"error": {"code": "InvalidDecision", "message": "Approval decision is invalid."}},
+            {
+                "error": {
+                    "code": "InvalidDecision",
+                    "message": "Approval decision is invalid.",
+                }
+            },
             422,
         )
 
@@ -101,7 +118,12 @@ def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
     async def database_error(request: Any, exc: psycopg.Error) -> JSONResponse:
         logger.error("Approval transaction failed: sqlstate=%s", exc.sqlstate)
         return JSONResponse(
-            {"error": {"code": "ApprovalUnavailable", "message": "Approval was not recorded."}},
+            {
+                "error": {
+                    "code": "ApprovalUnavailable",
+                    "message": "Approval was not recorded.",
+                }
+            },
             503,
         )
 
@@ -126,9 +148,19 @@ def create_app(settings: ApprovalSettings | None = None) -> FastAPI:
         actor = db.authenticate(token_hash)
         with db.transaction(actor) as conn:
             lock_active_session(conn, token_hash)
-            return decide(conn, events, signer, brand_id, approval_id, actor.user_id, body.decision)
+            return decide(
+                conn,
+                events,
+                signer,
+                brand_id,
+                approval_id,
+                actor.user_id,
+                body.decision,
+            )
 
-    @app.post("/internal/brands/{brand_id}/audit-export", dependencies=[Depends(authenticate)])
+    @app.post(
+        "/internal/brands/{brand_id}/audit-export", dependencies=[Depends(authenticate)]
+    )
     def export(brand_id: UUID, body: AuditExportRequest) -> dict[str, Any]:
         token_hash = session_digest(body.session.get_secret_value())
         actor = db.authenticate(token_hash)

@@ -1,0 +1,15 @@
+From: accounts@example.com
+To: account-c7dc5794-5542-437b-a277-3e1487de9ed9@example.com
+Subject: Reset your Adjutant password
+Message-ID: <bbd7fb9b-c0f2-4a43-bc49-73b817b3195d@adjutant.local>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Use this link to reset your password:
+
+http://localhost:3000/account#reset=3DpGoYey58i-vkhxw0OFQEAze7oSRFOtjmC1ineNR=
+Bwe79vXyNuFZCst6dkaVqgY-U
+
+This link expires in one hour and works once. If you did not request it, igno=
+re it.

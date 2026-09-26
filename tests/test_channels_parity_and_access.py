@@ -7,9 +7,10 @@
 """
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
-from uuid import UUID, uuid4
-import pytest
+from uuid import UUID
+
+import psycopg
+from psycopg.rows import dict_row
 
 from adjutant.decision import evaluate_guardrails
 
@@ -44,7 +45,9 @@ def test_parity_matrix_endpoint_returns_all_ten_channels(client, admin, brand):
         assert "access_review_required" in item
 
 
-def test_access_application_lifecycle_and_tenant_isolation(client, admin, brand):
+def test_access_application_lifecycle_and_tenant_isolation(
+    client, admin, brand, database_urls
+):
     """S10.4: Access application status is tracked and visible, with filing dates and current state."""
     brand_id = brand
 
@@ -58,7 +61,9 @@ def test_access_application_lifecycle_and_tenant_isolation(client, admin, brand)
         "notes": "Filed Meta app review with business verification.",
         "metadata": {"app_id": "9988776655", "use_cases": ["ads_management"]},
     }
-    res_create = client.post(f"/api/brands/{brand_id}/access-applications", json=create_payload)
+    res_create = client.post(
+        f"/api/brands/{brand_id}/access-applications", json=create_payload
+    )
     assert res_create.status_code == 201, res_create.text
     app_data = res_create.json()
     app_id = app_data["id"]
@@ -107,15 +112,22 @@ def test_access_application_lifecycle_and_tenant_isolation(client, admin, brand)
         "SELECT account_id FROM brand WHERE id=%s", (brand,)
     ).fetchone()["account_id"]
     brand_b = admin.execute(
-        "INSERT INTO brand(account_id, display_name, status) VALUES(%s, 'Brand B Access', 'active') RETURNING id",
+        "INSERT INTO brand(account_id, display_name, status) "
+        "VALUES(%s, 'Brand B Access', 'active') RETURNING id",
         (account_id,),
     ).fetchone()["id"]
-    # Query directly under brand_b RLS context
-    admin.execute("SELECT set_config('app.current_brand_ids', %s, false)", (str(brand_b),))
-    rows = admin.execute(
-        "SELECT * FROM platform_access_application WHERE brand_id=%s", (brand_id,)
-    ).fetchall()
-    assert len(rows) == 0
+    # Query directly under brand_b RLS context using non-superuser app connection
+    with psycopg.connect(
+        database_urls[1], autocommit=True, row_factory=dict_row
+    ) as app_conn:
+        app_conn.execute("SET search_path=adjutant,public")
+        app_conn.execute(
+            "SELECT set_config('app.current_brand_ids', %s, false)", (str(brand_b),)
+        )
+        rows = app_conn.execute(
+            "SELECT * FROM platform_access_application WHERE brand_id=%s", (brand_id,)
+        ).fetchall()
+        assert len(rows) == 0
 
 
 def test_reallocation_across_all_connected_channels(admin, brand):
@@ -132,7 +144,9 @@ def test_reallocation_across_all_connected_channels(admin, brand):
         "snapchat",
         "amazon_ads",
     ]
-    admin.execute("UPDATE guardrail SET daily_spend_cap_usd=2000.00 WHERE brand_id=%s", (brand,))
+    admin.execute(
+        "UPDATE guardrail SET daily_spend_cap_usd=2000.00 WHERE brand_id=%s", (brand,)
+    )
     admin.execute("SELECT set_config('app.current_brand_ids', %s, false)", (brand,))
 
     campaigns = {}
@@ -169,5 +183,7 @@ def test_reallocation_across_all_connected_channels(admin, brand):
         }
         with admin.transaction():
             res = evaluate_guardrails(admin, UUID(brand), cand)
-        assert res["approved"] is True, f"Failed reallocation to {target_channel}: {res}"
+        assert (
+            res["approved"] is True
+        ), f"Failed reallocation to {target_channel}: {res}"
         assert res["state"] == "executed"

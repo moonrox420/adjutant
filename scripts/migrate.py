@@ -18,7 +18,8 @@ def migrate(url: str) -> None:
             content = path.read_bytes()
             checksum = hashlib.sha256(content).hexdigest()
             prior = conn.execute(
-                "SELECT checksum FROM public.adjutant_migration WHERE name=%s", (path.name,)
+                "SELECT checksum FROM public.adjutant_migration WHERE name=%s",
+                (path.name,),
             ).fetchone()
             if prior:
                 if prior[0] != checksum:

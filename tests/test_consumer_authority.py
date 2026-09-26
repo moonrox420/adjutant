@@ -44,9 +44,13 @@ def test_worker_definer_allowlist_and_no_function_replacement(worker_url, identi
             "SELECT has_schema_privilege(current_user,'adjutant','CREATE')"
         ).fetchone() == (False,)
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("SELECT * FROM adjutant.login_identity(%s)", (identity["email"],))
+            conn.execute(
+                "SELECT * FROM adjutant.login_identity(%s)", (identity["email"],)
+            )
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("SELECT * FROM adjutant.cancelled_session_jobs('arbitrary-session')")
+            conn.execute(
+                "SELECT * FROM adjutant.cancelled_session_jobs('arbitrary-session')"
+            )
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             conn.execute(
                 "ALTER FUNCTION adjutant.consume_activity_batch(integer) RESET search_path"
@@ -120,13 +124,23 @@ def test_activity_function_is_bounded_metadata_only_and_resists_temp_shadowing(
             assert conn.execute(
                 "SELECT adjutant.consume_activity_batch(%s)", (limit,)
             ).fetchone() == (expected,)
-        assert conn.execute("SELECT activity_consumed_at FROM pg_temp.event_outbox").fetchone() == (
-            None,
-        )
-        assert conn.execute("SELECT count(*) FROM pg_temp.consumer_receipt").fetchone() == (0,)
-        for table in ("event_outbox", "consumer_receipt", "brand", "agent_run", "local_credential"):
+        assert conn.execute(
+            "SELECT activity_consumed_at FROM pg_temp.event_outbox"
+        ).fetchone() == (None,)
+        assert conn.execute(
+            "SELECT count(*) FROM pg_temp.consumer_receipt"
+        ).fetchone() == (0,)
+        for table in (
+            "event_outbox",
+            "consumer_receipt",
+            "brand",
+            "agent_run",
+            "local_credential",
+        ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                conn.execute(sql.SQL("SELECT * FROM adjutant.{}").format(sql.Identifier(table)))
+                conn.execute(
+                    sql.SQL("SELECT * FROM adjutant.{}").format(sql.Identifier(table))
+                )
         after = admin.execute(
             "SELECT * FROM event_outbox WHERE event_id=ANY(%s) ORDER BY id", (ids,)
         ).fetchall()
@@ -138,9 +152,13 @@ def test_activity_function_is_bounded_metadata_only_and_resists_temp_shadowing(
             "SELECT * FROM consumer_receipt WHERE event_id=ANY(%s)", (ids,)
         ).fetchall()
         assert len(receipts) == len(ids)
-        assert {str(row["brand_id"]) for row in receipts} == {str(brand), str(other_brand)}
+        assert {str(row["brand_id"]) for row in receipts} == {
+            str(brand),
+            str(other_brand),
+        }
         assert all(
-            set(row) == {"event_id", "brand_id", "event_type", "processed_at"} for row in receipts
+            set(row) == {"event_id", "brand_id", "event_type", "processed_at"}
+            for row in receipts
         )
 
 
@@ -175,12 +193,16 @@ def test_reaper_only_changes_abandoned_session_jobs_across_tenants(
             id integer,session_hash text,started_at timestamptz,
             worker_heartbeat_at timestamptz,finished_at timestamptz,cancel_requested_at timestamptz,
             error_code text,schema_valid boolean,usage_complete boolean)""")
-        conn.execute("""INSERT INTO pg_temp.agent_run VALUES(1,'shadow',now()-interval '1 minute',
-            now()-interval '1 minute',NULL,NULL,NULL,true,true)""")
+        conn.execute(
+            """INSERT INTO pg_temp.agent_run VALUES(1,'shadow',now()-interval '1 minute',
+            now()-interval '1 minute',NULL,NULL,NULL,true,true)"""
+        )
         conn.execute("SET search_path=pg_temp,public")
         result = conn.execute("SELECT adjutant.reap_abandoned_jobs()").fetchone()
         assert len(result) == 1 and isinstance(result[0], int) and result[0] >= 2
-        assert conn.execute("SELECT finished_at,error_code FROM pg_temp.agent_run").fetchone() == (
+        assert conn.execute(
+            "SELECT finished_at,error_code FROM pg_temp.agent_run"
+        ).fetchone() == (
             None,
             None,
         )
@@ -199,9 +221,14 @@ def test_reaper_only_changes_abandoned_session_jobs_across_tenants(
                 "schema_valid",
                 "usage_complete",
             }
-            assert {key: value for key, value in after.items() if key not in allowed} == {
+            assert {
+                key: value for key, value in after.items() if key not in allowed
+            } == {
                 key: value for key, value in before[label].items() if key not in allowed
             }
-            assert after["worker_exit_code"] is None and after["worker_exit_verified_at"] is None
+            assert (
+                after["worker_exit_code"] is None
+                and after["worker_exit_verified_at"] is None
+            )
         else:
             assert after == before[label]

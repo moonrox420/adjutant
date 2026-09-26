@@ -1,6 +1,7 @@
 """Diagnosis engine for autonomous ad loop: fatigue detection, winners, and efficiency shifts."""
 
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -124,13 +125,21 @@ def diagnose_campaign_objects(
         ctr_drop = (prior_ctr - ctr) / prior_ctr if prior_ctr > 0 else Decimal("0.0")
         cpa_rise = (cpa - prior_cpa) / prior_cpa if prior_cpa > 0 else Decimal("0.0")
 
+        created_at = obj.get("created_at")
+        half_life_exceeded = False
+        if created_at:
+            now_dt = conn.execute("SELECT now()").fetchone()["now"]
+            half_life_exceeded = bool(created_at < (now_dt - timedelta(days=10)))
+
         # Evaluate fatigue signals
         signals = FatigueSignals(
             frequency_above_3=bool(frequency > Decimal("3.0")),
             ctr_declining_15pct=bool(ctr_drop >= Decimal("0.15")),
             cpa_rising_20pct=bool(cpa_rise >= Decimal("0.20")),
-            impressions_declining_bid_stable=bool(impressions < prior_imp and prior_imp > 0),
-            half_life_exceeded=bool((now_minus_created := obj.get("created_at")) and (obj["created_at"] < (conn.execute("SELECT now()").fetchone()["now"] - __import__("datetime").timedelta(days=10)))),
+            impressions_declining_bid_stable=bool(
+                impressions < prior_imp and prior_imp > 0
+            ),
+            half_life_exceeded=half_life_exceeded,
         )
 
         active_signals = detect_fatigue(signals)
@@ -148,13 +157,15 @@ def diagnose_campaign_objects(
                     "channel": obj["channel"],
                 },
             )
-            findings.append({
-                "finding_id": finding_id,
-                "kind": "fatigue",
-                "object_id": obj["id"],
-                "channel": obj["channel"],
-                "signals": active_signals,
-            })
+            findings.append(
+                {
+                    "finding_id": finding_id,
+                    "kind": "fatigue",
+                    "object_id": obj["id"],
+                    "channel": obj["channel"],
+                    "signals": active_signals,
+                }
+            )
 
         # Evaluate winner detection
         # Cleared minimum conversion volume (>= 15 conversions) and CPA sitting well below target
@@ -165,14 +176,20 @@ def diagnose_campaign_objects(
                 "winner",
                 obj["id"],
                 [],
-                {"conversions": float(conversions), "cpa": float(cpa), "channel": obj["channel"]},
+                {
+                    "conversions": float(conversions),
+                    "cpa": float(cpa),
+                    "channel": obj["channel"],
+                },
             )
-            findings.append({
-                "finding_id": finding_id,
-                "kind": "winner",
-                "object_id": obj["id"],
-                "channel": obj["channel"],
-                "cpa": float(cpa),
-            })
+            findings.append(
+                {
+                    "finding_id": finding_id,
+                    "kind": "winner",
+                    "object_id": obj["id"],
+                    "channel": obj["channel"],
+                    "cpa": float(cpa),
+                }
+            )
 
     return findings

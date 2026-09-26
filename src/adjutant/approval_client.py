@@ -11,7 +11,11 @@ from adjutant.models import Decision
 
 
 def decide_remotely(
-    config: Settings, brand_id: UUID, approval_id: UUID, session: str, decision: Decision
+    config: Settings,
+    brand_id: UUID,
+    approval_id: UUID,
+    session: str,
+    decision: Decision,
 ) -> dict[str, Any]:
     """Forward authenticated intent without retrying an uncertain approval transaction."""
     body = approval_request(
@@ -19,18 +23,29 @@ def decide_remotely(
         f"/internal/brands/{brand_id}/approvals/{approval_id}/decide",
         {"session": session, "decision": decision.model_dump(mode="json")},
     )
-    if body.get("state") not in {"approved", "pending_client", "rejected", "changes_requested"}:
-        raise DomainError("ApprovalUnavailable", "Approval service returned an invalid state.", 503)
+    if body.get("state") not in {
+        "approved",
+        "pending_client",
+        "rejected",
+        "changes_requested",
+    }:
+        raise DomainError(
+            "ApprovalUnavailable", "Approval service returned an invalid state.", 503
+        )
     return body
 
 
-def approval_request(config: Settings, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+def approval_request(
+    config: Settings, path: str, payload: dict[str, Any]
+) -> dict[str, Any]:
     """Send a bounded authenticated request to the configured approval origin only."""
     try:
         secret = config.approval_service_secret_path.read_text(encoding="utf-8").strip()
         if len(secret) < 32:
             raise ValueError("Invalid service credential")
-        with httpx.Client(timeout=15, trust_env=False, follow_redirects=False) as client:
+        with httpx.Client(
+            timeout=15, trust_env=False, follow_redirects=False
+        ) as client:
             response = client.post(
                 config.approval_url.rstrip("/") + path,
                 headers={"Authorization": f"Bearer {secret}"},
