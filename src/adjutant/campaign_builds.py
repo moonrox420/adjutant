@@ -5,7 +5,7 @@ import logging
 import threading
 from datetime import UTC, datetime
 from functools import partial
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx

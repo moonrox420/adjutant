@@ -10,8 +10,8 @@ from urllib.parse import quote
 
 import psycopg
 import uvicorn
-from pydantic import SecretStr
 from bootstrap import provision_approval, provision_approval_files
+from pydantic import SecretStr
 
 from adjutant.approval_api import ApprovalSettings, create_app
 

@@ -217,7 +217,10 @@ class OllamaPlanner:
                                         "field": ".".join(map(str, issue["loc"])),
                                         "current_characters": len(issue["input"]),
                                         "rewrite_target_characters": max(
-                                            1, int((issue.get("ctx") or {}).get("max_length", 1) * 0.65)
+                                            1,
+                                            int(
+                                                (issue.get("ctx") or {}).get("max_length", 1) * 0.65
+                                            ),
                                         ),
                                     }
                                     for issue in exc.errors()

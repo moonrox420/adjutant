@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 from collections.abc import Callable
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import psycopg
@@ -297,9 +297,7 @@ def channel_router(
         )
 
     @router.post("/{channel}/discover")
-    def discovery(
-        brand_id: UUID, channel: str, actor: Principal = Depends(authenticate)
-    ) -> dict:
+    def discovery(brand_id: UUID, channel: str, actor: Principal = Depends(authenticate)) -> dict:
         provider_for(channel)
         with db.transaction(actor) as conn:
             one(conn, "SELECT id FROM brand WHERE id=%s", (brand_id,))
@@ -405,9 +403,7 @@ def channel_router(
         return account
 
     @router.delete("/{channel}/authorization")
-    def disconnect(
-        brand_id: UUID, channel: str, actor: Principal = Depends(authenticate)
-    ) -> dict:
+    def disconnect(brand_id: UUID, channel: str, actor: Principal = Depends(authenticate)) -> dict:
         provider = provider_for(channel)
         with db.transaction(actor) as conn:
             locked_brand(conn, brand_id)

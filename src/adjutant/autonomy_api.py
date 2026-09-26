@@ -1,7 +1,7 @@
 """Human review and editable limits for autonomous brand operation."""
 
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID
 
 import httpx

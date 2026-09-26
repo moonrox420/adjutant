@@ -2,7 +2,7 @@ import base64
 import logging
 import re
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -463,9 +463,7 @@ def campaign_router(
             return draft_response(row, storage, conn) if row else None
 
     @router.get("/api/brands/{brand_id}/studio/{draft_id}")
-    def get_draft(
-        brand_id: UUID, draft_id: UUID, actor: Principal = Depends(authenticate)
-    ) -> dict:
+    def get_draft(brand_id: UUID, draft_id: UUID, actor: Principal = Depends(authenticate)) -> dict:
         with db.transaction(actor) as conn:
             row = one(
                 conn,

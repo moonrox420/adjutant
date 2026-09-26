@@ -1,7 +1,7 @@
 """Account-type conversion with preserved brands, seats, and agency configuration."""
 
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request

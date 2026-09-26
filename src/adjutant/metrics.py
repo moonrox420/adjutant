@@ -253,9 +253,9 @@ def aggregate_metric_sum(
     if len(classes) > 1:
         raise DomainError(
             "IncomparableMetrics",
-            f"Attempting to sum metrics across different comparability classes "
-            f"({sorted(x for x in classes if x is not None)}) is strictly prohibited. Blended cross-channel aggregations "
-            "require unified methodology.",
+            "Attempting to sum metrics across different comparability classes "
+            f"({sorted(x for x in classes if x is not None)}) is strictly prohibited. "
+            "Blended cross-channel aggregations require unified methodology.",
             422,
         )
 

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -165,9 +165,7 @@ def studio_jobs_router(
             return public_job(row) if row else None
 
     @router.get("/api/brands/{brand_id}/studio/jobs/{job_id}")
-    def status(
-        brand_id: UUID, job_id: UUID, actor: Principal = Depends(authenticate)
-    ) -> dict:
+    def status(brand_id: UUID, job_id: UUID, actor: Principal = Depends(authenticate)) -> dict:
         with db.transaction(actor) as conn:
             row = one(
                 conn,

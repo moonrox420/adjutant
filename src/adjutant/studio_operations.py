@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import psycopg

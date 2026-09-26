@@ -19,7 +19,10 @@ class ObjectStore:
         if re.fullmatch(r"[a-f0-9]{64}", key) is None:
             raise ValueError("Invalid object key")
         path = self.root / str(UUID(str(brand_id))) / key
-        if any(item.is_symlink() or item.is_junction() for item in (path.parent, path)):
+        if any(
+            item.is_symlink() or (hasattr(item, "is_junction") and item.is_junction())
+            for item in (path.parent, path)
+        ):
             raise ValueError("Object paths cannot be symbolic links or junctions")
         if not path.resolve().is_relative_to(self.root):
             raise ValueError("Object path escapes storage root")
