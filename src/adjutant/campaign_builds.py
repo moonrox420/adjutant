@@ -167,8 +167,8 @@ def queue_build(
     conn.execute(
         "INSERT INTO "
         "campaign_build(id,brand_id,plan_id,connection_id,channel,plan_hash,guardrail_version,"
-        "authorization_generation,requested_by,document,daily_budget_usd,monthly_budget_usd,state) "
-        "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,\'authorizing\')",
+        "authorization_generation,requested_by,document,daily_budget_usd,monthly_budget_usd) "
+        "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             data.request_key,
             brand_id,
@@ -188,26 +188,21 @@ def queue_build(
     return build_report(conn, brand_id, data.request_key)
 
 
-def reserve_build_authority(
+def reserve_plan_authority(
     db: Database,
     config: Settings,
     actor: Principal,
     brand_id: UUID,
-    build_id: UUID,
-) -> dict:
-    """Consume exact signed create authority before a build becomes runnable."""
+    plan_id: UUID,
+    data: CampaignBuildInput,
+) -> None:
+    """Reserve exact signed create authority before a provider build can be queued."""
     with db.transaction(actor) as conn:
-        build = one(
-            conn,
-            "SELECT * FROM campaign_build WHERE id=%s AND brand_id=%s FOR UPDATE",
-            (build_id, brand_id),
-        )
-        if build["state"] != "authorizing":
-            return build_report(conn, brand_id, build_id)
+        require_role(conn, brand_id, EDIT_ROLES)
         plan = one(
             conn,
             "SELECT * FROM plan WHERE id=%s AND brand_id=%s",
-            (build["plan_id"], brand_id),
+            (plan_id, brand_id),
         )
         if plan["state"] not in {"approved", "deploying", "live"}:
             raise DomainError(
@@ -215,6 +210,27 @@ def reserve_build_authority(
                 "This exact plan revision must be approved before deployment.",
                 403,
             )
+        limits = one(conn, "SELECT version FROM guardrail WHERE brand_id=%s", (brand_id,))
+        if (
+            plan["plan_hash"] != data.expected_plan_hash
+            or limits["version"] != data.expected_guardrail_version
+        ):
+            raise DomainError(
+                "ReviewChanged",
+                "Plan or guardrails changed. Reload before creating the campaign.",
+                409,
+            )
+        account = one(
+            conn,
+            "SELECT id,channel FROM channel_connection WHERE id=%s AND brand_id=%s",
+            (data.connection_id, brand_id),
+        )
+        allocation = one(
+            conn,
+            "SELECT daily_budget_usd,monthly_budget_usd FROM plan_allocation "
+            "WHERE plan_id=%s AND brand_id=%s AND channel=%s",
+            (plan_id, brand_id, account["channel"]),
+        )
         token = conn.execute(
             """SELECT t.id FROM approval_token t
             JOIN approval_request a ON a.id=t.approval_request_id
@@ -225,9 +241,9 @@ def reserve_build_authority(
             ORDER BY t.issued_at DESC LIMIT 1""",
             (
                 brand_id,
-                build["plan_id"],
-                build["plan_hash"],
-                f"channel:{build['channel']}",
+                plan_id,
+                plan["plan_hash"],
+                f"channel:{account['channel']}",
             ),
         ).fetchone()
         if not token:
@@ -239,11 +255,11 @@ def reserve_build_authority(
         intent = SpendIntent(
             brand_id=brand_id,
             token_id=token["id"],
-            subject_hash=build["plan_hash"],
-            channel=build["channel"],
+            subject_hash=plan["plan_hash"],
+            channel=account["channel"],
             operation="create",
-            daily_usd=build["daily_budget_usd"],
-            total_usd=build["monthly_budget_usd"],
+            daily_usd=allocation["daily_budget_usd"],
+            total_usd=allocation["monthly_budget_usd"],
             payload=plan["plan_document"],
         )
 
@@ -266,44 +282,13 @@ def reserve_build_authority(
             "The spend-authority gateway could not reserve this deployment.",
             503,
         ) from exc
-
-    reservation_id = body.get("reservation_id") if response.status_code == 200 else None
-    if not reservation_id:
+    if response.status_code != 200 or body.get("valid") is not True or not body.get("reservation_id"):
         error = body.get("error", {}) if isinstance(body, dict) else {}
-        if error.get("code") == "ReplayDenied":
-            with db.transaction(actor) as conn:
-                prior = conn.execute(
-                    """SELECT c.id FROM approval_token_consumption c
-                    WHERE c.token_id=%s AND c.channel=%s AND c.operation='create'
-                    AND c.idem_key=%s""",
-                    (intent.token_id, intent.channel, intent.idempotency_key),
-                ).fetchone()
-                reservation_id = str(prior["id"]) if prior else None
-        if not reservation_id:
-            raise DomainError(
-                error.get("code", "SpendAuthorityDenied"),
-                error.get("message", "The signed approval does not authorize this deployment."),
-                response.status_code if 400 <= response.status_code < 500 else 503,
-            )
-
-    with db.transaction(actor) as conn:
-        locked_brand(conn, brand_id)
-        current = one(
-            conn,
-            "SELECT * FROM campaign_build WHERE id=%s AND brand_id=%s FOR UPDATE",
-            (build_id, brand_id),
+        raise DomainError(
+            error.get("code", "SpendAuthorityDenied"),
+            error.get("message", "The signed approval does not authorize this deployment."),
+            response.status_code if 400 <= response.status_code < 500 else 503,
         )
-        if current["state"] != "authorizing":
-            return build_report(conn, brand_id, build_id)
-        conn.execute(
-            """UPDATE campaign_build
-            SET approval_token_id=%s,approval_reservation_id=%s,
-                authority_reserved_at=now(),state='queued'
-            WHERE id=%s""",
-            (intent.token_id, UUID(reservation_id), build_id),
-        )
-        conn.execute("SELECT validate_campaign_build(%s)", (build_id,))
-        return build_report(conn, brand_id, build_id)
 
 
 class BuildJournal:
@@ -650,8 +635,15 @@ def campaign_build_router(db: Database, config: Settings, principal) -> APIRoute
     ):
         try:
             with db.transaction(actor) as conn:
-                build = queue_build(conn, actor, brand_id, plan_id, data)
-            return reserve_build_authority(db, config, actor, brand_id, build["id"])
+                previous = conn.execute(
+                    "SELECT id FROM campaign_build WHERE id=%s AND brand_id=%s",
+                    (data.request_key, brand_id),
+                ).fetchone()
+                if previous:
+                    return build_report(conn, brand_id, previous["id"])
+            reserve_plan_authority(db, config, actor, brand_id, plan_id, data)
+            with db.transaction(actor) as conn:
+                return queue_build(conn, actor, brand_id, plan_id, data)
         except psycopg.IntegrityError as exc:
             raise DomainError(
                 "CampaignGuardrailDenied",
