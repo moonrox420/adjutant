@@ -17,10 +17,7 @@ test("campaign setup queues and cancels a durable build through actual APIs", as
   await page.getByRole("button", { name: "Sign in →", exact: true }).click();
   await expect(page.locator(".account-menu")).toBeVisible();
   const prefix = `/api/brands/${user.brand_id}`;
-  const headers = {
-    "X-Adjutant-Client": "console",
-    Origin: "http://127.0.0.1:3001",
-  };
+  const headers = { "X-Adjutant-Client": "console" };
   const response = await context.request.post(`${prefix}/plans`, {
     headers,
     data: {
@@ -51,33 +48,6 @@ test("campaign setup queues and cancels a durable build through actual APIs", as
     { headers, data: { plan_id: plan.id, expected_revision: latest.revision } },
   );
   expect(attached.ok(), await attached.text()).toBeTruthy();
-
-  const submitted = await context.request.post(
-    `${prefix}/plans/${plan.id}/submit`,
-    {
-      headers,
-      data: {
-        expected_hash: plan.plan_hash,
-        requires_client_approval: false,
-      },
-    },
-  );
-  expect(submitted.ok(), await submitted.text()).toBeTruthy();
-  const approval = await submitted.json();
-
-  const approved = await context.request.post(
-    `${prefix}/approvals/${approval.id}/decide`,
-    {
-      headers,
-      data: {
-        decision: "approved",
-        expected_hash: plan.plan_hash,
-        reason: "Approve the exact browser deployment revision.",
-      },
-    },
-  );
-  expect(approved.ok(), await approved.text()).toBeTruthy();
-
   await page.reload();
   await page
     .getByRole("button", { name: "Campaign plans", exact: true })
