@@ -20,6 +20,7 @@ from live_canary import create_app, seed_identity, test_settings
 from migrate import migrate
 from pydantic import SecretStr
 from test_approval_server import approval_test_server
+from test_gateway_server import gateway_test_server
 
 from adjutant.storage import ObjectStore
 
@@ -113,8 +114,10 @@ concept_identity["brand_id"] = seed_concepts(
 Path(".local/browser-concepts-user.json").write_text(json.dumps(concept_identity), encoding="utf-8")
 with (
     approval_test_server(admin_url) as approval_url,
+    gateway_test_server(admin_url) as gateway_url,
     browser_inference(root / ".local/browser-inference.json") as inference_url,
 ):
     config.approval_url = approval_url
+    config.gateway_url = gateway_url
     config.ollama_url = inference_url
     uvicorn.run(create_app(config), host="127.0.0.1", port=8001)

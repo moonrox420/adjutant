@@ -282,7 +282,11 @@ def reserve_plan_authority(
             "The spend-authority gateway could not reserve this deployment.",
             503,
         ) from exc
-    if response.status_code != 200 or body.get("valid") is not True or not body.get("reservation_id"):
+    if (
+        response.status_code != 200
+        or body.get("valid") is not True
+        or not body.get("reservation_id")
+    ):
         error = body.get("error", {}) if isinstance(body, dict) else {}
         raise DomainError(
             error.get("code", "SpendAuthorityDenied"),
