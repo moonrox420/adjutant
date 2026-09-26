@@ -193,12 +193,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             allowed_origins = {config.public_origin}
             if "localhost" in config.public_origin:
-                allowed_origins.add(config.public_origin.replace("localhost", "127.0.0.1"))
+                allowed_origins.add(
+                    config.public_origin.replace("localhost", "127.0.0.1")
+                )
             elif "127.0.0.1" in config.public_origin:
-                allowed_origins.add(config.public_origin.replace("127.0.0.1", "localhost"))
+                allowed_origins.add(
+                    config.public_origin.replace("127.0.0.1", "localhost")
+                )
             req_origin = request.headers.get("origin")
+            has_cookie = bool(request.cookies.get("adjutant_session"))
             invalid_origin = request.method not in {"GET", "HEAD", "OPTIONS"} and (
                 request.headers.get("x-adjutant-client") != "console"
+                or (has_cookie and (req_origin is None or req_origin not in allowed_origins))
                 or (req_origin is not None and req_origin not in allowed_origins)
             )
             if invalid_origin:
@@ -238,6 +244,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             trace_id.reset(context)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
         response.headers["Cache-Control"] = "no-store"
         return response
 

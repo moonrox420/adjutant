@@ -135,11 +135,19 @@ def execute_bulk_brand_operation(
                 succeeded.append(str(brand_id))
 
         except Exception as exc:
+            error_code = (
+                exc.code if isinstance(exc, DomainError) else "BulkOperationFailed"
+            )
+            error_msg = (
+                exc.message
+                if isinstance(exc, DomainError)
+                else "Operation failed for this brand."
+            )
             failed.append(
                 {
                     "brand_id": str(brand_id),
-                    "error": type(exc).__name__,
-                    "message": str(exc),
+                    "error": error_code,
+                    "message": error_msg,
                 }
             )
 

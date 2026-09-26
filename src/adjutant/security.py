@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,9 +69,11 @@ def generate_signing_key(path: Path) -> None:
     """Provision once. Existing approval authority must never be silently replaced."""
     path.parent.mkdir(parents=True, exist_ok=True)
     key = Ed25519PrivateKey.generate()
-    with path.open("xb") as handle:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as handle:
         handle.write(key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()))
-    path.chmod(0o600)
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 class ApprovalSigner:

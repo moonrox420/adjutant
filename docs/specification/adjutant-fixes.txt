@@ -1,0 +1,1409 @@
+There are real problems.
+
+# Executive result
+
+The biggest issue is **not** `.pytest_temp`, CSP, or dependency hygiene.
+
+The biggest issue is that you've built a genuinely strong authorization/gateway architecture in one part of the system, while some later “advanced slice” code **sidesteps it entirely and simulates successful external behavior by changing PostgreSQL rows**.
+
+Some of that code is not wired into the running application yet, which prevents it from currently doing the damage its names imply. But that also means tests are claiming features work that the production runtime does not actually execute.
+
+My consolidated findings are below.
+
+---
+
+# P0 — Fix before treating these features as real
+
+## 1. Autonomous optimizer bypasses the actual spend-authority boundary
+
+**Files:**
+
+- `src/adjutant/runner.py`
+- `src/adjutant/gateway.py`
+- `migrations/006_approval_integrity.sql`
+- `tests/test_autonomous_loop.py`
+
+You have a strong gateway in `gateway.py`. It validates:
+
+- Ed25519 signature
+- signing key
+- brand
+- approved subject
+- immutable plan hash
+- payload hash
+- operation scope
+- channel scope
+- approval state
+- kill switch
+- channel allocation
+- daily cap
+- total cap
+- cumulative consumption
+- current budget ceilings
+- replay
+
+That's exactly what should guard spend-affecting mutations.
+
+But `run_tick()` doesn't use it.
+
+Around `runner.py:147`, it grabs basically any live token:
+
+```python
+active_token = conn.execute(
+    """SELECT id FROM approval_token
+    WHERE brand_id=%s AND voided_at IS NULL AND expires_at > now()
+    ORDER BY expires_at DESC LIMIT 1""",
+    (brand_id,),
+).fetchone()
+```
+
+There is no verification that the token:
+
+- belongs to the relevant plan
+- matches the relevant subject hash
+- authorizes that channel
+- authorizes `budget_set`
+- has sufficient remaining cap
+- has an unused reservation
+- is backed by the exact payload being executed
+
+Then `scale_winner` directly does:
+
+```python
+UPDATE campaign_object
+SET daily_budget_usd=%s
+WHERE id=%s
+```
+
+No gateway `/internal/spend/reserve`.
+
+No `SpendAuthority.reserve()`.
+
+No `approval_token_consumption`.
+
+No signed-intent verification.
+
+The SQL trigger from `006_approval_integrity.sql` does **not compensate for this**. Its `validate_spend_action()` only establishes that the token is live and same-brand, and only compares `usd_impact` when `usd_impact` is non-null.
+
+The runner's `budget_set` audit record does not provide `usd_impact`, meaning that check is bypassed too.
+
+### Why this matters
+
+Your database's original design invariant literally says:
+
+> No spend-affecting write exists without an approval_token row whose subject_hash matches the current subject hash.
+
+The autonomous runner violates the spirit of that invariant.
+
+### Important qualification
+
+I traced production callers too.
+
+**`run_tick()` is currently not wired into the production application.**
+
+I found no production caller outside `runner.py`. `api.py` starts:
+
+- workflow runner
+- Studio job runner
+- campaign-build runner
+- remote-stop runner
+- consumer supervisor
+
+It does **not** start an autonomous optimization runner.
+
+So this is presently a **dangerous latent implementation**, not an actively scheduled spend-authority bypass.
+
+But wiring S8 into production as it exists would be a serious mistake.
+
+---
+
+# P0 — Autonomous runner claims external actions that never happened
+
+## 2. `refresh_creative` does not refresh a creative
+
+`runner.py` calls this:
+
+```python
+cand["kind"] == "refresh_creative"
+```
+
+Then it creates another `campaign_object` row.
+
+The replacement uses:
+
+```python
+creative_id=fatigued_obj["creative_id"]
+```
+
+That's the **same creative**.
+
+It gives it a synthetic provider identity:
+
+```python
+f"native_rep_{replacement_id.hex[:8]}"
+```
+
+Then marks it:
+
+```python
+state='active'
+```
+
+There is:
+
+- no creative generation
+- no image generation
+- no platform builder
+- no provider API request
+- no remote readback
+- no provider object ID
+- no deployment journal
+- no verification
+
+Then it pauses the original object locally.
+
+So this sequence:
+
+> create replacement → verify active → pause old creative
+
+is currently actually:
+
+> insert another PostgreSQL row with the same creative → mark row active → mark old row paused
+
+That is not a creative refresh.
+
+---
+
+# P0 — Tests explicitly bless that fake implementation
+
+## 3. `test_autonomous_loop.py` verifies database simulation, not provider execution
+
+This one is particularly important because the test suite makes the previous defect look intentional.
+
+`test_fatigued_ad_replaced_first_then_paused_zero_gap()` calls:
+
+```python
+run_tick(...)
+```
+
+directly.
+
+It then considers the replacement successful when:
+
+```python
+replacement["state"] == "active"
+```
+
+in PostgreSQL.
+
+It considers the original paused when:
+
+```python
+fatigued_after["state"] == "paused"
+```
+
+in PostgreSQL.
+
+There is no simulated provider server like the much better campaign-build tests use.
+
+Compare that with `tests/test_campaign_builds.py`, where you actually stand up a fake Meta HTTP service and verify POST/readback/idempotency behavior.
+
+The autonomous tests therefore validate the wrong boundary.
+
+### Result
+
+Those tests could all be green while the real ad remains completely unchanged at Meta/Google/etc.
+
+---
+
+# P0/P1 — Billing cancellation can claim ads are safely paused without pausing them
+
+## 4. `billing.cancel_subscription()` changes local state only
+
+`src/adjutant/billing.py`:
+
+```python
+UPDATE brand
+SET campaigns_enabled=false, status='paused'
+```
+
+and:
+
+```python
+UPDATE campaign_object
+SET state='paused'
+WHERE brand_id=%s AND state='active'
+```
+
+Then returns:
+
+```python
+"campaigns_safely_paused": True
+```
+
+It never touches:
+
+- `RemoteStopRunner`
+- `CampaignControl.pause()`
+- provider APIs
+- readback verification
+- remote-stop receipts
+
+This is exactly the failure mode your real `remote_stop.py` is designed to prevent.
+
+Your remote-stop implementation explicitly refuses to infer remote state from local state.
+
+Billing ignores that architecture.
+
+### Qualification
+
+I did not find billing wired into the main API today.
+
+So this is currently another **latent advanced-slice defect**, not a public endpoint leaving active ads running.
+
+But if you expose this API/function as-is, `"campaigns_safely_paused": True` can be objectively false while real advertising spend continues.
+
+---
+
+# P1 — “Video render completed” without rendering a video
+
+## 5. `video.py` manufactures an S3 URI for a nonexistent asset
+
+`render_video_timeline()` has no actual renderer.
+
+On success it calculates elapsed Python execution time and then creates:
+
+```python
+asset_uri = (
+    f"s3://adjutant-renders/"
+    f"{brand_id}/{video_id}_{ratio_str}.mp4"
+)
+```
+
+There is no:
+
+- FFmpeg
+- video encoder
+- MP4 buffer
+- filesystem write
+- `ObjectStore.put()`
+- S3 SDK
+- upload
+- existence check
+
+It then inserts:
+
+```text
+status = completed
+asset_uri = s3://...
+```
+
+and returns:
+
+```python
+{
+    "status": "completed",
+    "asset_uri": asset_uri,
+    ...
+}
+```
+
+So the function can produce a successful persisted video-render record for an MP4 that has never existed.
+
+That's a stub posing as completion rather than an explicit `NotImplemented`.
+
+The README is more honest than this code—it says TikTok output is currently a written concept rather than video.
+
+---
+
+# P1 — Video safety validation only checks the opening scene
+
+## 6. Body and CTA scenes bypass safe-area validation
+
+Same function:
+
+```python
+violations = validate_safe_areas(
+    timeline.hook_scene.scene_graph,
+    timeline.aspect_ratio,
+    channel,
+)
+```
+
+It checks only:
+
+```text
+hook_scene
+```
+
+It never validates:
+
+```text
+body_scenes
+cta_scene
+```
+
+So even after a renderer exists, text/CTA content can violate platform-safe areas anywhere after the hook.
+
+---
+
+# P1 — Compliance rejection function cannot successfully execute
+
+## 7. `route_policy_rejection()` conflicts with its own database schema
+
+`src/adjutant/compliance.py` inserts:
+
+```python
+trigger_type = "platform_policy_rejection"
+```
+
+But `migrations/043_metrics_and_autonomous_loop.sql` restricts `trigger_type` to:
+
+```text
+spend_spike_24h
+cpa_degradation_40pct
+creative_policy_rejection
+guardrail_breach
+new_channel_connection
+compliance_flag
+channel_auth_failure
+```
+
+`platform_policy_rejection` isn't valid.
+
+So the insert raises a DB constraint failure.
+
+Then the function intends to execute:
+
+```python
+UPDATE campaign_object
+SET state='policy_rejected'
+```
+
+But your `object_state` enum contains:
+
+```text
+draft
+pending_review
+active
+paused
+rejected
+archived
+deleted
+unknown
+```
+
+There is no `policy_rejected`.
+
+That's a second schema failure.
+
+So this function is structurally unable to complete against the current schema.
+
+---
+
+# P1 — Current `main` is failing CI
+
+This is not “no CI information available,” which I incorrectly told you earlier.
+
+I queried Actions directly.
+
+Current HEAD has **Adjutant checks / run #6**, triggered by the push of `d9bd5c7`.
+
+Conclusion:
+
+**FAILURE**
+
+All three jobs failed.
+
+### `backend`
+
+Failed during:
+
+```text
+Provision dedicated development and test databases
+```
+
+Everything after that was skipped:
+
+- Ruff
+- format check
+- channel parity
+- pytest
+
+### `console`
+
+Failed during:
+
+```text
+Install API and provision isolated browser databases
+```
+
+Skipped:
+
+- Node setup
+- `npm ci`
+- channel checks
+- prettier
+- Next production build
+- Chromium install
+- Playwright suite
+
+### `s0-clean-start`
+
+Failed during:
+
+```text
+Verify make up against an empty cluster
+```
+
+So current HEAD has **not passed the test suite declared in its workflow**.
+
+That is a release blocker regardless of all other findings.
+
+---
+
+# P1 — You committed an entire pytest runtime environment
+
+## 8. `.pytest_temp` is enormous and tracked
+
+Actual counts from the repository tree:
+
+```text
+865 tracked .pytest_temp files
+6,932,404 bytes
+198 tenant-master.key files
+160 symlinks
+```
+
+The repo itself is only about 9.76 MB of blobs, meaning the accidental pytest tree is the majority of its tracked payload.
+
+It includes:
+
+- tenant master encryption keys
+- generated objects
+- rendered SVG/PNG data
+- workflow state
+- symlinks
+- test outputs
+- machine-local absolute paths
+
+The latest commit diff contains Windows paths resembling:
+
+```text
+C:/Users/.../adjutant/.pytest_temp/...
+```
+
+I see no evidence these 198 master keys are production keys—they line up with individual pytest fixtures.
+
+So I'm **not claiming production credential compromise**.
+
+But committing hundreds of secret-shaped key files is a major process failure because eventually one of those directories could contain something real.
+
+Your `.gitignore` has:
+
+```gitignore
+.pytest_cache/
+```
+
+but is missing:
+
+```gitignore
+.pytest_temp/
+```
+
+That is the immediate cause.
+
+---
+
+# P1 — Next.js version has a current critical advisory
+
+`package-lock.json` resolves:
+
+```text
+next 16.3.5
+```
+
+As of September 26, 2026, the maintainers' current advisory says versions:
+
+```text
+>= 16.2.0 < 16.3.6
+```
+
+are affected by a **critical remote-code-execution vulnerability** in the Node `next/og` `ImageResponse` implementation. `16.3.6` is patched. :chatgpt-content-reference{index="0"}
+
+I did **not** find usage of `next/og`/`ImageResponse` in this application, and the advisory requires attacker-controlled values to reach the vulnerable SVG-generation path. Therefore:
+
+**vulnerable package version: confirmed**
+
+**Adjutant remotely exploitable through this CVE: not established**
+
+Still, there is no reason to stay on 16.3.5.
+
+---
+
+# P1 — Bootstrap creates credential files without enforcing private permissions
+
+## 9. Secure secret creation is inconsistent
+
+`scripts/up.py` does the right thing:
+
+```python
+os.open(..., 0o600)
+```
+
+`provision_master_key()` also does the right thing.
+
+But `scripts/bootstrap.py` uses ordinary `Path.write_text()` for several sensitive files:
+
+```text
+.local/admin.url
+.local/test-admin.url
+.local/app.password
+.local/worker.password
+.env
+```
+
+For example:
+
+```python
+app_password_file.write_text(secrets.token_urlsafe(32))
+```
+
+and:
+
+```python
+(root / ".env").write_text(...)
+```
+
+There is no subsequent `chmod(0o600)`.
+
+On a typical POSIX system with a `022` umask, these can be created as readable by other users on the machine.
+
+`admin.url` is especially sensitive because it contains the PostgreSQL admin credential directly in the URI.
+
+Meanwhile your gateway/approval secret helpers explicitly chmod secrets to `0600`.
+
+That inconsistency should be eliminated.
+
+---
+
+# P1/P2 — Default Windows launcher can kill unrelated programs
+
+## 10. `start.ps1` is less safe than `scripts/dev.ps1`
+
+Top-level `start.ps1` defines:
+
+```powershell
+function Kill-PortListener([int]$Port) {
+    $conns = Get-NetTCPConnection ...
+    foreach ($conn in $conns) {
+        Stop-Process -Id $conn.OwningProcess -Force
+    }
+}
+```
+
+That kills **whatever happens to own**:
+
+```text
+3000
+8000
+8002
+8003
+```
+
+It never verifies that the process belongs to Adjutant.
+
+So:
+
+```text
+start.bat
+    ↓
+start.ps1
+    ↓
+-Restart / unhealthy service
+    ↓
+force-kill unrelated listener
+```
+
+By contrast, `scripts/dev.ps1` contains `Assert-ProjectPort`, and `scripts/stop.ps1` validates:
+
+- project command line
+- service identity
+- process creation time
+
+before stopping anything.
+
+The safer implementation already exists. The top-level launcher should use it.
+
+---
+
+# P1/P2 — Reports claim autonomous work that may never have happened
+
+## 11. Weekly reporting can make unsupported operational claims
+
+`reports.py` says this when CPA worsens:
+
+```python
+"The optimizer is reallocating budget toward top performers."
+```
+
+That sentence is generated purely from CPA change.
+
+It does **not** inspect whether:
+
+- the optimizer is running
+- `run_tick` is scheduled
+- a reallocation happened
+- any budget action was executed
+
+And, as established above, the optimizer isn't wired into production anyway.
+
+The report can therefore assert work that didn't happen.
+
+Later it also says:
+
+```python
+"Adjutant worked in the background this week..."
+```
+
+based on action counts.
+
+That part at least has DB evidence, though it will happily say “refreshed 0… adjusted 0…” etc.
+
+The CPA trend claim is the worse one.
+
+---
+
+# P2 — Production Docker build doesn't actually use your lockfile
+
+Root Dockerfile:
+
+```dockerfile
+COPY pyproject.toml requirements.lock ./
+COPY src ./src
+RUN pip install --no-cache-dir .
+```
+
+`requirements.lock` is copied and then ignored.
+
+`pip install .` resolves from `pyproject.toml`.
+
+Most Python dependencies are exact there, but not all. Example:
+
+```toml
+"email-validator>=2.2,<3"
+```
+
+Build-system dependency is also:
+
+```toml
+setuptools>=75
+```
+
+So two Docker builds at different dates are not guaranteed to resolve identical dependency graphs.
+
+CI similarly does:
+
+```bash
+pip install -e '.[dev]'
+```
+
+rather than installing the lock.
+
+The existence of `requirements.lock` gives an impression of locked deployments that the current installation path doesn't honor.
+
+---
+
+# P2 — Dependency and supply-chain automation is thin
+
+I found no repository configuration for:
+
+- Dependabot
+- Renovate
+- CodeQL
+- `pip-audit`
+- OSV scanner
+- npm audit gate
+- secret scanner gate
+
+That matters more here because a currently vulnerable Next version already made it to `main`.
+
+GitHub Actions are referenced by mutable tags:
+
+```yaml
+actions/checkout@v4
+actions/setup-python@v5
+actions/setup-node@v4
+actions/upload-artifact@v4
+```
+
+Containers likewise use tags:
+
+```text
+pgvector/pgvector:pg18
+python:3.12-slim
+node:22-alpine
+```
+
+And pre-commit uses:
+
+```yaml
+repo: https://github.com/moonrox420/ball-python
+rev: v2.0.5
+```
+
+For a system holding advertising OAuth grants and spending authority, SHA/digest pinning is worthwhile.
+
+---
+
+# P2 — Browser mutation-origin logic accepts a missing Origin
+
+`api.py` currently evaluates:
+
+```python
+request.headers.get("origin", config.public_origin)
+```
+
+Meaning:
+
+**missing Origin → assumed trusted Origin**
+
+You also require:
+
+```text
+X-Adjutant-Client: console
+```
+
+and I found no permissive CORS configuration, so a normal malicious cross-origin browser cannot trivially exploit this. The custom header induces a preflight.
+
+Therefore I am **not marking this as a current CSRF vulnerability**.
+
+But the rule should be simpler and stricter for cookie-authenticated writes:
+
+```python
+request.headers.get("origin") == config.public_origin
+```
+
+A browser mutation with no Origin should fail closed.
+
+---
+
+# P2 — Frontend security headers stop short of CSP
+
+You currently set:
+
+```text
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+and remove `X-Powered-By`.
+
+Good.
+
+I found no:
+
+- Content-Security-Policy
+- Permissions-Policy
+- production HSTS
+
+CSP is the meaningful missing one.
+
+HSTS should only be added in a deployment where HTTPS is guaranteed.
+
+---
+
+# P2 — Startup/deployment topology is incomplete in Docker
+
+The root backend Dockerfile launches only:
+
+```text
+adjutant.api:create_app
+```
+
+But the core application expects separate services for:
+
+```text
+gateway:  8002
+approval: 8003
+```
+
+Defaults are loopback URLs.
+
+There is no Compose/orchestrator definition in the repository that starts:
+
+- core API
+- gateway
+- approval service
+- PostgreSQL
+- web console
+
+together with proper service URLs and secrets.
+
+So the Dockerfiles are buildable pieces, not currently a complete production deployment story.
+
+That's fine if intentional, but the repository should not imply `docker build && run` gives the complete system.
+
+---
+
+# P2 — Advanced billing is currently database bookkeeping, not billing
+
+`billing.create_subscription()` accepts:
+
+```python
+payment_method_id: str
+```
+
+and immediately inserts:
+
+```text
+status = active
+```
+
+There is no:
+
+- Stripe
+- Braintree
+- processor call
+- authorization
+- payment intent
+- webhook verification
+- charge
+- subscription ID from a processor
+
+So S14 billing is currently an internal state-machine scaffold.
+
+That isn't a security bug while unwired.
+
+It becomes one if a caller treats `"active"` as proof somebody paid.
+
+---
+
+# P2 — Hardcoded “legal compliance” labels are too authoritative
+
+`compliance.py` contains strings like:
+
+```text
+AI-generated synthetic media (EU AI Act Art. 50 Compliant)
+```
+
+The code is not performing a legal-compliance determination; it is selecting a static label from a dictionary.
+
+Calling an asset **“Compliant”** because a text layer was added is too strong.
+
+Compliance depends on much more than one label:
+
+- jurisdiction
+- content type
+- platform behavior
+- deployment context
+- disclosure visibility
+- machine-readable requirements
+- applicable exceptions
+- evolving implementation guidance
+
+The safe model is:
+
+```text
+required disclosure candidate
+```
+
+rather than:
+
+```text
+legally compliant
+```
+
+---
+
+# P2 — Policy-rejection persistence can retain raw provider responses
+
+`route_policy_rejection()` stores:
+
+```python
+"raw_response": platform_rejection_payload
+```
+
+inside the escalation record.
+
+Your normal HTTP adapter layers are intentionally careful not to persist response bodies containing credentials.
+
+This helper bypasses that discipline by storing the entire supplied response object.
+
+Even after fixing its schema problems, provider payloads should be allowlisted/redacted before persistence.
+
+---
+
+# P2 — Bootstrap password policy disagrees with account policy
+
+Normal account registration/reset:
+
+```text
+minimum 15 characters
+```
+
+Bootstrap:
+
+```python
+if len(password) < 12 ...
+```
+
+So the privileged initial owner can be provisioned with a password the public account system would reject.
+
+Not catastrophic, but there's no reason for the bootstrap owner to have the weaker policy.
+
+---
+
+# P2/P3 — `agency.py` returns raw internal exception strings
+
+Bulk operation failure handling does:
+
+```python
+except Exception as exc:
+    failed.append(
+        {
+            ...
+            "message": str(exc),
+        }
+    )
+```
+
+Depending on the exception, that can expose:
+
+- SQL errors
+- constraint details
+- internal identifiers
+- provider diagnostics
+
+I didn't find `agency.py` wired into the main FastAPI application today, so this is currently latent.
+
+Still should be fixed before exposing those operations.
+
+---
+
+# P3 — Signing-key creation has a small POSIX permission race
+
+`generate_signing_key()` does:
+
+```python
+with path.open("xb") as handle:
+    handle.write(...)
+path.chmod(0o600)
+```
+
+Unlike master-key provisioning, which uses `os.open(..., 0o600)` at creation time.
+
+Under a permissive umask there is a brief interval where the signing-key file can have broader permissions before `chmod`.
+
+Use the same secure-create primitive everywhere.
+
+Low severity on a normal single-user host, but easy to remove.
+
+---
+
+# P3 — Repo leaks machine-local implementation artifacts
+
+Besides `.pytest_temp`, documentation contains machine-specific Windows paths.
+
+Example pattern:
+
+```text
+C:\Users\...\adjutant
+```
+
+It's not an application vulnerability, but it:
+
+- makes docs less portable
+- leaks workstation structure
+- creates misleading copy/paste instructions
+
+Use `%USERPROFILE%`, `$HOME`, repo-relative paths, or generic placeholders.
+
+---
+
+# P3 — `requirements.lock` is version-pinned but not artifact-hash-pinned
+
+This is a smaller supply-chain point.
+
+The lock contains:
+
+```text
+package==version
+```
+
+but not distribution hashes.
+
+If you want the strongest reproducibility, use a resolver/lock format capable of verifying exact package artifacts, or pip `--require-hashes`.
+
+This is hardening, not a correctness defect.
+
+---
+
+# Important things I specifically looked for and did **not** find
+
+A complete audit shouldn't only generate accusations.
+
+These areas are well built.
+
+### SQL injection
+
+I did not find an obvious user-controlled SQL injection path.
+
+The dynamic access-application `UPDATE`:
+
+```python
+f"UPDATE ... SET {', '.join(updates)}"
+```
+
+looks scary at first glance, but `updates` consists entirely of hardcoded field names selected server-side. Values remain parameterized.
+
+Across the backend, SQL values are overwhelmingly parameterized.
+
+### Shell injection
+
+I did not find:
+
+```text
+shell=True
+os.system()
+eval()
+exec()
+```
+
+in the application execution paths.
+
+Child processes are launched using argument arrays.
+
+### Unsafe deserialization
+
+No application `pickle` loading surfaced.
+
+### TLS disabling
+
+I found no `verify=False`.
+
+Provider clients commonly use:
+
+```text
+trust_env=False
+follow_redirects=False
+```
+
+which is good.
+
+### Permissive CORS
+
+I did not find a wildcard/permissive `CORSMiddleware`.
+
+### Frontend raw HTML
+
+I found no `dangerouslySetInnerHTML`.
+
+### Browser secret storage
+
+`localStorage` is only being used for a cross-tab logout signal, not tokens/API keys.
+
+Auth remains cookie based.
+
+### Reset token leakage
+
+Email verification/password-reset tokens arrive in URL fragments and the frontend quickly clears the fragment via `history.replaceState`.
+
+That's a good choice versus query parameters.
+
+### External frontend links
+
+The links I inspected use:
+
+```text
+rel="noreferrer"
+```
+
+with `_blank`.
+
+### Credential cryptography
+
+This part is genuinely good:
+
+- AES-256-GCM
+- random data key per brand
+- local wrapping key
+- authenticated context containing brand and secret name
+- plaintext never persisted in SQL
+- cross-brand/name ciphertext transplantation fails authentication
+
+### Password storage
+
+Also solid:
+
+- scrypt
+- random salt
+- constant-time comparison
+- dummy hash for unknown login identity
+- long random session/reset tokens
+- digest-only token persistence
+
+### RLS
+
+The DB model is one of the strongest pieces.
+
+You:
+
+- force RLS broadly
+- reject runtime DB roles with `SUPERUSER`
+- reject `BYPASSRLS`
+- use transaction-local tenant/actor context
+- test missing tenant context
+- test pool reuse
+- test cross-tenant access
+
+That's good engineering.
+
+### Security-definer functions
+
+The ones I inspected generally use an explicit:
+
+```text
+SET search_path=adjutant,pg_temp
+```
+
+and later migrations revoke functions from `PUBLIC`.
+
+Good.
+
+### SSRF protection
+
+`research.py` is unusually careful.
+
+It:
+
+- permits only HTTP(S)
+- blocks credentials in URLs
+- permits only 80/443
+- resolves DNS itself
+- rejects private/reserved/non-global addresses
+- pins the validated IP
+- preserves hostname for TLS verification
+- revalidates every redirect
+- blocks HTTPS downgrade
+- caps redirects
+- caps bytes
+- refuses compressed transfer
+- only processes HTML
+- doesn't run JS/assets
+
+I didn't find an obvious SSRF bypass in the implementation I reviewed.
+
+### Model credential isolation
+
+Ollama cloud credentials are constrained to:
+
+```text
+https://ollama.com
+```
+
+and tests explicitly cover attempts to send them elsewhere.
+
+Generation subprocesses receive a heavily reduced environment rather than inheriting every app credential.
+
+Good.
+
+### Generated image validation
+
+`VisualsGenerator` does substantially more validation than most implementations:
+
+- allowed MIME
+- file signatures
+- size limit
+- Pillow format agreement
+- decompression-bomb handling
+- pixel cap
+- animation rejection
+- decode/verify
+
+Good.
+
+### Static SVG output
+
+Generated copy is passed through XML escaping before being inserted into SVG text.
+
+I didn't find an obvious SVG markup injection there.
+
+### Campaign build machinery
+
+This is another strong section.
+
+The real campaign-build path has:
+
+- immutable request journal
+- provider request checkpoint before network
+- idempotency keys
+- remote ID persistence
+- remote readback
+- paused creation
+- snapshot validation
+- creative ancestry checks
+- account/brand/channel ancestry
+- provider-state validation
+- rolling creation limits
+- blocked-claim checking
+- authorization generation
+- retry reconciliation
+
+That code is dramatically better than `runner.py`.
+
+The autonomous optimizer should use this architecture rather than inventing a second mutation mechanism.
+
+### Remote stop
+
+Also substantially correct:
+
+- snapshots managed remote roots
+- uses actual provider control interfaces
+- bounded concurrency/timeouts
+- performs independent readback
+- distinguishes verified and failed
+- doesn't infer provider pause from local DB state
+- persists receipts/errors
+- invalidates broken authorization
+
+Which is why the DB-only pause in `billing.py` stands out so badly.
+
+---
+
+# Architectural contradiction
+
+There's a clear pattern in the repository.
+
+You have **two generations of implementation living beside each other**.
+
+### Strong execution architecture
+
+The newer/stronger paths are things like:
+
+```text
+campaign_builds.py
+gateway.py
+remote_stop.py
+channel_credentials.py
+autonomy.py
+```
+
+They assume:
+
+> persisted local state is not proof that something happened remotely.
+
+They use:
+
+- signed authority
+- provider APIs
+- immutable snapshots
+- readbacks
+- durable receipts
+- idempotency
+
+### Weak advanced-slice scaffolding
+
+Then later modules such as:
+
+```text
+runner.py
+billing.py
+video.py
+compliance.py
+reports.py
+```
+
+sometimes behave as though:
+
+> if PostgreSQL says it happened, it happened.
+
+That violates your better architecture.
+
+This is the main thing I'd address before adding more slices.
+
+---
+
+# Test-suite problem
+
+Your test suite is large and generally strong, but there are two very different test philosophies in it.
+
+The good tests ask:
+
+> Did the actual boundary behave correctly?
+
+Examples:
+
+- simulated Meta server for campaign builds
+- real PostgreSQL RLS tests
+- real subprocess kill/recovery
+- gateway concurrency
+- cryptographic approval verification
+- SSRF/DNS rebinding
+- actual HTTP provider contract tests
+- remote stop readback
+- ciphertext transplant failure
+
+The weak advanced-slice tests ask:
+
+> Did our database rows change the way the function told them to?
+
+That's how `runner.py`'s synthetic provider behavior made it through.
+
+For any test named things like:
+
+```text
+launched
+paused
+rendered
+billing
+remote
+deployed
+```
+
+the acceptance condition should be evidence from that actual boundary, not merely internal database state.
+
+---
+
+# Complete priority order
+
+If you're cleaning this up systematically, this is the order that matters:
+
+1. **Get current CI bootstrap working.** Current `main` is red before the actual suites run.
+2. **Do not wire `run_tick()` into production as written.**
+3. Route autonomous spend-affecting execution through one authoritative mutation path with signed/guardrail enforcement.
+4. Replace synthetic autonomous `campaign_object` creation with actual provider-backed campaign/creative operations and readback.
+5. Fix autonomous tests so provider success is required.
+6. Make billing cancellation call the verified remote-stop mechanism rather than editing `campaign_object.state`.
+7. Replace fake video completion with explicit `NotImplemented` until real bytes are rendered/stored.
+8. Fix both schema mismatches in `route_policy_rejection()`.
+9. Purge `.pytest_temp`, add it to `.gitignore`, and verify all 198 committed test master keys are disposable test material.
+10. Patch Next from `16.3.5` to `16.3.6+`. :chatgpt-content-reference{index="1"}
+11. Secure-create every password/URL/`.env` secret file at `0600`.
+12. Replace top-level `Kill-PortListener` with the ownership-validation logic already present in `scripts/dev.ps1`.
+13. Remove unsupported “optimizer is doing X” claims from reports; derive narrative from persisted actions.
+14. Validate every scene in video timelines, not just hook scene.
+15. Sanitize provider rejection payloads before persistence.
+16. Make bootstrap password requirements match normal account requirements.
+17. Actually consume `requirements.lock` in Docker/CI, or remove the misleading lockfile.
+18. Add automated dependency/security scanning.
+19. Pin Actions/container dependencies immutably where practical.
+20. Require explicit browser `Origin` for cookie-authenticated writes.
+21. Add CSP and production transport policy.
+22. Make the Docker deployment story explicit about gateway/approval sidecars.
+23. Change compliance code from declaring legal “compliance” to recording disclosure rules/evidence.
+24. Replace raw exception strings in future agency endpoints.
+25. Create signing keys with secure permissions atomically.
+26. Remove workstation-specific paths from tracked docs.
+
+---
+
+## The key conclusion
+
+The central security primitives—RLS, credential encryption, SSRF defense, approval signing, gateway validation, campaign-build journaling, remote-stop verification—are markedly stronger than the late-stage scaffolding.
+
+The problem is that **some newer features did not reuse those primitives**.
+
+The most dangerous future mistake would be wiring the current autonomous runner, billing cancellation, or video renderer into user-facing production merely because their unit tests are green. Those three modules currently report realities that their external systems have not established.
+

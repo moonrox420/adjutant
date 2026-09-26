@@ -200,21 +200,38 @@ def generate_hook_variants(
 
 
 def render_video_timeline(
-    conn: Connection,
+    conn: Connection[Any],
     brand_id: UUID,
     timeline: VideoTimeline,
     channel: str,
     static_fallback_creative_id: UUID | None = None,
     simulate_render_failure: bool = False,
 ) -> dict[str, Any]:
-    """Render a video timeline to video asset, tracking duration and estimated render cost.
+    """Validate all timeline scenes and handle degradation to static fallback.
 
-    If rendering fails, degrades gracefully to static creative rather than leaving brand dark.
+    Direct MP4 video synthesis raises 501 NotImplemented unless a static fallback is used.
     """
     start_time = time.perf_counter()
-    violations = validate_safe_areas(
-        timeline.hook_scene.scene_graph, timeline.aspect_ratio, channel
+
+    # Validate safe areas across all timeline scenes (hook, body scenes, CTA)
+    violations = []
+    violations.extend(
+        validate_safe_areas(
+            timeline.hook_scene.scene_graph, timeline.aspect_ratio, channel
+        )
     )
+    for body_scene in timeline.body_scenes:
+        violations.extend(
+            validate_safe_areas(
+                body_scene.scene_graph, timeline.aspect_ratio, channel
+            )
+        )
+    violations.extend(
+        validate_safe_areas(
+            timeline.cta_scene.scene_graph, timeline.aspect_ratio, channel
+        )
+    )
+
     if violations:
         raise DomainError(
             "SafeAreaViolation",
@@ -224,7 +241,7 @@ def render_video_timeline(
         )
 
     video_id = uuid4()
-    if simulate_render_failure:
+    if simulate_render_failure or static_fallback_creative_id is not None:
         # S11.3: Graceful degradation to static creative
         elapsed_sec = time.perf_counter() - start_time
         conn.execute(
@@ -240,7 +257,7 @@ def render_video_timeline(
                 channel,
                 elapsed_sec,
                 static_fallback_creative_id,
-                "Render pipeline failure; degraded to verified static fallback creative",
+                "Render pipeline degraded to verified static fallback creative",
             ),
         )
         return {
@@ -251,43 +268,13 @@ def render_video_timeline(
                 else None
             ),
             "fallback_used": True,
-            "reason": "Video render failed; served static asset with zero dark-time",
+            "reason": "Video render pipeline degraded to static asset with zero dark-time",
             "aspect_ratio": timeline.aspect_ratio,
             "render_duration_sec": elapsed_sec,
         }
 
-    # Successful render
-    elapsed_sec = max(0.01, time.perf_counter() - start_time)
-    # Estimate compute cost at $0.005 per render second
-    cost_usd = Decimal(str(round(elapsed_sec * 0.005, 4)))
-    ratio_str = timeline.aspect_ratio.replace(":", "x")
-    asset_uri = f"s3://adjutant-renders/{brand_id}/{video_id}_{ratio_str}.mp4"
-
-    conn.execute(
-        """INSERT INTO video_render_log(
-            id, brand_id, concept_id, aspect_ratio, channel, status,
-            duration_seconds, cost_usd, asset_uri, timeline_spec
-        ) VALUES (%s, %s, %s, %s, %s, 'completed', %s, %s, %s, %s)""",
-        (
-            video_id,
-            brand_id,
-            timeline.concept_id,
-            timeline.aspect_ratio,
-            channel,
-            elapsed_sec,
-            cost_usd,
-            asset_uri,
-            Jsonb(timeline.to_dict()),
-        ),
+    raise DomainError(
+        "NotImplemented",
+        "Direct MP4 video synthesis is not implemented; use static image fallbacks and storyboard scripts.",
+        501,
     )
-
-    return {
-        "status": "completed",
-        "video_id": str(video_id),
-        "asset_uri": asset_uri,
-        "aspect_ratio": timeline.aspect_ratio,
-        "total_video_duration": timeline.total_duration,
-        "render_duration_sec": elapsed_sec,
-        "render_cost_usd": str(cost_usd),
-        "fallback_used": False,
-    }

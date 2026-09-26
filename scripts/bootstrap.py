@@ -225,11 +225,27 @@ def provision_gateway_files(local: Path) -> str:
     return (local / "gateway.password").read_text(encoding="utf-8").strip()
 
 
+def write_private_file(path: Path, content: str) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(content)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def append_private_file(path: Path, content: str) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+        handle.write(content)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def bootstrap(email: str, password: str, account_type: str) -> None:
     root = Path(__file__).resolve().parents[1]
     os.chdir(root)
     local = root / ".local"
-    local.mkdir(exist_ok=True)
+    local.mkdir(exist_ok=True, mode=0o700)
     admin_password = (local / "postgres.password").read_text().strip()
     server = f"postgresql://adjutant_admin:{quote(admin_password)}@127.0.0.1:55439"
     with psycopg.connect(server + "/postgres", autocommit=True) as conn:
@@ -239,8 +255,8 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
             ).fetchone():
                 conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     admin_url = server + "/adjutant"
-    (local / "admin.url").write_text(admin_url)
-    (local / "test-admin.url").write_text(server + "/adjutant_test")
+    write_private_file(local / "admin.url", admin_url)
+    write_private_file(local / "test-admin.url", server + "/adjutant_test")
     migrate(admin_url)
     key_path = local / "approval.key"
     if not key_path.exists():
@@ -249,11 +265,11 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
     approval_password = provision_approval_files(local)
     app_password_file = local / "app.password"
     if not app_password_file.exists():
-        app_password_file.write_text(secrets.token_urlsafe(32))
+        write_private_file(app_password_file, secrets.token_urlsafe(32))
     app_password = app_password_file.read_text().strip()
     worker_password_file = local / "worker.password"
     if not worker_password_file.exists():
-        worker_password_file.write_text(secrets.token_urlsafe(32))
+        write_private_file(worker_password_file, secrets.token_urlsafe(32))
     worker_password = worker_password_file.read_text().strip()
     with psycopg.connect(admin_url) as conn:
         provision_runtime(conn, app_password)
@@ -298,31 +314,30 @@ def bootstrap(email: str, password: str, account_type: str) -> None:
     app_url = (
         f"postgresql://adjutant_app:{quote(app_password)}@127.0.0.1:55439/adjutant"
     )
-    if not (root / ".env").exists():
-        (root / ".env").write_text(
-            f"ADJUTANT_DATABASE_URL={app_url}\nADJUTANT_PUBLIC_ORIGIN=http://localhost:3000\n"
+    env_file = root / ".env"
+    if not env_file.exists():
+        write_private_file(
+            env_file,
+            f"ADJUTANT_DATABASE_URL={app_url}\nADJUTANT_PUBLIC_ORIGIN=http://localhost:3000\n",
         )
-    if "ADJUTANT_WORKER_DATABASE_URL=" not in (root / ".env").read_text():
-        with (root / ".env").open("a") as handle:
-            handle.write(
-                f"\nADJUTANT_WORKER_DATABASE_URL=postgresql://adjutant_worker:{quote(worker_password)}@127.0.0.1:55439/adjutant\n"
-            )
-    if "ADJUTANT_GATEWAY_DATABASE_URL=" not in (root / ".env").read_text(
-        encoding="utf-8"
-    ):
-        with (root / ".env").open("a", encoding="utf-8") as handle:
-            handle.write(
-                f"\nADJUTANT_GATEWAY_DATABASE_URL=postgresql://adjutant_gateway:"
-                f"{quote(gateway_password)}@127.0.0.1:55439/adjutant\n"
-            )
-    if "ADJUTANT_APPROVAL_DATABASE_URL=" not in (root / ".env").read_text(
-        encoding="utf-8"
-    ):
-        with (root / ".env").open("a", encoding="utf-8") as handle:
-            handle.write(
-                f"\nADJUTANT_APPROVAL_DATABASE_URL=postgresql://adjutant_approval:"
-                f"{quote(approval_password)}@127.0.0.1:55439/adjutant\n"
-            )
+    env_text = env_file.read_text(encoding="utf-8")
+    if "ADJUTANT_WORKER_DATABASE_URL=" not in env_text:
+        append_private_file(
+            env_file,
+            f"\nADJUTANT_WORKER_DATABASE_URL=postgresql://adjutant_worker:{quote(worker_password)}@127.0.0.1:55439/adjutant\n",
+        )
+    if "ADJUTANT_GATEWAY_DATABASE_URL=" not in env_text:
+        append_private_file(
+            env_file,
+            f"\nADJUTANT_GATEWAY_DATABASE_URL=postgresql://adjutant_gateway:"
+            f"{quote(gateway_password)}@127.0.0.1:55439/adjutant\n",
+        )
+    if "ADJUTANT_APPROVAL_DATABASE_URL=" not in env_text:
+        append_private_file(
+            env_file,
+            f"\nADJUTANT_APPROVAL_DATABASE_URL=postgresql://adjutant_approval:"
+            f"{quote(approval_password)}@127.0.0.1:55439/adjutant\n",
+        )
     print("Database migrations, runtime permissions, and approval keys are ready.")
 
 
@@ -337,8 +352,8 @@ if __name__ == "__main__":
     password = (
         args.password_file.read_text().strip()
         if args.password_file
-        else getpass.getpass("Owner password (at least 12 characters): ")
+        else getpass.getpass("Owner password (at least 15 characters): ")
     )
-    if len(password) < 12 or len(password) > 256:
-        raise SystemExit("Password must contain 12–256 characters")
+    if len(password) < 15 or len(password) > 256:
+        raise SystemExit("Password must contain 15–256 characters")
     bootstrap(args.email, password, args.account_type)

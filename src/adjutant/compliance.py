@@ -15,7 +15,7 @@ from adjutant.security import ApprovalSigner
 # Jurisdiction and platform AI transparency disclosure requirements (EU AI Act, FTC 16 CFR 255)
 DISCLOSURE_RULES = {
     "EU": {
-        "text": "AI-generated synthetic media (EU AI Act Art. 50 Compliant)",
+        "text": "AI-generated synthetic media (EU AI Act Art. 50 Disclosure Candidate)",
         "position": "bottom_right",
         "applies_globally": True,
     },
@@ -125,11 +125,21 @@ def route_policy_rejection(
         "policy_code", "GENERIC_POLICY_VIOLATION"
     )
 
+    sanitized_response = {
+        "policy_code": str(policy_code),
+        "rejection_reason": str(verbatim_text),
+        "raw_code": str(
+            platform_rejection_payload.get("raw_code")
+            or platform_rejection_payload.get("code")
+            or ""
+        ),
+    }
+
     escalation_row: Any = conn.execute(
         """INSERT INTO escalation(
             brand_id, trigger_type, scope_kind, scope_id, context, state
         ) VALUES (
-            %s, 'platform_policy_rejection', 'campaign_object', %s, %s, 'open'
+            %s, 'creative_policy_rejection', 'campaign_object', %s, %s, 'open'
         ) RETURNING id""",
         (
             brand_id,
@@ -139,7 +149,7 @@ def route_policy_rejection(
                     "channel": channel,
                     "policy_code": policy_code,
                     "verbatim_rejection_text": verbatim_text,
-                    "raw_response": platform_rejection_payload,
+                    "raw_response": sanitized_response,
                     "auto_retry_blocked": True,
                 }
             ),
@@ -149,9 +159,9 @@ def route_policy_rejection(
         raise RuntimeError("Failed to create policy rejection escalation record")
     escalation_id: UUID = escalation_row["id"]
 
-    # Mark object as policy_rejected in DB to prevent runner from cycling
+    # Mark object as rejected in DB to prevent runner from cycling
     conn.execute(
-        "UPDATE campaign_object SET state='policy_rejected' WHERE id=%s",
+        "UPDATE campaign_object SET state='rejected' WHERE id=%s",
         (campaign_object_id,),
     )
 

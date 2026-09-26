@@ -103,18 +103,27 @@ def generate_weekly_result_summary(
             "compared to last week."
         )
     elif cpa_change_pct > 5:
-        trend_note = (
-            f"CPA increased by {float(cpa_change_pct):.1f}% compared to last week. "
-            "The optimizer is reallocating budget toward top performers."
-        )
+        if budget_shifts > 0:
+            trend_note = (
+                f"CPA increased by {float(cpa_change_pct):.1f}% compared to last week; "
+                f"recorded {budget_shifts} budget adjustment actions."
+            )
+        else:
+            trend_note = (
+                f"CPA increased by {float(cpa_change_pct):.1f}% compared to last week."
+            )
     else:
         trend_note = "Performance remained stable and consistent week-over-week."
 
-    autonomous_work_summary = (
-        f"Adjutant worked in the background this week: refreshed {refreshes} worn-out ads, "
-        f"adjusted budget {budget_shifts} times toward high-converting placements, "
-        f"and paused {pauses} inefficient ads."
-    )
+    total_actions = sum(action_counts.values())
+    if total_actions > 0:
+        autonomous_work_summary = (
+            f"Adjutant recorded {total_actions} actions this week: refreshed {refreshes} worn-out ads, "
+            f"adjusted budget {budget_shifts} times toward high-converting placements, "
+            f"and paused {pauses} inefficient ads."
+        )
+    else:
+        autonomous_work_summary = "No autonomous adjustments were recorded during this window."
 
     return {
         "brand_id": str(brand_id),

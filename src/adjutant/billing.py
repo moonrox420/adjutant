@@ -10,6 +10,7 @@ from uuid import UUID
 from psycopg import Connection
 
 from adjutant.errors import DomainError
+from adjutant.remote_stop import enqueue_stop
 
 # S14 Pricing Constraint: Flat tiers by brand count and spend band, NEVER percentage of ad spend
 BILLING_TIERS = {
@@ -131,6 +132,7 @@ def handle_billing_failure(
 def cancel_subscription(
     conn: Connection[Any],
     account_id: UUID,
+    actor_id: UUID | None = None,
     immediate_pause_campaigns: bool = True,
 ) -> dict[str, Any]:
     """S14.3: Cancel subscription safely without stranding live campaigns
@@ -149,11 +151,20 @@ def cancel_subscription(
     )
 
     paused_brands = []
+    stop_run_ids = []
     if immediate_pause_campaigns:
-        # Pause all active campaigns across all brands in the account so spend does not run wild
+        # Enqueue verified remote stops across all brands in the account so spend does not run wild
         brands: Any = conn.execute(
             "SELECT id FROM brand WHERE account_id=%s", (account_id,)
         ).fetchall()
+
+        owner_row: Any = conn.execute(
+            "SELECT user_id FROM seat WHERE account_id=%s AND role='owner' LIMIT 1",
+            (account_id,),
+        ).fetchone()
+        effective_actor = (
+            actor_id or (owner_row["user_id"] if owner_row else account_id)
+        )
 
         for b in brands:
             brand_id = b["id"]
@@ -161,10 +172,8 @@ def cancel_subscription(
                 "UPDATE brand SET campaigns_enabled=false, status='paused' WHERE id=%s",
                 (brand_id,),
             )
-            conn.execute(
-                "UPDATE campaign_object SET state='paused' WHERE brand_id=%s AND state='active'",
-                (brand_id,),
-            )
+            stop_id = enqueue_stop(conn, brand_id, effective_actor)
+            stop_run_ids.append(str(stop_id))
             paused_brands.append(str(brand_id))
 
     return {
@@ -172,5 +181,6 @@ def cancel_subscription(
         "status": "cancelled",
         "campaigns_safely_paused": immediate_pause_campaigns,
         "paused_brand_ids": paused_brands,
+        "stop_run_ids": stop_run_ids,
     }
 

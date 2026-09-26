@@ -42,12 +42,15 @@ if ($pgBin) {
     }
 }
 
-# Helper: kill any stale process bound to a specific port
+# Helper: safely kill only Adjutant processes bound to a specific port
 function Kill-PortListener([int]$Port) {
     $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
     foreach ($conn in $conns) {
         try {
-            Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+            $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$($conn.OwningProcess)" -ErrorAction SilentlyContinue
+            if ($proc -and $proc.CommandLine -and $proc.CommandLine.IndexOf("$projectRoot", [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+            }
         } catch {}
     }
 }
