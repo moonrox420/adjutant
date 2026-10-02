@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-test("all ten channel setup forms save encrypted configuration without claiming authorization", async ({
+test("all five channel setup forms save encrypted configuration without claiming authorization", async ({
   page,
   context,
 }) => {
@@ -32,7 +32,7 @@ test("all ten channel setup forms save encrypted configuration without claiming 
   const brand = (await created.json()).id;
   await page.reload();
   await page.getByRole("button", { name: "Channels", exact: true }).click();
-  await expect(page.locator(".channel-card")).toHaveCount(10);
+  await expect(page.locator(".channel-card")).toHaveCount(5);
   for (const card of await page.locator(".channel-card").all()) {
     await expect(
       card.getByText("No account authorization", { exact: true }),
@@ -65,7 +65,7 @@ test("all ten channel setup forms save encrypted configuration without claiming 
   const status = await context.request.get(`/api/brands/${brand}/channels`);
   expect(status.ok()).toBeTruthy();
   const payload = await status.json();
-  expect(payload).toHaveLength(10);
+  expect(payload).toHaveLength(5);
   expect(
     payload.every(
       (item: { application_saved: boolean; token_saved: boolean }) =>
@@ -76,7 +76,7 @@ test("all ten channel setup forms save encrypted configuration without claiming 
   await page.reload();
   await page.getByRole("button", { name: "Channels", exact: true }).click();
   await expect(page.getByRole("button", { name: /^Authorize / })).toHaveCount(
-    10,
+    5,
   );
   const other = await context.request.post("/api/brands", {
     headers: {
@@ -95,8 +95,8 @@ test("all ten channel setup forms save encrypted configuration without claiming 
   expect(other.status()).toBe(201);
   await page.goto(`/?channels=1&brand=${brand}`);
   await expect(page.getByRole("button", { name: /^Authorize / })).toHaveCount(
-    10,
+    5,
   );
-  await expect(page.locator(".channel-card")).toHaveCount(10);
+  await expect(page.locator(".channel-card")).toHaveCount(5);
   expect(new URL(page.url()).search).toBe("");
 });

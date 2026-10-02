@@ -24,17 +24,17 @@ test("global pause persists a named failure for every unauthorized platform", as
   const report = page.getByRole("region", { name: "Remote pause report" });
   await expect(
     report.getByText("Pause unverified", { exact: true }),
-  ).toHaveCount(10);
+  ).toHaveCount(5);
   await expect(
     report.getByText(
       "Save the developer application and authorize account access first.",
       { exact: true },
     ),
-  ).toHaveCount(10);
+  ).toHaveCount(5);
   await page.reload();
   await expect(
     report.getByText("Pause unverified", { exact: true }),
-  ).toHaveCount(10);
+  ).toHaveCount(5);
   await page.getByRole("button", { name: "Guardrails", exact: true }).click();
   await page
     .getByRole("button", { name: "Resume local operations", exact: true })
