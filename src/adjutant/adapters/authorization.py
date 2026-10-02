@@ -51,7 +51,7 @@ PROVIDERS = (
         "https://www.linkedin.com/oauth/v2/authorization",
         "https://www.linkedin.com/oauth/v2/accessToken",
         "r_ads rw_ads r_ads_reporting",
-        "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow",
+        "https://developer.linkedin.com/docs/oauth2",
     ),
     OAuthProvider(
         "reddit",

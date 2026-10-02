@@ -5,9 +5,9 @@ This list does not account for missing internal implementation: campaign lifecyc
 complete remote pause/resume coverage, metrics and the autonomous loop still have FAIL records in the traceability
 matrix. Supplying credentials alone cannot make those paths operational.
 
-Managed-campaign pause requests and independent read-back are now wired for the ten channels,
-but have only protocol-contract and local-emulator verification. Full account inventory coverage,
-Amazon Sponsored Display control, and remote resume still need internal implementation.
+Managed-campaign pause requests and independent read-back are now wired for the five channels,
+but have only protocol-contract and local-emulator verification. Full account inventory coverage
+and remote resume still need internal implementation.
 
 ## Advertising platforms
 
@@ -27,16 +27,11 @@ non-loopback deployment. No public deployment has been provisioned by this work.
 | Meta | Marketing API application ID/secret, permissions requested by the consent flow, authorized business/ad account and relevant Page access. Complete any Meta app review required for those accounts. | `meta` |
 | Google Ads | OAuth web client ID/secret, Ads developer token with access appropriate to the test or production account, consent from an account/manager user. Discovery walks manager hierarchies. | `google_ads` |
 | YouTube | Google OAuth client ID/secret and Ads developer token; consent includes Ads and YouTube upload permissions. An eligible Ads account and YouTube channel are needed for eventual video deployment verification. | `youtube` |
-| TikTok | TikTok for Business developer application ID/secret and advertiser authorization for Marketing API access. | `tiktok` |
 | LinkedIn | Developer client ID/secret and Advertising API product access, user consent for `r_ads`, `rw_ads`, `r_ads_reporting`, and an accessible ad account. Refresh tokens depend on the application's granted program access; otherwise reauthorization is required. | `linkedin` |
-| Microsoft Advertising | Entra application client ID/secret, registered web redirect, Microsoft Advertising developer token, and consent from an Advertising account user. | `microsoft` |
 | Reddit | OAuth application ID/secret, registered redirect and consent for `adsread`, `adsedit`, `identity`; a business with an accessible ad account. | `reddit` |
-| Pinterest | Developer application ID/secret with the Ads/Boards/Pins scopes requested by the product and consent from an ad-account user. Complete provider access approval where required. | `pinterest` |
-| Snapchat | Marketing API OAuth client ID/secret, app access, and organization/ad-account consent for `snapchat-marketing-api`. | `snapchat` |
-| Amazon Ads | Approved Ads API application, Login with Amazon client ID/secret, advertising campaign-management consent, profile access and correct region (`NA`, `EU`, `FE`). | `amazon_ads` |
 
-Each channel card links to its provider's official setup documentation. Google/YouTube and
-Microsoft show an additional developer-token field; Amazon shows region selection.
+Each channel card links to its provider's official setup documentation. Google/YouTube
+shows an additional developer-token field.
 
 Live verification still must create and read back a real paused/draft campaign, inspect its
 creative, targeting and budget, test permitted state changes, collect native metrics, and
@@ -46,7 +41,7 @@ Any operation that would enable spending needs the brand's explicit first-launch
 Disconnect deletes Adjutant's encrypted token and invalidates pending OAuth states. Where a
 provider has a supported revocation endpoint, the response is checked. Where consent removal
 requires the provider's UI, the product returns its consent-removal link and reports remote
-revocation as unconfirmed. TikTok's revocation contract remains an internal verification defect.
+revocation as unconfirmed.
 
 ## Google visuals
 

@@ -159,7 +159,7 @@ No code above the adapter layer may branch on channel identity. No `if channel =
 
 ### V1 channels
 
-Meta, Google, YouTube, TikTok, LinkedIn, Microsoft, Reddit, Pinterest, Snapchat, Amazon Ads. All ten reach the same definition of done. No channel ships with a conformance waiver.
+Meta, Google, YouTube, LinkedIn, Reddit. All five reach the same definition of done. No channel ships with a conformance waiver.
 
 ### The adapter interface
 
@@ -421,7 +421,7 @@ This is the slice that makes the product an ad runner. Everything before it was 
 3. The loop reallocates across all connected channels.
 4. Access application status is tracked and visible, with filing dates and current state.
 
-**Note on sequencing:** file every platform access application at the start of this slice, not at the end. Meta Advanced Access, LinkedIn's Standard tier, TikTok's data-security review, and Pinterest's standard access all take weeks to months and are outside your control. Build against sandboxes and cassettes while waiting. Ship the channels with open API access first — [Reddit's Ads API](https://ads-api.reddit.com/docs/v3/) and [Snapchat's Marketing API](https://developers.snap.com/marketing-api/Ads-API/introduction) do not gate on allowlisting the way Meta and LinkedIn do.
+**Note on sequencing:** file every platform access application at the start of this slice, not at the end. Meta Advanced Access and LinkedIn's Standard tier take weeks to months and are outside your control. Build against sandboxes and cassettes while waiting. Ship the channels with open API access first — [Reddit's Ads API](https://ads-api.reddit.com/docs/v3/) does not gate on allowlisting the way Meta and LinkedIn do.
 
 ---
 
@@ -505,7 +505,7 @@ The second row is the real one. If a business owner is touching their account mo
 
 ## 10. Out of Scope
 
-Named so the boundary is deliberate rather than discovered: connected TV and programmatic display, retail media beyond Amazon, a public API, marketing mix modeling, synthetic presenters and avatars, mobile applications, SOC 2 certification, EU data residency, and migration tooling from competitor platforms. All are plausible. None are in this build.
+Named so the boundary is deliberate rather than discovered: connected TV and programmatic display, retail media platforms, a public API, marketing mix modeling, synthetic presenters and avatars, mobile applications, SOC 2 certification, EU data residency, and migration tooling from competitor platforms. All are plausible. None are in this build.
 
 ---
 
@@ -515,12 +515,7 @@ Constraints that shape the adapters, with sources. Re-verify before implementing
 
 - **Meta** — rate limits are formula-driven and scale with active ad volume; Advanced Access requires App Review. [Marketing API rate limiting](https://developers.facebook.com/docs/marketing-api/overview/rate-limiting/), [ad standards](https://transparency.meta.com/policies/ad-standards/)
 - **Google / YouTube** — Performance Max uses asset groups rather than conventional ad objects, which does not map onto the other channels' structure and must be modeled explicitly. [Asset groups](https://developers.google.com/google-ads/api/performance-max/asset-groups), [generative assets](https://support.google.com/google-ads/answer/14150602?hl=en)
-- **LinkedIn** — tiered API access; Standard tier requires application and review. [Marketing API tiers](https://learn.microsoft.com/en-us/linkedin/marketing/integrations/marketing-tiers?view=li-lms-2026-08)
-- **Microsoft** — mid-migration from SOAP to REST. Build REST-only. [Platform evolution](https://about.ads.microsoft.com/en/blog/post/april-2026/evolving-the-microsoft-advertising-api-platform)
+- **LinkedIn** — tiered API access; Standard tier requires application and review. [Marketing API tiers](https://developer.linkedin.com/docs/oauth2)
 - **Reddit** — v3 API, open developer access. [Ads API docs](https://ads-api.reddit.com/docs/v3/)
-- **Pinterest** — standard access requires application; developer guidelines restrict automated behavior. [Developer guidelines](https://policy.pinterest.com/en/developer-guidelines)
-- **Snapchat** — open Marketing API access. [Ads API](https://developers.snap.com/marketing-api/Ads-API/ads)
-- **TikTok** — developer app registration plus a data-security review. [API for Business](https://business-api.tiktok.com/portal/docs?id=100025)
-- **Amazon Ads** — Sponsored Products v3; catalog-driven, structurally unlike the social channels. [SP v3 overview](https://advertising.amazon.com/API/docs/en-us/guides/sponsored-products/overview)
 
 Market context for prioritization: global ad spend passed one trillion dollars as algorithmic buying reshaped the market ([Dentsu](https://www.dentsu.com/news-releases/global-ad-spend-set-to-surpass-one-trillion-for-the-first-time-in-2026-as-the-algorithmic-era-redefines-growth)), while [Meta Advantage+](https://enalitica.com/blog/meta-advantage-plus-sales-campaigns) removed classic interest targeting entirely — making creative volume the binding constraint and validating the loop's emphasis on continuous refresh over targeting sophistication. Creative fatigue timelines are documented at 7–14 days for short-form placements ([inBeat](https://inbeat.agency/blog/facebook-creative-fatigue)).

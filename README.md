@@ -19,12 +19,12 @@ complete autonomous runner; missing internal campaign/loop implementations remai
 
 Open **Campaign plans → Ad Studio** in the existing console. Enter a public URL or a campaign
 prompt and select **Generate**. Adjutant reads the URL automatically, generates Meta, Google,
-and TikTok copy with the configured local Ollama model, and calls Google for each concept's image.
+YouTube, LinkedIn, and Reddit copy with the configured local Ollama model, and calls Google for each concept's image.
 Studio queues five distinct creative directions, persists each completed concept, and renders
 each to 1:1, 4:5, 9:16 and 16:9. The concept selector opens each saved ad for editing and attachment.
 Retrying a failed job preserves its completed concepts and image checkpoints.
 There is no brand-confirmation or citation gate. Copy and images are persisted; **Save copy edits**
-stores inline changes with revision conflict checks. TikTok output is a written concept, not video.
+stores inline changes with revision conflict checks. Multi-channel copy output is formatted for feed concepts.
 
 Set `GEMINI_API_KEY` to your actual Google key in the server `.env` file and keep
 `ADJUTANT_OLLAMA_MODEL` set to an installed completion model. The key stays on the server.

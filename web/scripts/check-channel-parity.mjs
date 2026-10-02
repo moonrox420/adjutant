@@ -8,13 +8,8 @@ const channels = new Set([
   "meta",
   "google_ads",
   "youtube",
-  "tiktok",
   "linkedin",
-  "microsoft",
   "reddit",
-  "pinterest",
-  "snapchat",
-  "amazon_ads",
 ]);
 
 export function violations(source, filename) {

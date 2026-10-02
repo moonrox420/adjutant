@@ -51,10 +51,10 @@ credentials and consent from missing internal implementation.
   Paused state is read back independently before persistence. Reports survive reloads and identify
   each account/campaign with missing credentials, failed calls, missing ancestry, or unverified state.
   Campaigns outside Adjutant's inventory are not covered; remote resume is not implemented.
-- Campaign pause/read-back protocols exist for all ten channels. Amazon's implemented campaign
-  families are Sponsored Products and Sponsored Brands. Provider contract tests do not establish
-  live operation. A recovered running job was exercised through real TCP HTTP against an explicitly
-  local provider emulator, followed by SQL state, audit and activity persistence.
+- Campaign pause/read-back protocols exist for all five channels (Meta, Google Ads, YouTube,
+  LinkedIn, Reddit). Provider contract tests do not establish live operation. A recovered running
+  job was exercised through real TCP HTTP against an explicitly local provider emulator, followed
+  by SQL state, audit and activity persistence.
 - First-launch review includes attached creative, the plan, selected accounts and guardrails.
   The isolated signing service issues a scoped, expiring authorization. The public-key-only gateway
   consumes it once; replay produces an immutable security alert and transactional outbox event.
@@ -64,8 +64,8 @@ credentials and consent from missing internal implementation.
   launch caps and channel shares, increments guardrail versions, synchronizes legacy ceilings,
   and rejects blocked claims in Studio writes. Execution-time rate, growth and escalation checks
   still require the missing runner and cannot be claimed operational from these settings.
-- URL/prompt generation no longer requires brand confirmation or source citations. Meta, Google
-  and TikTok copy are validated and stored with revisioned edits; real local Ollama inference was
+- URL/prompt generation no longer requires brand confirmation or source citations. Meta, Google,
+  YouTube, LinkedIn, and Reddit copy are validated and stored with revisioned edits; real local Ollama inference was
   exercised. Google image generation is wired but has not succeeded against a real Google account.
 - Studio jobs persist their brief, copy checkpoint, image checkpoint, attempts and state. A
   PostgreSQL advisory lock prevents two workers from owning the same job. Cancellation terminates
@@ -76,7 +76,7 @@ credentials and consent from missing internal implementation.
   downloaded and attached to a campaign plan's creative records. Full platform conformance is absent.
 - Brand understanding has an editable, optimistic-versioned API and UI. Google provider settings
   are encrypted per brand. A queued job rejects an intervening image-model change.
-- All ten channel cards have developer application setup, OAuth state/consent handling, encrypted
+- All five channel cards have developer application setup, OAuth state/consent handling, encrypted
   token storage, discovery, selection, refresh/reauthorization and disconnect handling. Protocol
   tests isolate provider responses. This does not establish live account access or campaign support.
 - Google account discovery walks manager hierarchies. Reddit discovery follows paginated business
@@ -95,8 +95,8 @@ credentials and consent from missing internal implementation.
 - Once-per-brand/new-channel activation, all nine database-enforced autonomy guardrails, scoped
   escalations and reversible remote actions are not connected to an execution engine.
 - Kill-switch coverage is limited to recorded campaign roots and their managed descendants.
-  Account-wide remote inventory discovery, isolated child-object control, Amazon Sponsored Display
-  pause support, exact reversible call sequences, and remote resume remain internal defects.
+  Account-wide remote inventory discovery, isolated child-object control, exact reversible
+  call sequences, and remote resume remain internal defects.
   No provider pause has been verified against an authorized real ad account.
 - Hourly ingestion, comparable metric history/backfill, fatigue/winner detection, creative refresh,
   budget reallocation and the unattended autonomous execution loop are incomplete.

@@ -60,10 +60,14 @@ test("unconfirmed brand opens editable ad previews, preserves edits, and reports
       ],
       destination_path: "plumbing/repairs",
     },
-    tiktok: {
-      hook: "That drip isn't fixing itself.",
-      visual_script: "A dripping tap followed by a plumber inspecting it.",
-      cta: "Talk to the repair team",
+    linkedin: {
+      introductory_text: "Need commercial or residential plumbing repairs?",
+      headline: "Professional Plumbing Repairs",
+      cta: "Contact us",
+    },
+    reddit: {
+      post_title: "Homeowner plumbing tips and local repair team support",
+      cta: "Contact us",
     },
   };
   let saved: typeof fixture | null = null;
@@ -157,7 +161,9 @@ test("unconfirmed brand opens editable ad previews, preserves edits, and reports
   await page
     .getByLabel("Google headline 1", { exact: true })
     .fill("Your Local Repair Team");
-  await page.getByLabel("TikTok three-second hook").fill("Hear that drip?");
+  await page
+    .getByLabel("LinkedIn headline", { exact: true })
+    .fill("Hear that drip?");
   await page.getByRole("button", { name: "Save copy edits" }).click();
   await expect(page.locator(".ad-studio > [role=status]")).toHaveText(
     "Edits saved.",
@@ -172,9 +178,9 @@ test("unconfirmed brand opens editable ad previews, preserves edits, and reports
   await expect(
     page.getByLabel("Google headline 1", { exact: true }),
   ).toHaveValue("Your Local Repair Team");
-  await expect(page.getByLabel("TikTok three-second hook")).toHaveValue(
-    "Hear that drip?",
-  );
+  await expect(
+    page.getByLabel("LinkedIn headline", { exact: true }),
+  ).toHaveValue("Hear that drip?");
   await page.screenshot({
     path: "../.local/ad-studio-desktop.png",
     fullPage: true,

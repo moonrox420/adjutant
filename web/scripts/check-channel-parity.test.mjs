@@ -6,7 +6,7 @@ test("rejects literal comparisons, aliases, membership and switch cases", () => 
   for (const source of [
     'if (channel === "meta") run();',
     'const GOOGLE = "google_ads"; if (channel !== GOOGLE) run();',
-    'if (["youtube", "tiktok"].includes(channel)) run();',
+    'if (["youtube", "linkedin"].includes(channel)) run();',
     'switch (channel) { case "reddit": run(); }',
   ])
     assert.ok(violations(source, "service.ts").length > 0, source);

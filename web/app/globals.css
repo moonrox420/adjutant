@@ -171,7 +171,7 @@ textarea.studio-editable {
   font-weight: 600;
 }
 .google-copy,
-.tiktok-copy {
+.network-copy {
   padding: 18px 14px;
 }
 .google-copy strong {
@@ -199,31 +199,25 @@ textarea.studio-editable {
   letter-spacing: normal;
   color: var(--ink);
 }
-.tiktok-preview {
+.network-preview {
   background: #173b35;
   color: #f0f4e9;
   border-color: #173b35;
 }
-.tiktok-preview .studio-channel {
+.network-preview .studio-channel {
   border-color: #426359;
 }
-.tiktok-time {
-  display: inline-block;
-  color: var(--lime);
-  letter-spacing: 1px;
-  font-size: 11px;
-}
-.tiktok-preview .studio-field-label {
+.network-preview .studio-field-label {
   color: #bed0c5;
 }
-.tiktok-preview .studio-editable {
+.network-preview .studio-editable {
   color: #f0f4e9;
 }
-.tiktok-preview .studio-editable:hover:not([readonly]),
-.tiktok-preview .studio-editable:focus {
+.network-preview .studio-editable:hover:not([readonly]),
+.network-preview .studio-editable:focus {
   background: #264c43;
 }
-.tiktok-copy > small {
+.network-copy > small {
   display: block;
   margin: 20px 6px 0;
   color: #bed0c5;

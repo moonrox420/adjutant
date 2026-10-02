@@ -68,8 +68,8 @@ errors and one render failure. The two synthetic records were retired only in `a
 and the test now inserts its isolated specification already retired. Validation was not weakened.
 
 The whole kill-switch requirement remains FAIL: only recorded campaign roots and their managed
-descendants are covered. Remote account-wide inventory, child-only control, Amazon Sponsored
-Display, exact revert call sequences, remote resume, and real-provider verification remain absent.
+descendants are covered. Remote account-wide inventory, child-only control, exact revert call
+sequences, remote resume, and real-provider verification remain absent.
 
 ## First-launch authorization verification
 
@@ -150,16 +150,16 @@ test was skipped or disabled.
 - Provider HTTP error handling and protocol construction, including Google manager hierarchy
   pagination, Reddit shared-account discovery/pagination, revocation requests and log redaction.
   Provider HTTP responses in these tests are controlled test transports, not live account evidence.
-- A real local Ollama copy-generation canary produced a validated Meta/Google/TikTok bundle;
+- A real local Ollama copy-generation canary produced a validated Meta/Google/YouTube/LinkedIn/Reddit bundle;
   the saved output is `.local/studio-copy-canary.json`. This does not verify Google visuals.
 
 ## Browser paths exercised
 
 1. Signup with Business/Agency equally presented and neither selected; email verification through
    the actual local mail queue; login; mobile logout; password recovery; cross-tab revocation.
-2. Ad Studio on an unconfirmed brand; Meta/Google/TikTok preview editing and saving; image-generation
+2. Ad Studio on an unconfirmed brand; Meta/Google/YouTube/LinkedIn/Reddit preview editing and saving; image-generation
    error display. Studio provider/job responses are isolated browser fixtures for this test.
-3. All ten developer application forms; real encrypted API persistence; no false authorized status;
+3. All five developer application forms; real encrypted API persistence; no false authorized status;
    reload; OAuth return navigation selects the original brand even when another brand exists.
 4. In-flight strategy generation and logout, with process-exit verification and no saved late draft.
 5. Brand edits, plan creation, legacy signed approval, reload persistence, deployment preflight and
@@ -183,7 +183,7 @@ and campaigns were preserved. Only the API was stopped and restarted. After rest
 
 | External system | Verification performed | Missing evidence |
 |---|---|---|
-| Meta, Google Ads, YouTube, TikTok, LinkedIn, Microsoft, Reddit, Pinterest, Snapchat, Amazon Ads | Official provider contracts inspected; local protocol tests only | No authorized-account consent, real campaign creation, mutation, read-back or metrics run |
+| Meta, Google Ads, YouTube, LinkedIn, Reddit | Official provider contracts inspected; local protocol tests only | No authorized-account consent, real campaign creation, mutation, read-back or metrics run |
 | Google image provider | Installed SDK request and image-byte validation with test transport | No real authenticated image generation |
 | Email provider | Local queue/consumer delivery and retries; SMTP boundary tests | No authenticated external mail delivery |
 | Remote CI | CI definitions updated and checks run locally | No remote CI run for these uncommitted changes |

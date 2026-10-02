@@ -3,7 +3,43 @@ SET search_path=adjutant,public;
 -- Migration 048: Purge decommissioned channels and restrict to 5 active channels:
 -- meta, google_ads, youtube, linkedin, reddit.
 
--- 1. Remove orphaned capabilities, specs, and records for decommissioned channels
+-- 1. Remove child records referencing decommissioned channels
+DELETE FROM adjutant.remote_stop_item 
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads')
+   OR connection_id IN (SELECT id FROM adjutant.channel_connection WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads'));
+
+DELETE FROM adjutant.campaign_object
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads')
+   OR connection_id IN (SELECT id FROM adjutant.channel_connection WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads'));
+
+DELETE FROM adjutant.campaign_build_step
+WHERE build_id IN (SELECT id FROM adjutant.campaign_build WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads')
+   OR connection_id IN (SELECT id FROM adjutant.channel_connection WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads')));
+
+DELETE FROM adjutant.campaign_build
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads')
+   OR connection_id IN (SELECT id FROM adjutant.channel_connection WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads'));
+
+ALTER TABLE adjutant.channel_launch_grant DISABLE TRIGGER immutable_channel_launch_grant;
+DELETE FROM adjutant.channel_launch_grant
+WHERE connection_id IN (SELECT id FROM adjutant.channel_connection WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads'));
+ALTER TABLE adjutant.channel_launch_grant ENABLE TRIGGER immutable_channel_launch_grant;
+
+DELETE FROM adjutant.plan_allocation
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads');
+
+DELETE FROM adjutant.action
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads');
+
+DELETE FROM adjutant.metric_fact_raw
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads');
+
+DELETE FROM adjutant.metric_normalized
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads');
+
+DELETE FROM adjutant.autonomous_decision
+WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads');
+
 DELETE FROM adjutant.placement_spec 
 WHERE channel IN ('tiktok', 'snapchat', 'pinterest', 'microsoft', 'amazon_ads');
 
