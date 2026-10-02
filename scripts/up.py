@@ -241,6 +241,19 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
 
             verify(state, port)
             return
+
+        runner_log_path = state / "runner.log"
+        runner_log = open(runner_log_path, "w", encoding="utf-8")
+        runner_process = subprocess.Popen(
+            [sys.executable, str(ROOT / "scripts/runner_daemon.py")],
+            cwd=ROOT,
+            env=env,
+            stdout=runner_log,
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        print(f"Autonomous runner daemon active; logs: {runner_log_path}", flush=True)
+
         process.wait()
         if process.returncode:
             server_log.flush()
@@ -252,6 +265,15 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
                 message = f"{message}:\n{error_detail}"
             raise RuntimeError(message)
     finally:
+        if runner_process is not None and runner_process.poll() is None:
+            runner_process.terminate()
+            try:
+                runner_process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                runner_process.kill()
+                runner_process.wait(timeout=5)
+        if runner_log is not None:
+            runner_log.close()
         if process.poll() is None:
             process.terminate()
             try:

@@ -4,6 +4,10 @@ Set-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
 if ($LASTEXITCODE -ne 0) { throw 'Python lint failed.' }
 & .\.venv\Scripts\python.exe -m ruff format --check src scripts
 if ($LASTEXITCODE -ne 0) { throw 'Python formatting failed.' }
+& .\.venv\Scripts\python.exe scripts/check_channel_parity.py
+if ($LASTEXITCODE -ne 0) { throw 'Channel parity check failed.' }
+& .\.venv\Scripts\python.exe scripts/check_conformance.py
+if ($LASTEXITCODE -ne 0) { throw 'Adapter conformance suite failed.' }
 Push-Location web
 $previousDist = $env:ADJUTANT_NEXT_DIST_DIR
 try {

@@ -68,6 +68,19 @@ class AdCopyBundle(Input):
     reddit: RedditCopy = Field(default_factory=lambda: RedditCopy())
 
 
+# Section 8.2 Schema aliases and bundles
+GoogleAdsCopy = GoogleCopy
+
+
+class CreativeCopyBundle(Input):
+    concept_id: str
+    meta: MetaCopy
+    google_ads: GoogleAdsCopy
+    youtube: YouTubeCopy
+    linkedin: LinkedInCopy
+    reddit: RedditCopy
+
+
 class QuickGenerateRequest(Input):
     brand_id: UUID
     url_or_prompt: str = Field(min_length=3, max_length=10000)
