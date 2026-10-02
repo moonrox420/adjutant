@@ -64,11 +64,7 @@ export type Brand = {
   stopped: boolean;
 };
 export type ChannelName =
-  | "meta"
-  | "google_ads"
-  | "youtube"
-  | "linkedin"
-  | "reddit";
+  "meta" | "google_ads" | "youtube" | "linkedin" | "reddit";
 
 export type Allocation = {
   channel: ChannelName;

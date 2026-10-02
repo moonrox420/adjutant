@@ -98,7 +98,9 @@ export function parseAdBundle(value: unknown): AdBundle {
   const meta = record(row.meta, "Meta copy");
   const google = record(row.google, "Google copy");
   const youtube = row.youtube ? record(row.youtube, "YouTube copy") : undefined;
-  const linkedin = row.linkedin ? record(row.linkedin, "LinkedIn copy") : undefined;
+  const linkedin = row.linkedin
+    ? record(row.linkedin, "LinkedIn copy")
+    : undefined;
   const reddit = row.reddit ? record(row.reddit, "Reddit copy") : undefined;
   const concepts = row.concepts ?? [];
   if (!Array.isArray(concepts)) invalid("concept list");
@@ -137,7 +139,10 @@ export function parseAdBundle(value: unknown): AdBundle {
     ...(linkedin
       ? {
           linkedin: {
-            introductory_text: text(linkedin.introductory_text, "LinkedIn introductory text"),
+            introductory_text: text(
+              linkedin.introductory_text,
+              "LinkedIn introductory text",
+            ),
             headline: text(linkedin.headline, "LinkedIn headline"),
             cta: text(linkedin.cta, "LinkedIn call to action"),
           },

@@ -689,7 +689,9 @@ export function AdStudio({
               className="studio-card network-preview"
               aria-label="LinkedIn and Reddit concept preview"
             >
-              <div className="studio-channel">03 / LINKEDIN & REDDIT CONCEPT</div>
+              <div className="studio-channel">
+                03 / LINKEDIN & REDDIT CONCEPT
+              </div>
               <div className="network-copy">
                 <label className="studio-field-label">
                   LinkedIn headline
@@ -755,7 +757,9 @@ export function AdStudio({
                     }
                   />
                 </label>
-                <small>Multi-channel copy · Formatted for LinkedIn & Reddit feeds</small>
+                <small>
+                  Multi-channel copy · Formatted for LinkedIn & Reddit feeds
+                </small>
               </div>
             </article>
           </div>
