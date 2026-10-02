@@ -33,17 +33,39 @@ class GoogleCopy(Input):
     destination_path: str = Field(max_length=31)
 
 
-class TikTokCopy(Input):
-    hook: str = Field(min_length=1, max_length=150)
-    visual_script: str = Field(min_length=1, max_length=2000)
-    cta: str = Field(min_length=1, max_length=60)
+class YouTubeCopy(Input):
+    headline: str = Field(default="Watch Now", min_length=1, max_length=30)
+    long_headline: str = Field(
+        default="Experience the difference today", min_length=1, max_length=90
+    )
+    description: str = Field(
+        default="Discover more and get started now.", min_length=1, max_length=90
+    )
+    cta: str = Field(default="Learn More", min_length=1, max_length=40)
+
+
+class LinkedInCopy(Input):
+    introductory_text: str = Field(
+        default="Discover cutting-edge solutions for your business.", min_length=1, max_length=600
+    )
+    headline: str = Field(default="Transform Your Workflow", min_length=1, max_length=70)
+    cta: str = Field(default="Learn More", min_length=1, max_length=40)
+
+
+class RedditCopy(Input):
+    post_title: str = Field(
+        default="What every team should know before scaling", min_length=1, max_length=300
+    )
+    cta: str = Field(default="Sign Up", min_length=1, max_length=40)
 
 
 class AdCopyBundle(Input):
     understanding: BrandUnderstanding
     meta: MetaCopy
     google: GoogleCopy
-    tiktok: TikTokCopy
+    youtube: YouTubeCopy = Field(default_factory=lambda: YouTubeCopy())
+    linkedin: LinkedInCopy = Field(default_factory=lambda: LinkedInCopy())
+    reddit: RedditCopy = Field(default_factory=lambda: RedditCopy())
 
 
 class QuickGenerateRequest(Input):
@@ -57,4 +79,6 @@ class DraftEdit(Input):
     destination_url: HttpUrl
     meta: MetaCopy
     google: GoogleCopy
-    tiktok: TikTokCopy
+    youtube: YouTubeCopy = Field(default_factory=lambda: YouTubeCopy())
+    linkedin: LinkedInCopy = Field(default_factory=lambda: LinkedInCopy())
+    reddit: RedditCopy = Field(default_factory=lambda: RedditCopy())

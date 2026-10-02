@@ -283,7 +283,9 @@ export function AdStudio({
             destination_url: bundle.destination_url,
             meta,
             google: bundle.google,
-            tiktok: bundle.tiktok,
+            youtube: bundle.youtube,
+            linkedin: bundle.linkedin,
+            reddit: bundle.reddit,
           },
           controller.signal,
         ),
@@ -684,60 +686,76 @@ export function AdStudio({
               </div>
             </article>
             <article
-              className="studio-card tiktok-preview"
-              aria-label="TikTok concept preview"
+              className="studio-card network-preview"
+              aria-label="LinkedIn and Reddit concept preview"
             >
-              <div className="studio-channel">03 / TIKTOK CONCEPT</div>
-              <div className="tiktok-copy">
-                <span className="tiktok-time">00:00 — 00:03</span>
+              <div className="studio-channel">03 / LINKEDIN & REDDIT CONCEPT</div>
+              <div className="network-copy">
                 <label className="studio-field-label">
-                  Opening hook
+                  LinkedIn headline
                   <Editable
-                    label="TikTok three-second hook"
-                    value={bundle.tiktok.hook}
-                    limit={150}
+                    label="LinkedIn headline"
+                    value={bundle.linkedin?.headline || bundle.meta.headline}
+                    limit={70}
+                    readOnly={!canEdit || saving}
+                    change={(value) =>
+                      edit((current) => ({
+                        ...current,
+                        linkedin: {
+                          introductory_text:
+                            current.linkedin?.introductory_text ||
+                            current.meta.primary_text,
+                          headline: value,
+                          cta: current.linkedin?.cta || current.meta.cta,
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label className="studio-field-label">
+                  LinkedIn introductory text
+                  <Editable
+                    label="LinkedIn introductory text"
+                    value={
+                      bundle.linkedin?.introductory_text ||
+                      bundle.meta.primary_text
+                    }
+                    limit={600}
                     multiline
                     readOnly={!canEdit || saving}
                     change={(value) =>
                       edit((current) => ({
                         ...current,
-                        tiktok: { ...current.tiktok, hook: value },
+                        linkedin: {
+                          introductory_text: value,
+                          headline:
+                            current.linkedin?.headline || current.meta.headline,
+                          cta: current.linkedin?.cta || current.meta.cta,
+                        },
                       }))
                     }
                   />
                 </label>
                 <label className="studio-field-label">
-                  Visual script
+                  Reddit post title
                   <Editable
-                    label="TikTok visual script"
-                    value={bundle.tiktok.visual_script}
-                    limit={2000}
+                    label="Reddit post title"
+                    value={bundle.reddit?.post_title || bundle.meta.headline}
+                    limit={300}
                     multiline
                     readOnly={!canEdit || saving}
                     change={(value) =>
                       edit((current) => ({
                         ...current,
-                        tiktok: { ...current.tiktok, visual_script: value },
+                        reddit: {
+                          post_title: value,
+                          cta: current.reddit?.cta || current.meta.cta,
+                        },
                       }))
                     }
                   />
                 </label>
-                <label className="studio-field-label">
-                  Call to action
-                  <Editable
-                    label="TikTok CTA"
-                    value={bundle.tiktok.cta}
-                    limit={60}
-                    readOnly={!canEdit || saving}
-                    change={(value) =>
-                      edit((current) => ({
-                        ...current,
-                        tiktok: { ...current.tiktok, cta: value },
-                      }))
-                    }
-                  />
-                </label>
-                <small>Script concept · No video generated</small>
+                <small>Multi-channel copy · Formatted for LinkedIn & Reddit feeds</small>
               </div>
             </article>
           </div>

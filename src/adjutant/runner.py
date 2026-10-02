@@ -158,101 +158,144 @@ def run_tick(
                 if not fatigued_obj:
                     continue
 
-                # S8.2 Strict ordering:
-                # 1. Create and launch replacement FIRST
-                replacement_id = uuid4()
-                conn.execute(
-                    """INSERT INTO campaign_object(
-                        id, brand_id, connection_id, channel, level, native_id, state,
-                        parent_id, daily_budget_usd, creative_id
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s
-                    )""",
-                    (
-                        replacement_id,
-                        brand_id,
-                        fatigued_obj["connection_id"],
-                        fatigued_obj["channel"],
-                        fatigued_obj["level"],
-                        f"native_rep_{replacement_id.hex[:8]}",
-                        fatigued_obj["parent_id"],
-                        fatigued_obj["daily_budget_usd"],
-                        fatigued_obj["creative_id"],
-                    ),
-                )
+                try:
+                    # S8.2 Strict ordering:
+                    # 1. Create and launch replacement FIRST
+                    replacement_id = uuid4()
+                    conn.execute(
+                        """INSERT INTO campaign_object(
+                            id, brand_id, connection_id, channel, level, native_id, state,
+                            parent_id, daily_budget_usd, creative_id
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s
+                        )""",
+                        (
+                            replacement_id,
+                            brand_id,
+                            fatigued_obj["connection_id"],
+                            fatigued_obj["channel"],
+                            fatigued_obj["level"],
+                            f"native_rep_{replacement_id.hex[:8]}",
+                            fatigued_obj["parent_id"],
+                            fatigued_obj["daily_budget_usd"],
+                            fatigued_obj["creative_id"],
+                        ),
+                    )
 
-                conn.execute(
-                    """INSERT INTO action(
-                        brand_id, actor_kind, action_type, target_kind, target_id,
-                        channel, target_native_id, diff, rationale, token_id, revert_path,
-                        usd_impact, executed_at
-                    ) VALUES (
-                        %s, 'system', 'creative_swap', 'campaign_object', %s,
-                        %s, %s, %s, %s, %s, %s, %s, clock_timestamp()
-                    ) RETURNING id""",
-                    (
-                        brand_id,
-                        replacement_id,
-                        fatigued_obj["channel"],
-                        f"native_rep_{replacement_id.hex[:8]}",
-                        Jsonb(
-                            {
-                                "after": {
-                                    "state": "active",
-                                    "parent_id": str(fatigued_obj["parent_id"]),
+                    conn.execute(
+                        """INSERT INTO action(
+                            brand_id, actor_kind, action_type, target_kind, target_id,
+                            channel, target_native_id, diff, rationale, token_id, revert_path,
+                            usd_impact, executed_at
+                        ) VALUES (
+                            %s, 'system', 'creative_swap', 'campaign_object', %s,
+                            %s, %s, %s, %s, %s, %s, %s, clock_timestamp()
+                        ) RETURNING id""",
+                        (
+                            brand_id,
+                            replacement_id,
+                            fatigued_obj["channel"],
+                            f"native_rep_{replacement_id.hex[:8]}",
+                            Jsonb(
+                                {
+                                    "after": {
+                                        "state": "active",
+                                        "parent_id": str(fatigued_obj["parent_id"]),
+                                    }
                                 }
-                            }
+                            ),
+                            (
+                                "Replacement ad created and launched prior to "
+                                "cutting fatigued creative"
+                            ),
+                            token_id,
+                            Jsonb(
+                                {
+                                    "kind": "campaign_object_state",
+                                    "object_id": str(replacement_id),
+                                    "before_state": "deleted",
+                                }
+                            ),
+                            fatigued_obj["daily_budget_usd"],
                         ),
-                        "Replacement ad created and launched prior to cutting fatigued creative",
-                        token_id,
-                        Jsonb(
-                            {
-                                "kind": "campaign_object_state",
-                                "object_id": str(replacement_id),
-                                "before_state": "deleted",
-                            }
+                    )
+
+                    # 2. ONLY AFTER replacement is active, pause fatigued ad
+                    conn.execute(
+                        "UPDATE campaign_object SET state='paused' WHERE id=%s",
+                        (fatigued_id,),
+                    )
+
+                    pause_row: Any = conn.execute(
+                        """INSERT INTO action(
+                            brand_id, actor_kind, action_type, target_kind, target_id,
+                            channel, target_native_id, diff, rationale, revert_path,
+                            executed_at
+                        ) VALUES (
+                            %s, 'system', 'pause', 'campaign_object', %s,
+                            %s, %s, %s, %s, %s, clock_timestamp()
+                        ) RETURNING id""",
+                        (
+                            brand_id,
+                            fatigued_id,
+                            fatigued_obj["channel"],
+                            fatigued_obj["native_id"],
+                            Jsonb(
+                                {
+                                    "before": {"state": "active"},
+                                    "after": {"state": "paused"},
+                                }
+                            ),
+                            "Fatigued ad paused after verified replacement launch",
+                            Jsonb(
+                                {
+                                    "kind": "campaign_object_state",
+                                    "object_id": str(fatigued_id),
+                                    "before_state": "active",
+                                }
+                            ),
                         ),
-                        fatigued_obj["daily_budget_usd"],
-                    ),
-                )
-
-                # 2. ONLY AFTER replacement is active, pause fatigued ad
-                conn.execute(
-                    "UPDATE campaign_object SET state='paused' WHERE id=%s",
-                    (fatigued_id,),
-                )
-
-                pause_row: Any = conn.execute(
-                    """INSERT INTO action(
-                        brand_id, actor_kind, action_type, target_kind, target_id,
-                        channel, target_native_id, diff, rationale, revert_path,
-                        executed_at
-                    ) VALUES (
-                        %s, 'system', 'pause', 'campaign_object', %s,
-                        %s, %s, %s, %s, %s, clock_timestamp()
-                    ) RETURNING id""",
-                    (
-                        brand_id,
+                    ).fetchone()
+                    action_id = pause_row["id"] if pause_row else None
+                except Exception as refresh_exc:
+                    logger.warning(
+                        "Creative refresh replacement failed for object %s: %s; "
+                        "keeping original active (zero dark time)",
                         fatigued_id,
-                        fatigued_obj["channel"],
-                        fatigued_obj["native_id"],
-                        Jsonb(
-                            {
-                                "before": {"state": "active"},
-                                "after": {"state": "paused"},
-                            }
+                        refresh_exc,
+                    )
+                    conn.execute(
+                        """INSERT INTO escalation(
+                            brand_id, trigger_type, scope_kind, scope_id, context
+                        ) VALUES (%s, 'creative_refresh_failure', 'campaign_object', %s, %s)""",
+                        (
+                            brand_id,
+                            fatigued_id,
+                            Jsonb({"error": str(refresh_exc), "target_id": str(fatigued_id)}),
                         ),
-                        "Fatigued ad paused after verified replacement launch",
-                        Jsonb(
-                            {
-                                "kind": "campaign_object_state",
-                                "object_id": str(fatigued_id),
-                                "before_state": "active",
-                            }
+                    )
+                    conn.execute(
+                        """INSERT INTO autonomous_decision(
+                            brand_id, finding_id, kind, target_id, channel,
+                            idempotency_key, params, state, rejection_reason
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'escalated', %s)
+                        ON CONFLICT (brand_id, idempotency_key) DO UPDATE SET
+                            state='escalated', rejection_reason=EXCLUDED.rejection_reason""",
+                        (
+                            brand_id,
+                            cand["finding_id"],
+                            cand["kind"],
+                            cand["target_id"],
+                            cand["channel"],
+                            idem_key,
+                            Jsonb(params),
+                            (
+                                f"Replacement generation failed ({refresh_exc}); "
+                                "fatigued ad retained live without dark time"
+                            ),
                         ),
-                    ),
-                ).fetchone()
-                action_id = pause_row["id"] if pause_row else None
+                    )
+                    continue
 
             elif cand["kind"] == "scale_winner":
                 obj_id = cand["target_id"]

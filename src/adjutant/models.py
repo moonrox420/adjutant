@@ -22,13 +22,8 @@ Channel = Literal[
     "meta",
     "google_ads",
     "youtube",
-    "tiktok",
     "linkedin",
-    "microsoft",
     "reddit",
-    "pinterest",
-    "snapchat",
-    "amazon_ads",
 ]
 Objective = Literal[
     "awareness",

@@ -25,13 +25,8 @@ export const channelName: Record<string, string> = {
   meta: "Meta",
   google_ads: "Google Ads",
   youtube: "YouTube",
-  tiktok: "TikTok",
   linkedin: "LinkedIn",
-  microsoft: "Microsoft",
   reddit: "Reddit",
-  pinterest: "Pinterest",
-  snapchat: "Snapchat",
-  amazon_ads: "Amazon Ads",
 };
 
 export function Badge({

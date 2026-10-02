@@ -61,6 +61,15 @@ function Test-AdjutantApproval {
         return $false
     }
 }
+function Test-AdjutantRunner {
+    $processes = Get-CimInstance Win32_Process -Filter "Name='python.exe' or Name='pythonw.exe'"
+    foreach ($p in $processes) {
+        if ($p.CommandLine -like "*runner_daemon.py*") {
+            return $true
+        }
+    }
+    return $false
+}
 if (-not (Test-AdjutantApproval)) {
     Start-Process -FilePath $pythonExe -ArgumentList @('-m','uvicorn','adjutant.approval_api:create_app','--factory','--app-dir','src','--host','127.0.0.1','--port','8003') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput '.local/approval.stdout.log' -RedirectStandardError '.local/approval.stderr.log'
 }
@@ -69,6 +78,9 @@ if (-not (Test-AdjutantGateway)) {
 }
 if (-not (Test-AdjutantApi)) {
     Start-Process -FilePath $pythonExe -ArgumentList @('-m','uvicorn','adjutant.api:create_app','--factory','--app-dir','src','--host','127.0.0.1','--port','8000') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput '.local/api.stdout.log' -RedirectStandardError '.local/api.stderr.log'
+}
+if (-not (Test-AdjutantRunner)) {
+    Start-Process -FilePath $pythonExe -ArgumentList @('scripts/runner_daemon.py','--interval','60') -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $projectRoot '.local/runner.stdout.log') -RedirectStandardError (Join-Path $projectRoot '.local/runner.stderr.log')
 }
 $webListening = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
 if (-not $webListening) {
@@ -89,4 +101,4 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
     Start-Sleep -Milliseconds 500
 }
 if (-not $webReady) { throw 'Console did not become ready; inspect .local/web.stderr.log.' }
-Write-Output 'Adjutant API, approval service, gateway, and console are ready. Open http://localhost:3000'
+Write-Output 'Adjutant API, approval service, gateway, runner daemon, and console are ready. Open http://localhost:3000'

@@ -1,12 +1,5 @@
 """Construction registry keeps platform dispatch below the adapter boundary."""
 
-from adjutant.adapters.amazon_ads_build import (
-    AmazonAdsBuilder,
-    AmazonAdsBuildSettings,
-)
-from adjutant.adapters.amazon_ads_build import (
-    preflight as amazon_ads_preflight,
-)
 from adjutant.adapters.google_ads_build import (
     GoogleAdsBuilder,
     GoogleAdsBuildSettings,
@@ -23,40 +16,12 @@ from adjutant.adapters.linkedin_build import (
 )
 from adjutant.adapters.meta_build import MetaBuilder, MetaBuildSettings
 from adjutant.adapters.meta_build import preflight as meta_preflight
-from adjutant.adapters.microsoft_build import (
-    MicrosoftBuilder,
-    MicrosoftBuildSettings,
-)
-from adjutant.adapters.microsoft_build import (
-    preflight as microsoft_preflight,
-)
-from adjutant.adapters.pinterest_build import (
-    PinterestBuilder,
-    PinterestBuildSettings,
-)
-from adjutant.adapters.pinterest_build import (
-    preflight as pinterest_preflight,
-)
 from adjutant.adapters.reddit_build import (
     RedditBuilder,
     RedditBuildSettings,
 )
 from adjutant.adapters.reddit_build import (
     preflight as reddit_preflight,
-)
-from adjutant.adapters.snapchat_build import (
-    SnapchatBuilder,
-    SnapchatBuildSettings,
-)
-from adjutant.adapters.snapchat_build import (
-    preflight as snapchat_preflight,
-)
-from adjutant.adapters.tiktok_build import (
-    TikTokBuilder,
-    TikTokBuildSettings,
-)
-from adjutant.adapters.tiktok_build import (
-    preflight as tiktok_preflight,
 )
 from adjutant.adapters.youtube_build import (
     YouTubeBuilder,
@@ -71,13 +36,8 @@ BUILDERS = {
     "meta": (MetaBuilder, MetaBuildSettings, meta_preflight),
     "google_ads": (GoogleAdsBuilder, GoogleAdsBuildSettings, google_ads_preflight),
     "youtube": (YouTubeBuilder, YouTubeBuildSettings, youtube_preflight),
-    "tiktok": (TikTokBuilder, TikTokBuildSettings, tiktok_preflight),
     "linkedin": (LinkedInBuilder, LinkedInBuildSettings, linkedin_preflight),
-    "microsoft": (MicrosoftBuilder, MicrosoftBuildSettings, microsoft_preflight),
     "reddit": (RedditBuilder, RedditBuildSettings, reddit_preflight),
-    "pinterest": (PinterestBuilder, PinterestBuildSettings, pinterest_preflight),
-    "snapchat": (SnapchatBuilder, SnapchatBuildSettings, snapchat_preflight),
-    "amazon_ads": (AmazonAdsBuilder, AmazonAdsBuildSettings, amazon_ads_preflight),
 }
 
 

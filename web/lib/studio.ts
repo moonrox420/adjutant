@@ -9,6 +9,24 @@ export type MetaCopy = {
   image_url: string;
 };
 
+export type YouTubeCopy = {
+  headline: string;
+  long_headline: string;
+  description: string;
+  cta: string;
+};
+
+export type LinkedInCopy = {
+  introductory_text: string;
+  headline: string;
+  cta: string;
+};
+
+export type RedditCopy = {
+  post_title: string;
+  cta: string;
+};
+
 export type AdBundle = {
   id: string;
   brand_id: string;
@@ -21,7 +39,9 @@ export type AdBundle = {
     descriptions: string[];
     destination_path: string;
   };
-  tiktok: { hook: string; visual_script: string; cta: string };
+  youtube?: YouTubeCopy;
+  linkedin?: LinkedInCopy;
+  reddit?: RedditCopy;
   concepts: {
     id: string;
     name: string | null;
@@ -77,7 +97,9 @@ export function parseAdBundle(value: unknown): AdBundle {
   const row = record(value, "ad bundle");
   const meta = record(row.meta, "Meta copy");
   const google = record(row.google, "Google copy");
-  const tiktok = record(row.tiktok, "TikTok copy");
+  const youtube = row.youtube ? record(row.youtube, "YouTube copy") : undefined;
+  const linkedin = row.linkedin ? record(row.linkedin, "LinkedIn copy") : undefined;
+  const reddit = row.reddit ? record(row.reddit, "Reddit copy") : undefined;
   const concepts = row.concepts ?? [];
   if (!Array.isArray(concepts)) invalid("concept list");
   const image = text(meta.image_url, "image URL");
@@ -102,11 +124,33 @@ export function parseAdBundle(value: unknown): AdBundle {
       descriptions: strings(google.descriptions, "Google descriptions"),
       destination_path: text(google.destination_path, "destination path"),
     },
-    tiktok: {
-      hook: text(tiktok.hook, "hook"),
-      visual_script: text(tiktok.visual_script, "visual script"),
-      cta: text(tiktok.cta, "TikTok call to action"),
-    },
+    ...(youtube
+      ? {
+          youtube: {
+            headline: text(youtube.headline, "YouTube headline"),
+            long_headline: text(youtube.long_headline, "YouTube long headline"),
+            description: text(youtube.description, "YouTube description"),
+            cta: text(youtube.cta, "YouTube call to action"),
+          },
+        }
+      : {}),
+    ...(linkedin
+      ? {
+          linkedin: {
+            introductory_text: text(linkedin.introductory_text, "LinkedIn introductory text"),
+            headline: text(linkedin.headline, "LinkedIn headline"),
+            cta: text(linkedin.cta, "LinkedIn call to action"),
+          },
+        }
+      : {}),
+    ...(reddit
+      ? {
+          reddit: {
+            post_title: text(reddit.post_title, "Reddit post title"),
+            cta: text(reddit.cta, "Reddit call to action"),
+          },
+        }
+      : {}),
     concepts: concepts.map((item) => {
       const concept = record(item, "concept");
       return {

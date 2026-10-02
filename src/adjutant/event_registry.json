@@ -387,7 +387,7 @@
     },
     {
       "event_type": "brand.kill_switch.engaged",
-      "event_version": 2,
+      "event_version": 3,
       "topic": "adj.control.v1",
       "partition_key": "brand_id",
       "producer": "core-api",
@@ -438,13 +438,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "campaign_object_ids": {
@@ -463,7 +458,7 @@
     },
     {
       "event_type": "plan.drafted",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.plan.v1",
       "partition_key": "brand_id",
       "producer": "orchestrator",
@@ -513,13 +508,8 @@
                 "meta",
                 "google_ads",
                 "youtube",
-                "tiktok",
                 "linkedin",
-                "microsoft",
-                "reddit",
-                "pinterest",
-                "snapchat",
-                "amazon_ads"
+                "reddit"
               ]
             },
             "minItems": 1
@@ -565,7 +555,7 @@
     },
     {
       "event_type": "plan.compliance_checked",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.plan.v1",
       "partition_key": "brand_id",
       "producer": "compliance-svc",
@@ -642,13 +632,8 @@
                     "meta",
                     "google_ads",
                     "youtube",
-                    "tiktok",
                     "linkedin",
-                    "microsoft",
-                    "reddit",
-                    "pinterest",
-                    "snapchat",
-                    "amazon_ads"
+                    "reddit"
                   ]
                 },
                 "citation_url": {
@@ -675,7 +660,7 @@
         "core-api",
         "analytics-svc"
       ],
-      "purpose": "Notification only. The authoritative resume signal is the Temporal signal, not this event (see contract doc §3.2).",
+      "purpose": "Notification only. The authoritative resume signal is the Temporal signal, not this event (see contract doc \u00a73.2).",
       "retention_days": 3650,
       "log_compacted": false,
       "contains_pii": false,
@@ -866,7 +851,7 @@
     },
     {
       "event_type": "creative.set.requested",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.creative.v1",
       "partition_key": "brand_id",
       "producer": "orchestrator",
@@ -919,13 +904,8 @@
                 "meta",
                 "google_ads",
                 "youtube",
-                "tiktok",
                 "linkedin",
-                "microsoft",
-                "reddit",
-                "pinterest",
-                "snapchat",
-                "amazon_ads"
+                "reddit"
               ]
             }
           },
@@ -1030,7 +1010,7 @@
     },
     {
       "event_type": "creative.scene_graph.committed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.creative.v1",
       "partition_key": "brand_id",
       "producer": "creative-svc",
@@ -1095,13 +1075,8 @@
                     "meta",
                     "google_ads",
                     "youtube",
-                    "tiktok",
                     "linkedin",
-                    "microsoft",
-                    "reddit",
-                    "pinterest",
-                    "snapchat",
-                    "amazon_ads"
+                    "reddit"
                   ]
                 },
                 "placement": {
@@ -1125,7 +1100,7 @@
     },
     {
       "event_type": "creative.rendition.rendered",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.creative.v1",
       "partition_key": "brand_id",
       "producer": "render-svc",
@@ -1174,13 +1149,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "placement": {
@@ -1216,7 +1186,7 @@
     },
     {
       "event_type": "creative.spec_validation.failed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.creative.v1",
       "partition_key": "brand_id",
       "producer": "render-svc",
@@ -1259,13 +1229,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "placement": {
@@ -1546,7 +1511,7 @@
     },
     {
       "event_type": "compliance.corpus.updated",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.compliance.v1",
       "partition_key": "nil_uuid (platform-scoped)",
       "producer": "compliance-svc",
@@ -1583,13 +1548,8 @@
                 "meta",
                 "google_ads",
                 "youtube",
-                "tiktok",
                 "linkedin",
-                "microsoft",
-                "reddit",
-                "pinterest",
-                "snapchat",
-                "amazon_ads"
+                "reddit"
               ]
             }
           },
@@ -1800,7 +1760,7 @@
         "channel-gateway",
         "security-audit"
       ],
-      "purpose": "A spend authority now exists. Payload carries token metadata only — never the signature or the serialized token.",
+      "purpose": "A spend authority now exists. Payload carries token metadata only \u2014 never the signature or the serialized token.",
       "retention_days": 3650,
       "log_compacted": false,
       "contains_pii": false,
@@ -1883,7 +1843,7 @@
     },
     {
       "event_type": "approval.token.consumed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.approval.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -1927,13 +1887,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "operation": {
@@ -2075,7 +2030,7 @@
     },
     {
       "event_type": "deployment.started",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.deployment.v1",
       "partition_key": "brand_id",
       "producer": "orchestrator",
@@ -2133,13 +2088,8 @@
                 "meta",
                 "google_ads",
                 "youtube",
-                "tiktok",
                 "linkedin",
-                "microsoft",
-                "reddit",
-                "pinterest",
-                "snapchat",
-                "amazon_ads"
+                "reddit"
               ]
             }
           },
@@ -2158,7 +2108,7 @@
     },
     {
       "event_type": "deployment.channel.preflight_failed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.deployment.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -2201,13 +2151,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "failure_code": {
@@ -2235,7 +2180,7 @@
     },
     {
       "event_type": "deployment.channel.completed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.deployment.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -2278,13 +2223,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "outcome": {
@@ -2413,7 +2353,7 @@
     },
     {
       "event_type": "channel.connection.health_changed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.channel.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -2457,13 +2397,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "from_health": {
@@ -2506,7 +2441,7 @@
     },
     {
       "event_type": "channel.object.state_changed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.channel.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -2551,13 +2486,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "native_id": {
@@ -2587,7 +2517,7 @@
     },
     {
       "event_type": "channel.rejection.received",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.channel.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -2626,13 +2556,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "native_id": {
@@ -2667,7 +2592,7 @@
     },
     {
       "event_type": "channel.quota.exhausted",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.channel.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -2706,13 +2631,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "bucket_key": {
@@ -2741,7 +2661,7 @@
     },
     {
       "event_type": "metric.batch.ingested",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.metrics.v1",
       "partition_key": "brand_id",
       "producer": "analytics-svc",
@@ -2780,13 +2700,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "window_start": {
@@ -2822,7 +2737,7 @@
     },
     {
       "event_type": "metric.anomaly.detected",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.metrics.v1",
       "partition_key": "brand_id",
       "producer": "analytics-svc",
@@ -2867,13 +2782,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "metric": {
@@ -2913,7 +2823,7 @@
     },
     {
       "event_type": "fatigue.detected",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.metrics.v1",
       "partition_key": "brand_id",
       "producer": "analytics-svc",
@@ -2957,13 +2867,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "creative_id": {
@@ -3181,7 +3086,7 @@
     },
     {
       "event_type": "optimization.executed",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.optimization.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -3228,13 +3133,8 @@
               "meta",
               "google_ads",
               "youtube",
-              "tiktok",
               "linkedin",
-              "microsoft",
-              "reddit",
-              "pinterest",
-              "snapchat",
-              "amazon_ads"
+              "reddit"
             ]
           },
           "outcome": {
@@ -3271,7 +3171,7 @@
     },
     {
       "event_type": "optimization.reverted",
-      "event_version": 1,
+      "event_version": 2,
       "topic": "adj.optimization.v1",
       "partition_key": "brand_id",
       "producer": "channel-gateway",
@@ -3332,13 +3232,8 @@
                 "meta",
                 "google_ads",
                 "youtube",
-                "tiktok",
                 "linkedin",
-                "microsoft",
-                "reddit",
-                "pinterest",
-                "snapchat",
-                "amazon_ads"
+                "reddit"
               ]
             }
           }

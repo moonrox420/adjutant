@@ -47,13 +47,6 @@ PROVIDERS = (
         ("developer_token",),
     ),
     OAuthProvider(
-        "tiktok",
-        "https://ads.tiktok.com/marketing_api/auth",
-        "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",
-        "",
-        "https://business-api.tiktok.com/portal/docs?id=100025",
-    ),
-    OAuthProvider(
         "linkedin",
         "https://www.linkedin.com/oauth/v2/authorization",
         "https://www.linkedin.com/oauth/v2/accessToken",
@@ -61,41 +54,11 @@ PROVIDERS = (
         "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow",
     ),
     OAuthProvider(
-        "microsoft",
-        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-        "https://ads.microsoft.com/msads.manage offline_access",
-        "https://learn.microsoft.com/en-us/advertising/guides/authentication-oauth",
-        ("developer_token",),
-    ),
-    OAuthProvider(
         "reddit",
         "https://www.reddit.com/api/v1/authorize",
         "https://www.reddit.com/api/v1/access_token",
         "adsread adsedit identity",
         "https://ads-api.reddit.com/docs/v3/guides/quick-start/",
-    ),
-    OAuthProvider(
-        "pinterest",
-        "https://www.pinterest.com/oauth/",
-        "https://api.pinterest.com/v5/oauth/token",
-        "ads:read,ads:write,boards:read,pins:read,pins:write",
-        "https://developers.pinterest.com/docs/getting-started/set-up-authentication-and-authorization/",
-    ),
-    OAuthProvider(
-        "snapchat",
-        "https://accounts.snapchat.com/login/oauth2/authorize",
-        "https://accounts.snapchat.com/login/oauth2/access_token",
-        "snapchat-marketing-api",
-        "https://developers.snap.com/marketing-api/Ads-API/authentication",
-    ),
-    OAuthProvider(
-        "amazon_ads",
-        "https://www.amazon.com/ap/oa",
-        "https://api.amazon.com/auth/o2/token",
-        "advertising::campaign_management",
-        "https://advertising.amazon.com/API/docs/en-us/guides/onboarding/overview",
-        ("region",),
     ),
 )
 
@@ -119,8 +82,6 @@ def authorization_url(provider: OAuthProvider, app: dict, redirect: str, state: 
         params.update(access_type="offline", prompt="consent")
     elif provider.channel == "reddit":
         params["duration"] = "permanent"
-    elif provider.channel == "tiktok":
-        params = {"app_id": app["client_id"], "redirect_uri": redirect, "state": state}
     return provider.authorization_url + "?" + urlencode(params)
 
 
@@ -149,52 +110,38 @@ def request_json(method: str, url: str, *, allow_empty: bool = False, **kwargs: 
             )
         if response.status_code < 200 or response.status_code >= 300:
             raise DomainError(
-                "PlatformRequestRejected",
-                f"The platform returned HTTP {response.status_code}. "
-                "Check the account's permissions and developer configuration.",
+                "PlatformUnavailable",
+                "The platform responded with an unexpected status.",
                 502,
             )
         if allow_empty and not response.content:
-            return {}
-        data = response.json()
-        if not isinstance(data, (dict, list)):
-            raise ValueError("Unexpected JSON shape")
-        if isinstance(data, dict) and (
-            data.get("error")
-            or data.get("Errors")
-            or data.get("OperationErrors")
-            or data.get("code", 0) not in (0, "0")
-            or str(data.get("request_status", "success")).lower() == "error"
-        ):
-            raise DomainError(
-                "PlatformRequestRejected",
-                "The platform rejected the request. Check authorization, account "
-                "access, and application settings.",
-                502,
-            )
-        return data
-    except httpx.HTTPError as exc:
+            return None
+        return response.json()
+    except httpx.TimeoutException as exc:
         raise DomainError(
-            "PlatformUnavailable", "The advertising platform could not be reached.", 503
+            "PlatformTimeout",
+            "The platform did not respond within its connection deadline.",
+            504,
         ) from exc
-    except ValueError as exc:
+    except httpx.RequestError as exc:
         raise DomainError(
-            "PlatformResponseInvalid",
-            "The platform returned an unexpected response.",
+            "PlatformUnavailable",
+            "The platform could not be reached.",
             502,
         ) from exc
 
 
-def exchange(
+def token(
     provider: OAuthProvider,
     app: dict,
     redirect: str,
+    code: str,
     *,
-    code: str = "",
+    refresh: bool = False,
     previous: dict | None = None,
-    timeout: float = 30,
+    timeout: float = 30.0,
 ) -> dict:
-    refresh = not code
+    """Fetch an access token; validate expiration without leaking credentials into traces."""
     form = {
         "client_id": app["client_id"],
         "client_secret": app["client_secret"],
@@ -212,35 +159,13 @@ def exchange(
     else:
         form["code"] = code
     headers = {"User-Agent": "Adjutant/2.0"}
-    if provider.channel in {"reddit", "pinterest"}:
+    if provider.channel == "reddit":
         credential = base64.b64encode(
             f"{app['client_id']}:{app['client_secret']}".encode()
         ).decode()
         headers["Authorization"] = "Basic " + credential
         del form["client_id"], form["client_secret"]
-    if provider.channel == "pinterest":
-        form["continuous_refresh"] = "true"
-    if provider.channel == "microsoft":
-        form["scope"] = provider.scopes
-    if provider.channel == "tiktok":
-        if refresh:
-            raise DomainError(
-                "ReauthorizationRequired", "Renew TikTok advertiser authorization.", 403
-            )
-        result = request_json(
-            "POST",
-            provider.token_url,
-            json={
-                "app_id": app["client_id"],
-                "secret": app["client_secret"],
-                "auth_code": code,
-            },
-            headers=headers,
-            timeout=timeout,
-        )
-        data = result.get("data") if isinstance(result, dict) else None
-    else:
-        data = request_json("POST", provider.token_url, data=form, headers=headers, timeout=timeout)
+    data = request_json("POST", provider.token_url, data=form, headers=headers, timeout=timeout)
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("access_token"), str)
@@ -251,9 +176,9 @@ def exchange(
             "The platform did not return an access token.",
             502,
         )
-    token = {**(previous or {}), **data}
+    tok = {**(previous or {}), **data}
     try:
-        token["expires_at"] = (
+        tok["expires_at"] = (
             time.time() + int(data["expires_in"]) if data.get("expires_in") else None
         )
     except (ValueError, TypeError, OverflowError) as exc:
@@ -262,14 +187,14 @@ def exchange(
             "The token expiry returned by the platform is invalid.",
             502,
         ) from exc
-    return token
+    return tok
 
 
-def revoke(provider: OAuthProvider, app: dict, token: dict) -> dict:
+def revoke(provider: OAuthProvider, app: dict, token_data: dict) -> dict:
     """Use revocation APIs; otherwise return the provider's consent-removal page."""
     channel = provider.channel
-    access = token["access_token"]
-    credential = token.get("refresh_token") or access
+    access = token_data["access_token"]
+    credential = token_data.get("refresh_token") or access
     headers = {"User-Agent": "Adjutant/2.0"}
     if channel == "meta":
         result = request_json(
@@ -287,47 +212,25 @@ def revoke(provider: OAuthProvider, app: dict, token: dict) -> dict:
             headers=headers,
             allow_empty=True,
         )
-    elif channel in {"reddit", "pinterest"}:
+    elif channel == "reddit":
         basic = base64.b64encode(f"{app['client_id']}:{app['client_secret']}".encode()).decode()
         headers["Authorization"] = "Basic " + basic
-        endpoint = (
-            "https://www.reddit.com/api/v1/revoke_token"
-            if channel == "reddit"
-            else "https://api.pinterest.com/v5/oauth/token/revoke"
-        )
         request_json(
             "POST",
-            endpoint,
+            "https://www.reddit.com/api/v1/revoke_token",
             headers=headers,
             allow_empty=True,
             data={
                 "token": credential,
                 "token_type_hint": (
-                    "refresh_token" if token.get("refresh_token") else "access_token"
+                    "refresh_token" if token_data.get("refresh_token") else "access_token"
                 ),
             },
         )
-    elif channel == "tiktok":
-        request_json(
-            "POST",
-            "https://business-api.tiktok.com/open_api/v1.3/oauth2/revoke_token/",
-            headers={**headers, "Access-Token": access},
-            json={
-                "app_id": app["client_id"],
-                "secret": app["client_secret"],
-                "access_token": access,
-            },
-        )
-    else:
-        pages = {
-            "microsoft": "https://account.live.com/consent/Manage",
-            "linkedin": "https://www.linkedin.com/psettings/permitted-services",
-            "snapchat": "https://accounts.snapchat.com/accounts/oauth2/apps",
-            "amazon_ads": "https://www.amazon.com/ap/adam",
-        }
+    elif channel == "linkedin":
         return {
             "remote_revoked": False,
-            "revocation_url": pages[channel],
+            "revocation_url": "https://www.linkedin.com/psettings/permitted-services",
             "message": "Remove application consent on the platform to revoke the remote grant.",
         }
     return {
@@ -337,10 +240,10 @@ def revoke(provider: OAuthProvider, app: dict, token: dict) -> dict:
     }
 
 
-def discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
+def discover(provider: OAuthProvider, app: dict, token_data: dict) -> list[dict]:
     """Validate provider responses before account identities enter persistence."""
     try:
-        return _discover(provider, app, token)
+        return _discover(provider, app, token_data)
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         raise DomainError(
             "PlatformResponseInvalid",
@@ -382,9 +285,9 @@ def reddit_pages(method: str, path: str, headers: dict) -> list[dict]:
     raise DomainError("AccountDiscoveryLimit", "Reddit account pagination exceeded 100 pages.", 502)
 
 
-def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
+def _discover(provider: OAuthProvider, app: dict, token_data: dict) -> list[dict]:
     headers = {
-        "Authorization": "Bearer " + token["access_token"],
+        "Authorization": "Bearer " + token_data["access_token"],
         "User-Agent": "Adjutant/2.0",
     }
     channel = provider.channel
@@ -496,17 +399,6 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
                     502,
                 )
         return accounts
-    elif channel == "tiktok":
-        headers = {"Access-Token": token["access_token"]}
-        result = request_json(
-            "GET",
-            "https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/",
-            params={"app_id": app["client_id"], "secret": app["client_secret"]},
-            headers=headers,
-        )
-        for item in result["data"]["list"]:
-            account(item, "advertiser_id", "advertiser_name")
-        return accounts
     elif channel == "linkedin":
         headers.update({"LinkedIn-Version": "202608", "X-Restli-Protocol-Version": "2.0.0"})
         for page in range(100):
@@ -520,39 +412,6 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
                 account(item, currency=item.get("currency"))
             if len(result["elements"]) < 100:
                 return accounts
-    elif channel == "microsoft":
-        headers = {
-            "Authorization": "Bearer " + token["access_token"],
-            "DeveloperToken": app["developer_token"],
-        }
-        base = "https://clientcenter.api.bingads.microsoft.com/CustomerManagement/v13"
-        user = request_json("POST", base + "/User/Query", json={"UserId": None}, headers=headers)
-        for page in range(100):
-            result = request_json(
-                "POST",
-                base + "/Accounts/Search",
-                headers=headers,
-                json={
-                    "Predicates": [
-                        {
-                            "Field": "UserId",
-                            "Operator": "Equals",
-                            "Value": str(user["User"]["Id"]),
-                        }
-                    ],
-                    "PageInfo": {"Index": page, "Size": 100},
-                },
-            )
-            for item in result.get("Accounts", []):
-                account(
-                    item,
-                    "Id",
-                    "Name",
-                    customer_id=str(item["ParentCustomerId"]),
-                    currency=item.get("CurrencyCode"),
-                )
-            if len(result.get("Accounts", [])) < 100:
-                return accounts
     elif channel == "reddit":
         businesses = reddit_pages("GET", "/me/businesses", headers)
         seen_accounts: set[str] = set()
@@ -563,55 +422,6 @@ def _discover(provider: OAuthProvider, app: dict, token: dict) -> list[dict]:
                 if str(item["id"]) not in seen_accounts:
                     account(item, currency=item.get("currency"), business_id=business["id"])
                     seen_accounts.add(str(item["id"]))
-        return accounts
-    elif channel == "pinterest":
-        params = {"page_size": 100}
-        for _ in range(100):
-            result = request_json(
-                "GET",
-                "https://api.pinterest.com/v5/ad_accounts",
-                params=params,
-                headers=headers,
-            )
-            for item in result["items"]:
-                account(item, currency=item.get("currency"))
-            if not result.get("bookmark"):
-                return accounts
-            params["bookmark"] = result["bookmark"]
-    elif channel == "snapchat":
-        result = request_json(
-            "GET",
-            "https://adsapi.snapchat.com/v1/me/organizations",
-            params={"with_ad_accounts": "true"},
-            headers=headers,
-        )
-        for item in result["organizations"]:
-            organization = item["organization"]
-            for entry in organization.get("ad_accounts", []):
-                value = entry.get("ad_account", entry)
-                account(
-                    value,
-                    organization_id=organization["id"],
-                    currency=value.get("currency"),
-                )
-        return accounts
-    elif channel == "amazon_ads":
-        origins = {
-            "NA": "https://advertising-api.amazon.com",
-            "EU": "https://advertising-api-eu.amazon.com",
-            "FE": "https://advertising-api-fe.amazon.com",
-        }
-        headers["Amazon-Advertising-API-ClientId"] = app["client_id"]
-        result = request_json("GET", origins[app["region"]] + "/v2/profiles", headers=headers)
-        for item in result:
-            account(
-                {
-                    "id": str(item["profileId"]),
-                    "name": item.get("accountInfo", {}).get("name"),
-                },
-                currency=item.get("currencyCode"),
-                country=item.get("countryCode"),
-            )
         return accounts
     raise DomainError(
         "AccountDiscoveryLimit",

@@ -101,9 +101,26 @@ def seed_concepts(admin_url: str, identity: dict, storage: ObjectStore) -> str:
                     ],
                     "destination_path": "repairs",
                 },
-                "tiktok": {
-                    "hook": "That dripping tap again?",
-                    "visual_script": "A plumber inspecting a fixture.",
+                "youtube": {
+                    "headline": "Home Plumbing Repairs",
+                    "long_headline": "Fast & Reliable Residential Plumbing Repairs in Your Area",
+                    "description": (
+                        "Professional residential repair services. Contact our team today."
+                    ),
+                    "cta": "Contact us",
+                },
+                "linkedin": {
+                    "introductory_text": (
+                        "Need commercial or residential plumbing repairs? "
+                        "Connect with our licensed professionals today."
+                    ),
+                    "headline": "Professional Plumbing Services & Repairs",
+                    "cta": "Contact us",
+                },
+                "reddit": {
+                    "post_title": (
+                        "Local homeowner plumbing maintenance tips and reliable repair support"
+                    ),
                     "cta": "Contact us",
                 },
             }

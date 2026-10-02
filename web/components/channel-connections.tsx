@@ -161,16 +161,6 @@ function ChannelConnection({
                   />
                 </label>
               )}
-              {state.required_fields.includes("region") && (
-                <label>
-                  Advertising region
-                  <select name="region" disabled={busy}>
-                    <option value="NA">North America</option>
-                    <option value="EU">Europe</option>
-                    <option value="FE">Far East</option>
-                  </select>
-                </label>
-              )}
               <button className="button" disabled={busy}>
                 Save application
               </button>

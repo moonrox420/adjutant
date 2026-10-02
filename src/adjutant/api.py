@@ -478,13 +478,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "meta": True,
             "google_ads": False,
             "youtube": False,
-            "tiktok": True,
             "linkedin": True,
-            "microsoft": False,
             "reddit": False,
-            "pinterest": True,
-            "snapchat": False,
-            "amazon_ads": False,
         }
         matrix = []
         for r in rows:

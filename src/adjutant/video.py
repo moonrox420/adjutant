@@ -23,20 +23,20 @@ class SafeArea:
 # Safe areas account for overlay chrome per channel format
 SAFE_AREAS = {
     "9:16": {
-        "tiktok": SafeArea(top_pct=0.10, bottom_pct=0.20, left_pct=0.05, right_pct=0.15),
         "meta": SafeArea(top_pct=0.12, bottom_pct=0.18, left_pct=0.06, right_pct=0.06),
-        "snapchat": SafeArea(top_pct=0.10, bottom_pct=0.15, left_pct=0.05, right_pct=0.05),
         "youtube": SafeArea(top_pct=0.08, bottom_pct=0.16, left_pct=0.05, right_pct=0.12),
         "default": SafeArea(top_pct=0.10, bottom_pct=0.18, left_pct=0.05, right_pct=0.10),
     },
     "1:1": {
         "meta": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
         "linkedin": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
+        "reddit": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
         "default": SafeArea(top_pct=0.05, bottom_pct=0.05, left_pct=0.05, right_pct=0.05),
     },
     "16:9": {
         "youtube": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
         "google_ads": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
+        "reddit": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
         "default": SafeArea(top_pct=0.08, bottom_pct=0.10, left_pct=0.08, right_pct=0.08),
     },
 }

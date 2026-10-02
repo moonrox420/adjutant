@@ -63,8 +63,15 @@ export type Brand = {
   active_objects: number;
   stopped: boolean;
 };
+export type ChannelName =
+  | "meta"
+  | "google_ads"
+  | "youtube"
+  | "linkedin"
+  | "reddit";
+
 export type Allocation = {
-  channel: string;
+  channel: ChannelName;
   monthly_budget_usd: string;
   daily_budget_usd: string;
 };
@@ -122,7 +129,7 @@ export type Audit = {
 };
 export type Workspace = {
   connections: {
-    channel: string;
+    channel: ChannelName;
     external_account_name: string;
     verified_at: string | null;
     health: string;
@@ -142,7 +149,7 @@ export type Workspace = {
   stop: { reason: string } | null;
 };
 export type Channel = {
-  channel: string;
+  channel: ChannelName;
   registry_version: string;
   objectives: string[];
   prerequisites: string[];
