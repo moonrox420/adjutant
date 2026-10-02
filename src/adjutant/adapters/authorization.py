@@ -131,17 +131,20 @@ def request_json(method: str, url: str, *, allow_empty: bool = False, **kwargs: 
         ) from exc
 
 
-def token(
+def exchange(
     provider: OAuthProvider,
     app: dict,
     redirect: str,
-    code: str,
     *,
-    refresh: bool = False,
+    code: str = "",
     previous: dict | None = None,
     timeout: float = 30.0,
 ) -> dict:
-    """Fetch an access token; validate expiration without leaking credentials into traces."""
+    """Fetch or refresh an access token.
+
+    Validate expiration without leaking credentials into traces.
+    """
+    refresh = not code
     form = {
         "client_id": app["client_id"],
         "client_secret": app["client_secret"],
@@ -188,6 +191,9 @@ def token(
             502,
         ) from exc
     return tok
+
+
+token = exchange
 
 
 def revoke(provider: OAuthProvider, app: dict, token_data: dict) -> dict:

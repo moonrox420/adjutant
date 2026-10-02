@@ -12,12 +12,13 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(arguments: list[str], **kwargs) -> subprocess.CompletedProcess:
+def run(arguments: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
     return subprocess.run(arguments, check=True, cwd=ROOT, **kwargs)
 
 
@@ -188,10 +189,14 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
     env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
     env["ADJUTANT_RUNNER_CONFIG"] = str(config_path)
     # Configuration and credentials stay out of process arguments and HTTP access logs.
+    server_log_path = state / "server.log"
+    server_log = open(server_log_path, "w", encoding="utf-8")
     process = subprocess.Popen(
         [sys.executable, str(ROOT / "scripts/serve.py"), "--port", str(port)],
         cwd=ROOT,
         env=env,
+        stdout=server_log,
+        stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     try:
@@ -199,14 +204,32 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         while True:
             if process.poll() is not None:
-                raise RuntimeError(f"HTTP service exited with code {process.returncode}")
+                server_log.flush()
+                error_detail = ""
+                if server_log_path.exists():
+                    error_detail = server_log_path.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).strip()
+                message = f"HTTP service exited with code {process.returncode}"
+                if error_detail:
+                    message = f"{message}:\n{error_detail}"
+                raise RuntimeError(message)
             try:
                 with opener.open(f"http://127.0.0.1:{port}/readyz", timeout=1) as response:
                     if response.status == 200:
                         break
             except (urllib.error.URLError, TimeoutError):
                 if time.monotonic() >= deadline:
-                    raise RuntimeError("HTTP service failed its readiness deadline") from None
+                    server_log.flush()
+                    error_detail = ""
+                    if server_log_path.exists():
+                        error_detail = server_log_path.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).strip()
+                    message = "HTTP service failed its readiness deadline"
+                    if error_detail:
+                        message = f"{message}:\n{error_detail}"
+                    raise RuntimeError(message) from None
                 time.sleep(0.2)
         print(f"Adjutant S0 ready at http://127.0.0.1:{port}/docs", flush=True)
         print(
@@ -220,7 +243,14 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
             return
         process.wait()
         if process.returncode:
-            raise RuntimeError(f"HTTP service exited with code {process.returncode}")
+            server_log.flush()
+            error_detail = ""
+            if server_log_path.exists():
+                error_detail = server_log_path.read_text(encoding="utf-8", errors="replace").strip()
+            message = f"HTTP service exited with code {process.returncode}"
+            if error_detail:
+                message = f"{message}:\n{error_detail}"
+            raise RuntimeError(message)
     finally:
         if process.poll() is None:
             process.terminate()
@@ -229,6 +259,7 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+        server_log.close()
 
 
 def main() -> None:
