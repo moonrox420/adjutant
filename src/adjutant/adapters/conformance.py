@@ -185,6 +185,16 @@ class BaseChannelAdapter:
         self.credentials = credentials
         self._journal: dict[str, RemoteHierarchy] = {}
 
+    async def aclose(self) -> None:
+        """Deterministically release HTTP client resources."""
+        await self.client.aclose()
+
+    async def __aenter__(self) -> "BaseChannelAdapter":
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose()
+
     def _get_target(self, obj: RemoteObject) -> CampaignTarget:
         return CampaignTarget(
             channel=self.channel,
@@ -739,17 +749,22 @@ async def run_adapter_conformance(
     channel: str, adapter: ChannelAdapter | None = None
 ) -> dict[str, Any]:
     """Execute all 5 conformance tests for a given channel adapter."""
+    created_locally = adapter is None
     ad = adapter or create_adapter(channel)
-    results = {
-        "channel": channel,
-        "capability_accuracy": await test_capability_accuracy(ad),
-        "idempotency_under_timeout": await test_idempotency_under_induced_timeout(ad),
-        "silent_failure_verification": await test_verification_catching_silent_failure(ad),
-        "verbatim_rejection_capture": await test_verbatim_rejection_capture(ad),
-        "quota_rate_limit_enforcement": await test_quota_rate_limit_enforcement(ad),
-    }
-    results["all_passed"] = all(v is True for k, v in results.items() if k != "channel")
-    return results
+    try:
+        results = {
+            "channel": channel,
+            "capability_accuracy": await test_capability_accuracy(ad),
+            "idempotency_under_timeout": await test_idempotency_under_induced_timeout(ad),
+            "silent_failure_verification": await test_verification_catching_silent_failure(ad),
+            "verbatim_rejection_capture": await test_verbatim_rejection_capture(ad),
+            "quota_rate_limit_enforcement": await test_quota_rate_limit_enforcement(ad),
+        }
+        results["all_passed"] = all(v is True for k, v in results.items() if k != "channel")
+        return results
+    finally:
+        if created_locally and hasattr(ad, "aclose"):
+            await ad.aclose()
 
 
 async def run_all_conformance() -> dict[str, Any]:

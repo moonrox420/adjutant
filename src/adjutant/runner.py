@@ -51,7 +51,7 @@ def run_tick(
     start_time = time.monotonic()
     escalations_raised = 0
 
-    # Step 0: Ensure tenant scope and acquire brand runner advisory lock
+    # Step 0: Ensure tenant scope and acquire brand runner advisory lock (PRD §2.1 & §10.1)
     ids_row: Any = conn.execute("SELECT current_brand_ids() AS ids").fetchone()
     current_ids = (ids_row["ids"] if ids_row else None) or []
     if brand_id not in current_ids:
@@ -60,7 +60,23 @@ def run_tick(
             "SELECT set_config('app.current_brand_ids', %s, true)",
             (",".join(map(str, new_ids)),),
         )
-    conn.execute("SELECT lock_runner_brand(%s)", (brand_id,))
+    lock_row: Any = conn.execute(
+        "SELECT pg_try_advisory_xact_lock(hashtext('adjutant:runner:' || %s::text)) AS acquired",
+        (brand_id,),
+    ).fetchone()
+    if not lock_row or not lock_row["acquired"]:
+        logger.info("Advisory lock for brand %s already held by another tick; skipping.", brand_id)
+        return {
+            "status": "skipped",
+            "tick_id": str(tid),
+            "reason": "Brand is currently locked by another worker or tick.",
+            "findings_detected": 0,
+            "decisions_evaluated": 0,
+            "actions_executed": 0,
+            "escalations_raised": 0,
+            "elapsed_ms": int((time.monotonic() - start_time) * 1000),
+        }
+
     brand = locked_brand(conn, brand_id)
     if brand.get("status") != "active" or not brand.get("campaigns_enabled"):
         return {

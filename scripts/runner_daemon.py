@@ -36,13 +36,13 @@ class RunnerDaemon:
 
     def run_brand_tick(self, brand_id: Any) -> None:
         try:
-            with self.db.transaction() as conn:
+            with self.db.transaction(extra_brand=brand_id) as conn:
                 result = run_tick(conn, self.config, self.events, brand_id)
                 logger.info(
-                    "Completed autonomous tick for brand %s: status=%s, executed=%s",
+                    "Completed autonomous tick for brand %s: status=%s, actions_executed=%s",
                     brand_id,
                     result.get("status"),
-                    result.get("executed", []),
+                    result.get("actions_executed", 0),
                 )
         except Exception as exc:
             logger.error("Error executing tick for brand %s: %s", brand_id, exc, exc_info=True)
@@ -63,10 +63,18 @@ class RunnerDaemon:
             logger.debug("No active brands with campaigns enabled found.")
             return
 
-        for brand in active_brands:
-            if not self.running:
-                break
-            self.run_brand_tick(brand["id"])
+        from concurrent.futures import ThreadPoolExecutor
+
+        max_workers = min(4, len(active_brands))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(self.run_brand_tick, brand["id"]) for brand in active_brands]
+            for f in futures:
+                if not self.running:
+                    break
+                try:
+                    f.result(timeout=120)
+                except Exception as exc:
+                    logger.error("Brand tick worker error: %s", exc)
 
     def start(self) -> None:
         self.db.open()

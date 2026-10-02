@@ -119,8 +119,9 @@ def _create_channel_fetcher(
     channel_token: dict[str, Any],
     account_identifier: str,
     meta_attributes: dict[str, Any],
-) -> Any:
+) -> tuple[Any, Any]:
     """Create a thread-safe bound fetcher closure for a specific channel connection."""
+    client = httpx.AsyncClient(timeout=15.0)
 
     def _fetcher(
         channel: str,
@@ -130,18 +131,17 @@ def _create_channel_fetcher(
         window_end: datetime,
     ) -> dict[str, Any]:
         async def _run() -> dict[str, Any]:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                return await fetch_live_channel_metrics(
-                    channel=channel_name,
-                    client=client,
-                    app=app_credentials,
-                    token=channel_token,
-                    account_id=account_identifier,
-                    native_id=native_id,
-                    window_start=window_start,
-                    window_end=window_end,
-                    metadata=meta_attributes,
-                )
+            return await fetch_live_channel_metrics(
+                channel=channel_name,
+                client=client,
+                app=app_credentials,
+                token=channel_token,
+                account_id=account_identifier,
+                native_id=native_id,
+                window_start=window_start,
+                window_end=window_end,
+                metadata=meta_attributes,
+            )
 
         try:
             try:
@@ -164,7 +164,21 @@ def _create_channel_fetcher(
             )
             return {}
 
-    return _fetcher
+    def _cleanup() -> None:
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    pool.submit(asyncio.run, client.aclose()).result()
+            else:
+                asyncio.run(client.aclose())
+        except Exception:
+            pass
+
+    return _fetcher, _cleanup
 
 
 def sync_live_brand_metrics(
@@ -202,7 +216,7 @@ def sync_live_brand_metrics(
             )
             continue
 
-        fetcher = _create_channel_fetcher(
+        fetcher, cleanup = _create_channel_fetcher(
             channel_name=channel,
             app_credentials=app,
             channel_token=token,
@@ -233,5 +247,7 @@ def sync_live_brand_metrics(
                 sync_exc,
                 exc_info=True,
             )
+        finally:
+            cleanup()
 
     return total_synced

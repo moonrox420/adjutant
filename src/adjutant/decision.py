@@ -119,6 +119,27 @@ def evaluate_guardrails(
                 "params": params,
             }
 
+    # Hard guardrail: monthly_spend_cap_usd (PRD §3.2)
+    monthly_cap = Decimal(str(limits["monthly_spend_cap_usd"]))
+    month_spend_row: Any = conn.execute(
+        """SELECT COALESCE(sum(spend_usd), 0) AS total_spend FROM metric_fact_raw
+        WHERE brand_id=%s AND date_hour >= date_trunc('month', now())""",
+        (brand_id,),
+    ).fetchone()
+    current_month_spend = (
+        Decimal(str(month_spend_row["total_spend"])) if month_spend_row else Decimal("0.00")
+    )
+    if current_month_spend >= monthly_cap:
+        return {
+            "approved": False,
+            "state": "rejected",
+            "reason": (
+                f"Breaches monthly_spend_cap_usd of {monthly_cap} "
+                f"(current month spend: {current_month_spend})."
+            ),
+            "params": params,
+        }
+
     # Hard guardrail: daily_spend_cap_usd
     daily_cap = Decimal(str(limits["daily_spend_cap_usd"]))
     raw_proposed = Decimal(str(params.get("proposed_daily_usd", "0.00")))
@@ -174,6 +195,68 @@ def evaluate_guardrails(
                 params["proposed_daily_usd"] = str(clamped_daily.quantize(Decimal("0.01")))
                 proposed_daily = clamped_daily
 
+    # Hard guardrails: per_channel_cap_pct & min_channel_floor_pct (PRD §3.2)
+    if kind == "reallocate_budget":
+        per_channel_cap = Decimal(str(limits.get("per_channel_cap_pct") or 60))
+        min_channel_floor = Decimal(str(limits.get("min_channel_floor_pct") or 0))
+        target_channel = params.get("target_channel") or channel
+        source_channel = params.get("source_channel")
+        shift_amount = Decimal(str(params.get("shift_amount_usd", "0.00")))
+
+        channel_spends: Any = conn.execute(
+            """SELECT channel, COALESCE(sum(daily_budget_usd), 0) AS channel_daily
+            FROM campaign_object
+            WHERE brand_id=%s AND state='active' AND level IN ('campaign', 'ad')
+            GROUP BY channel""",
+            (brand_id,),
+        ).fetchall()
+        channel_map = {row["channel"]: Decimal(str(row["channel_daily"])) for row in channel_spends}
+        total_active_daily = sum(channel_map.values(), Decimal("0.00"))
+
+        if total_active_daily > 0:
+            if source_channel and min_channel_floor > 0:
+                cur_src = channel_map.get(source_channel, Decimal("0.00"))
+                new_src = cur_src - shift_amount
+                new_src_pct = (new_src / total_active_daily) * Decimal("100.0")
+                if new_src_pct < min_channel_floor:
+                    return {
+                        "approved": False,
+                        "state": "rejected",
+                        "reason": (
+                            f"Breaches min_channel_floor_pct of {min_channel_floor}% for channel "
+                            f"'{source_channel}' (projected share: {new_src_pct:.1f}%)."
+                        ),
+                        "params": params,
+                    }
+
+            cur_tgt = channel_map.get(target_channel, Decimal("0.00"))
+            new_tgt = cur_tgt + shift_amount
+            new_tgt_pct = (new_tgt / total_active_daily) * Decimal("100.0")
+            if new_tgt_pct > per_channel_cap:
+                esc_id = record_escalation(
+                    conn,
+                    brand_id,
+                    "guardrail_breach",
+                    "channel",
+                    None,
+                    {
+                        "reason": f"Channel '{target_channel}' would exceed per_channel_cap_pct",
+                        "channel": target_channel,
+                        "projected_pct": float(new_tgt_pct),
+                        "cap_pct": float(per_channel_cap),
+                    },
+                )
+                return {
+                    "approved": False,
+                    "state": "escalated",
+                    "escalation_id": esc_id,
+                    "reason": (
+                        f"Reallocation would breach per_channel_cap_pct ({per_channel_cap}%) "
+                        f"for channel '{target_channel}' ({new_tgt_pct:.1f}% projected); escalated."
+                    ),
+                    "params": params,
+                }
+
     # Hard guardrail: requires_approval_above_usd
     req_above = limits.get("requires_approval_above_usd")
     if req_above is not None:
@@ -200,6 +283,23 @@ def evaluate_guardrails(
                     f"Budget delta {proposed_delta} exceeds threshold {req_above}; "
                     "escalated for approval."
                 ),
+                "params": params,
+            }
+
+    # Hard guardrail: max_new_campaigns_per_day (PRD §3.2)
+    if kind in {"create_campaign", "new_campaign"}:
+        camps_row: Any = conn.execute(
+            """SELECT count(*) AS n FROM campaign_object
+            WHERE brand_id=%s AND level='campaign' AND created_at >= now() - interval '24 hours'""",
+            (brand_id,),
+        ).fetchone()
+        camps_today = camps_row["n"] if camps_row else 0
+        max_camps = limits.get("max_new_campaigns_per_day", 3)
+        if camps_today >= max_camps:
+            return {
+                "approved": False,
+                "state": "rejected",
+                "reason": f"Breaches max_new_campaigns_per_day limit of {max_camps}.",
                 "params": params,
             }
 

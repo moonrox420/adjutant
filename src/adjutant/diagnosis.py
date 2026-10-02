@@ -79,57 +79,71 @@ def diagnose_campaign_objects(
         (brand_id,),
     ).fetchall()
 
+    if not objects:
+        return []
+
+    agg_rows: Any = conn.execute(
+        """SELECT
+            campaign_object_id,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '7 days'
+                THEN impressions ELSE 0 END), 0) AS total_impressions,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '7 days'
+                THEN clicks ELSE 0 END), 0) AS total_clicks,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '7 days'
+                THEN spend_usd ELSE 0 END), 0) AS total_spend,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '7 days'
+                THEN conversions ELSE 0 END), 0) AS total_conversions,
+            avg(CASE
+                WHEN date_hour >= now() - interval '7 days'
+                THEN frequency ELSE NULL END) AS avg_freq,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '14 days'
+                     AND date_hour < now() - interval '7 days'
+                THEN impressions ELSE 0 END), 0) AS prior_impressions,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '14 days'
+                     AND date_hour < now() - interval '7 days'
+                THEN clicks ELSE 0 END), 0) AS prior_clicks,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '14 days'
+                     AND date_hour < now() - interval '7 days'
+                THEN spend_usd ELSE 0 END), 0) AS prior_spend,
+            COALESCE(sum(CASE
+                WHEN date_hour >= now() - interval '14 days'
+                     AND date_hour < now() - interval '7 days'
+                THEN conversions ELSE 0 END), 0) AS prior_conversions
+        FROM metric_fact_raw
+        WHERE brand_id=%s AND date_hour >= now() - interval '14 days'
+        GROUP BY campaign_object_id""",
+        (brand_id,),
+    ).fetchall()
+
+    metrics_by_obj: dict[UUID, dict[str, Any]] = {
+        row["campaign_object_id"]: dict(row) for row in agg_rows
+    }
+
     for obj in objects:
-        metrics: Any = conn.execute(
-            """SELECT
-                sum(impressions) AS total_impressions,
-                sum(clicks) AS total_clicks,
-                sum(spend_usd) AS total_spend,
-                sum(conversions) AS total_conversions,
-                avg(frequency) AS avg_freq
-            FROM metric_fact_raw
-            WHERE brand_id=%s AND campaign_object_id=%s
-              AND date_hour >= now() - interval '7 days'""",
-            (brand_id, obj["id"]),
-        ).fetchone()
-
-        prior_metrics: Any = conn.execute(
-            """SELECT
-                sum(impressions) AS prior_impressions,
-                sum(clicks) AS prior_clicks,
-                sum(spend_usd) AS prior_spend,
-                sum(conversions) AS prior_conversions
-            FROM metric_fact_raw
-            WHERE brand_id=%s AND campaign_object_id=%s
-              AND date_hour >= now() - interval '14 days'
-              AND date_hour < now() - interval '7 days'""",
-            (brand_id, obj["id"]),
-        ).fetchone()
-
-        if not metrics or not metrics["total_impressions"]:
+        m = metrics_by_obj.get(obj["id"])
+        if not m or not m["total_impressions"]:
             continue
 
-        impressions = Decimal(str(metrics["total_impressions"]))
-        clicks = Decimal(str(metrics["total_clicks"]))
-        spend = Decimal(str(metrics["total_spend"]))
-        conversions = Decimal(str(metrics["total_conversions"]))
-        frequency = Decimal(str(metrics["avg_freq"] or "1.0"))
+        impressions = Decimal(str(m["total_impressions"]))
+        clicks = Decimal(str(m["total_clicks"]))
+        spend = Decimal(str(m["total_spend"]))
+        conversions = Decimal(str(m["total_conversions"]))
+        frequency = Decimal(str(m["avg_freq"] or "1.0"))
 
         ctr = clicks / impressions if impressions > 0 else Decimal("0.0")
         cpa = spend / conversions if conversions > 0 else Decimal("9999.0")
 
-        prior_imp = (
-            Decimal(str(prior_metrics["prior_impressions"] or 0)) if prior_metrics else Decimal("0")
-        )
-        prior_clicks = (
-            Decimal(str(prior_metrics["prior_clicks"] or 0)) if prior_metrics else Decimal("0")
-        )
-        prior_spend = (
-            Decimal(str(prior_metrics["prior_spend"] or 0)) if prior_metrics else Decimal("0")
-        )
-        prior_conv = (
-            Decimal(str(prior_metrics["prior_conversions"] or 0)) if prior_metrics else Decimal("0")
-        )
+        prior_imp = Decimal(str(m["prior_impressions"] or 0))
+        prior_clicks = Decimal(str(m["prior_clicks"] or 0))
+        prior_spend = Decimal(str(m["prior_spend"] or 0))
+        prior_conv = Decimal(str(m["prior_conversions"] or 0))
 
         prior_ctr = prior_clicks / prior_imp if prior_imp > 0 else ctr
         prior_cpa = prior_spend / prior_conv if prior_conv > 0 else cpa
