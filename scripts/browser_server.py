@@ -82,7 +82,8 @@ with psycopg.connect(admin_url) as conn:
         "VALUES(%s,3000,100)",
         (stop_brand,),
     )
-    for (channel,) in conn.execute("SELECT unnest(enum_range(NULL::channel))::text").fetchall():
+    active_channels = ("meta", "google_ads", "youtube", "linkedin", "reddit")
+    for channel in active_channels:
         conn_row = conn.execute(
             "INSERT INTO channel_connection(brand_id,channel,external_ad_account_id,selected) "
             "VALUES(%s,%s,'browser-test-account',true) RETURNING id",

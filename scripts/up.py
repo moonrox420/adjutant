@@ -199,6 +199,8 @@ def start(state: Path, port: int, db_port: int, *, check: bool = False) -> None:
         stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
+    runner_process: subprocess.Popen[Any] | None = None
+    runner_log: Any = None
     try:
         deadline = time.monotonic() + 30
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
