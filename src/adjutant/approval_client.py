@@ -33,6 +33,21 @@ def decide_remotely(
     return body
 
 
+def authorize_launch_remotely(
+    config: Settings,
+    brand_id: UUID,
+    plan_id: UUID,
+    session: str,
+    approval_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Forward authenticated launch authorization intent to the approval service."""
+    return approval_request(
+        config,
+        f"/internal/brands/{brand_id}/plans/{plan_id}/authorize-launch",
+        {"session": session, "approval": approval_payload},
+    )
+
+
 def approval_request(config: Settings, path: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Send a bounded authenticated request to the configured approval origin only."""
     try:

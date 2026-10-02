@@ -204,4 +204,85 @@ def diagnose_campaign_objects(
                 }
             )
 
+    # Evaluate cross-channel reallocation opportunities
+    campaigns: Any = conn.execute(
+        """SELECT
+            co.id, co.channel, co.daily_budget_usd,
+            COALESCE(sum(m.spend_usd), 0) AS total_spend,
+            COALESCE(sum(m.conversions), 0) AS total_conv
+        FROM campaign_object co
+        LEFT JOIN metric_fact_raw m ON m.campaign_object_id=co.id
+          AND m.date_hour >= now() - interval '7 days'
+        WHERE co.brand_id=%s AND co.level='campaign' AND co.state='active'
+        GROUP BY co.id, co.channel, co.daily_budget_usd
+        HAVING sum(m.conversions) > 0 AND sum(m.spend_usd) > 50.00""",
+        (brand_id,),
+    ).fetchall()
+
+    if len(campaigns) >= 2:
+        cooldown_row = conn.execute(
+            """SELECT 1 FROM action
+            WHERE brand_id=%s AND action_type='budget_reallocation'
+              AND executed_at > now() - interval '72 hours'""",
+            (brand_id,),
+        ).fetchone()
+
+        if not cooldown_row:
+            evaluated = []
+            for c in campaigns:
+                sp = Decimal(str(c["total_spend"]))
+                cv = Decimal(str(c["total_conv"]))
+                cpa_val = sp / cv if cv > 0 else Decimal("99999.0")
+                comp_row: Any = conn.execute(
+                    """SELECT comparability FROM metric_normalized
+                    WHERE campaign_object_id=%s ORDER BY date_hour DESC LIMIT 1""",
+                    (c["id"],),
+                ).fetchone()
+                comp_class = comp_row["comparability"] if comp_row else "direct"
+                evaluated.append({**c, "cpa": cpa_val, "comparability": comp_class})
+
+            best = min(evaluated, key=lambda x: x["cpa"])
+            worst = max(evaluated, key=lambda x: x["cpa"])
+
+            if (
+                best["id"] != worst["id"]
+                and best["comparability"] == worst["comparability"]
+                and best["cpa"] <= worst["cpa"] * Decimal("0.70")
+            ):
+                finding_id = record_finding(
+                    conn,
+                    brand_id,
+                    "inefficiency",
+                    worst["id"],
+                    [],
+                    {
+                        "source_campaign_id": str(worst["id"]),
+                        "target_campaign_id": str(best["id"]),
+                        "source_channel": worst["channel"],
+                        "target_channel": best["channel"],
+                        "source_cpa": float(worst["cpa"]),
+                        "target_cpa": float(best["cpa"]),
+                        "source_comparability": worst["comparability"],
+                        "target_comparability": best["comparability"],
+                    },
+                )
+                findings.append(
+                    {
+                        "finding_id": finding_id,
+                        "kind": "inefficiency",
+                        "object_id": worst["id"],
+                        "channel": worst["channel"],
+                        "details": {
+                            "source_campaign_id": str(worst["id"]),
+                            "target_campaign_id": str(best["id"]),
+                            "source_channel": worst["channel"],
+                            "target_channel": best["channel"],
+                            "source_cpa": float(worst["cpa"]),
+                            "target_cpa": float(best["cpa"]),
+                            "source_comparability": worst["comparability"],
+                            "target_comparability": best["comparability"],
+                        },
+                    }
+                )
+
     return findings

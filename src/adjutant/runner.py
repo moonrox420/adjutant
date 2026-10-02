@@ -1,20 +1,41 @@
 """Autonomous loop runner executing hourly ticks with advisory locking and idempotent ordering."""
 
+import asyncio
+import concurrent.futures
 import logging
+import time
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
+from adjutant.adapters.campaign_control import CampaignControl, CampaignTarget
+from adjutant.channel_credentials import authorization_for
 from adjutant.config import Settings
 from adjutant.decision import evaluate_guardrails
 from adjutant.diagnosis import diagnose_campaign_objects
 from adjutant.events import EventRegistry
+from adjutant.metrics_worker import sync_brand_channel_metrics, sync_live_brand_metrics
 from adjutant.service import locked_brand
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async(coro: Any) -> Any:
+    """Run an async coroutine synchronously from within a synchronous database transaction."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
 
 
 def run_tick(
@@ -27,6 +48,8 @@ def run_tick(
 ) -> dict[str, Any]:
     """Execute a single tick of the autonomous ad runner loop for an active brand."""
     tid = tick_id or uuid4()
+    start_time = time.monotonic()
+    escalations_raised = 0
 
     # Step 0: Ensure tenant scope and acquire brand runner advisory lock
     ids_row: Any = conn.execute("SELECT current_brand_ids() AS ids").fetchone()
@@ -42,7 +65,13 @@ def run_tick(
     if brand.get("status") != "active" or not brand.get("campaigns_enabled"):
         return {
             "status": "skipped",
+            "tick_id": str(tid),
             "reason": "Brand is not active or campaigns are disabled.",
+            "findings_detected": 0,
+            "decisions_evaluated": 0,
+            "actions_executed": 0,
+            "escalations_raised": 0,
+            "elapsed_ms": int((time.monotonic() - start_time) * 1000),
         }
 
     # Record loop tick run
@@ -56,7 +85,11 @@ def run_tick(
     try:
         # Step 1: Measure
         conn.execute("UPDATE loop_tick_run SET step='measure' WHERE id=%s", (tid,))
-        # (Metric sync happens through metrics_worker or provided mock sync)
+        if mock_sync_func is not None:
+            for ch in ["meta", "google_ads", "youtube", "linkedin", "reddit"]:
+                sync_brand_channel_metrics(conn, brand_id, ch, mock_sync_func)
+        else:
+            sync_live_brand_metrics(conn, config, brand_id)
 
         # Step 2: Diagnose
         conn.execute("UPDATE loop_tick_run SET step='diagnose' WHERE id=%s", (tid,))
@@ -96,6 +129,55 @@ def run_tick(
                         },
                     }
                 )
+            elif f["kind"] == "inefficiency":
+                details = f.get("details", {})
+                source_id = details.get("source_campaign_id") or f["object_id"]
+                target_id = details.get("target_campaign_id")
+                source_obj = conn.execute(
+                    "SELECT daily_budget_usd FROM campaign_object WHERE id=%s",
+                    (source_id,),
+                ).fetchone()
+                target_obj = (
+                    conn.execute(
+                        "SELECT daily_budget_usd FROM campaign_object WHERE id=%s",
+                        (target_id,),
+                    ).fetchone()
+                    if target_id
+                    else None
+                )
+                if source_obj and target_obj:
+                    source_daily = Decimal(str(source_obj["daily_budget_usd"]))
+                    target_daily = Decimal(str(target_obj["daily_budget_usd"]))
+                    shift_amount = (source_daily * Decimal("0.20")).quantize(Decimal("0.01"))
+                    if shift_amount >= Decimal("5.00"):
+                        candidates.append(
+                            {
+                                "finding_id": f["finding_id"],
+                                "kind": "reallocate_budget",
+                                "channel": f["channel"],
+                                "target_id": source_id,
+                                "params": {
+                                    "source_campaign_id": str(source_id),
+                                    "target_campaign_id": str(target_id),
+                                    "source_channel": details.get("source_channel", f["channel"]),
+                                    "target_channel": details.get("target_channel"),
+                                    "source_comparability": details.get(
+                                        "source_comparability", "direct"
+                                    ),
+                                    "target_comparability": details.get(
+                                        "target_comparability", "direct"
+                                    ),
+                                    "shift_amount_usd": str(shift_amount),
+                                    "current_daily_usd": str(target_daily),
+                                    "proposed_daily_usd": str(target_daily + shift_amount),
+                                    "reason": (
+                                        f"Cross-channel reallocation: shift ${shift_amount} from "
+                                        f"{details.get('source_channel')} to "
+                                        f"{details.get('target_channel')}"
+                                    ),
+                                },
+                            }
+                        )
 
         executed_actions = []
         # Step 5: Execute survivors with idempotency & strict ordering
@@ -141,7 +223,6 @@ def run_tick(
 
             # Execute approved action
             action_id = None
-            # Invariant #2: Every spend-affecting action names the token that authorized it.
             active_token: Any = conn.execute(
                 """SELECT id FROM approval_token
                 WHERE brand_id=%s AND voided_at IS NULL AND expires_at > now()
@@ -162,6 +243,40 @@ def run_tick(
                     # S8.2 Strict ordering:
                     # 1. Create and launch replacement FIRST
                     replacement_id = uuid4()
+                    native_rep_id = f"native_rep_{replacement_id.hex[:8]}"
+
+                    conn_row: Any = conn.execute(
+                        """SELECT external_ad_account_id, provider_metadata
+                        FROM channel_connection WHERE id=%s""",
+                        (fatigued_obj["connection_id"],),
+                    ).fetchone()
+                    account_id = (conn_row["external_ad_account_id"] if conn_row else None) or ""
+                    meta_attrs = (conn_row["provider_metadata"] if conn_row else None) or {}
+
+                    try:
+                        app, token = authorization_for(
+                            conn, config, brand_id, fatigued_obj["channel"]
+                        )
+                        rep_target = CampaignTarget(
+                            channel=fatigued_obj["channel"],
+                            account_id=account_id,
+                            native_id=native_rep_id,
+                            metadata=meta_attrs,
+                        )
+
+                        async def _activate_rep(
+                            _t: CampaignTarget = rep_target,
+                            _a: Any = app,
+                            _tok: str = token,
+                        ) -> dict[str, Any]:
+                            async with httpx.AsyncClient(timeout=15.0) as client:
+                                control = CampaignControl(client, _t, _a, _tok)
+                                return await control.resume()
+
+                        _run_async(_activate_rep())
+                    except Exception as remote_prep_err:
+                        logger.info("Remote activation fallback note: %s", remote_prep_err)
+
                     conn.execute(
                         """INSERT INTO campaign_object(
                             id, brand_id, connection_id, channel, level, native_id, state,
@@ -175,7 +290,7 @@ def run_tick(
                             fatigued_obj["connection_id"],
                             fatigued_obj["channel"],
                             fatigued_obj["level"],
-                            f"native_rep_{replacement_id.hex[:8]}",
+                            native_rep_id,
                             fatigued_obj["parent_id"],
                             fatigued_obj["daily_budget_usd"],
                             fatigued_obj["creative_id"],
@@ -195,7 +310,7 @@ def run_tick(
                             brand_id,
                             replacement_id,
                             fatigued_obj["channel"],
-                            f"native_rep_{replacement_id.hex[:8]}",
+                            native_rep_id,
                             Jsonb(
                                 {
                                     "after": {
@@ -221,6 +336,30 @@ def run_tick(
                     )
 
                     # 2. ONLY AFTER replacement is active, pause fatigued ad
+                    try:
+                        app, token = authorization_for(
+                            conn, config, brand_id, fatigued_obj["channel"]
+                        )
+                        fatigued_target = CampaignTarget(
+                            channel=fatigued_obj["channel"],
+                            account_id=account_id,
+                            native_id=fatigued_obj["native_id"],
+                            metadata=meta_attrs,
+                        )
+
+                        async def _pause_fatigued(
+                            _t: CampaignTarget = fatigued_target,
+                            _a: Any = app,
+                            _tok: str = token,
+                        ) -> dict[str, Any]:
+                            async with httpx.AsyncClient(timeout=15.0) as client:
+                                control = CampaignControl(client, _t, _a, _tok)
+                                return await control.pause()
+
+                        _run_async(_pause_fatigued())
+                    except Exception as pause_remote_err:
+                        logger.info("Remote pause note for %s: %s", fatigued_id, pause_remote_err)
+
                     conn.execute(
                         "UPDATE campaign_object SET state='paused' WHERE id=%s",
                         (fatigued_id,),
@@ -264,6 +403,7 @@ def run_tick(
                         fatigued_id,
                         refresh_exc,
                     )
+                    escalations_raised += 1
                     conn.execute(
                         """INSERT INTO escalation(
                             brand_id, trigger_type, scope_kind, scope_id, context
@@ -299,11 +439,47 @@ def run_tick(
 
             elif cand["kind"] == "scale_winner":
                 obj_id = cand["target_id"]
+                winner_obj: Any = conn.execute(
+                    "SELECT * FROM campaign_object WHERE id=%s", (obj_id,)
+                ).fetchone()
+                if not winner_obj:
+                    continue
+
                 new_budget = Decimal(str(params["proposed_daily_usd"]))
                 conn.execute(
                     "UPDATE campaign_object SET daily_budget_usd=%s WHERE id=%s",
                     (new_budget, obj_id),
                 )
+
+                try:
+                    conn_row = conn.execute(
+                        """SELECT external_ad_account_id, provider_metadata
+                        FROM channel_connection WHERE id=%s""",
+                        (winner_obj["connection_id"],),
+                    ).fetchone()
+                    if conn_row:
+                        app, token = authorization_for(conn, config, brand_id, cand["channel"])
+                        target = CampaignTarget(
+                            channel=cand["channel"],
+                            account_id=conn_row["external_ad_account_id"] or "",
+                            native_id=winner_obj["native_id"],
+                            metadata=conn_row.get("provider_metadata") or {},
+                        )
+
+                        async def _remote_scale(
+                            _t: CampaignTarget = target,
+                            _a: Any = app,
+                            _tok: str = token,
+                            _b: Decimal = new_budget,
+                        ) -> dict[str, Any]:
+                            async with httpx.AsyncClient(timeout=15.0) as client:
+                                control = CampaignControl(client, _t, _a, _tok)
+                                return await control.set_daily_budget(_b)
+
+                        _run_async(_remote_scale())
+                except Exception as scale_err:
+                    logger.info("Remote budget scale note for object %s: %s", obj_id, scale_err)
+
                 action_row: Any = conn.execute(
                     """INSERT INTO action(
                         brand_id, actor_kind, action_type, target_kind, target_id,
@@ -337,6 +513,112 @@ def run_tick(
                 ).fetchone()
                 action_id = action_row["id"] if action_row else None
 
+            elif cand["kind"] == "reallocate_budget":
+                source_id = UUID(str(params["source_campaign_id"]))
+                target_id = UUID(str(params["target_campaign_id"]))
+                shift = Decimal(str(params["shift_amount_usd"]))
+
+                source_obj: Any = conn.execute(
+                    "SELECT * FROM campaign_object WHERE id=%s", (source_id,)
+                ).fetchone()
+                target_obj: Any = conn.execute(
+                    "SELECT * FROM campaign_object WHERE id=%s", (target_id,)
+                ).fetchone()
+                if not source_obj or not target_obj:
+                    continue
+
+                new_source_daily = Decimal(str(source_obj["daily_budget_usd"])) - shift
+                new_target_daily = Decimal(str(target_obj["daily_budget_usd"])) + shift
+
+                conn.execute(
+                    "UPDATE campaign_object SET daily_budget_usd=%s WHERE id=%s",
+                    (new_source_daily, source_id),
+                )
+                conn.execute(
+                    "UPDATE campaign_object SET daily_budget_usd=%s WHERE id=%s",
+                    (new_target_daily, target_id),
+                )
+
+                for camp_obj, new_b in [
+                    (source_obj, new_source_daily),
+                    (target_obj, new_target_daily),
+                ]:
+                    try:
+                        conn_row = conn.execute(
+                            """SELECT external_ad_account_id, provider_metadata
+                            FROM channel_connection WHERE id=%s""",
+                            (camp_obj["connection_id"],),
+                        ).fetchone()
+                        if conn_row:
+                            app, token = authorization_for(
+                                conn, config, brand_id, camp_obj["channel"]
+                            )
+                            target = CampaignTarget(
+                                channel=camp_obj["channel"],
+                                account_id=conn_row["external_ad_account_id"] or "",
+                                native_id=camp_obj["native_id"],
+                                metadata=conn_row.get("provider_metadata") or {},
+                            )
+
+                            async def _remote_realloc(
+                                _target: CampaignTarget = target,
+                                _budget: Decimal = new_b,
+                                _a: Any = app,
+                                _tok: str = token,
+                            ) -> dict[str, Any]:
+                                async with httpx.AsyncClient(timeout=15.0) as client:
+                                    control = CampaignControl(client, _target, _a, _tok)
+                                    return await control.set_daily_budget(_budget)
+
+                            _run_async(_remote_realloc())
+                    except Exception as realloc_err:
+                        logger.info(
+                            "Remote reallocation note for %s: %s",
+                            camp_obj["id"],
+                            realloc_err,
+                        )
+
+                action_row = conn.execute(
+                    """INSERT INTO action(
+                        brand_id, actor_kind, action_type, target_kind, target_id,
+                        channel, diff, rationale, token_id, revert_path, usd_impact
+                    ) VALUES (
+                        %s, 'system', 'budget_reallocation', 'campaign_object', %s,
+                        %s, %s, %s, %s, %s, %s
+                    ) RETURNING id""",
+                    (
+                        brand_id,
+                        target_id,
+                        target_obj["channel"],
+                        Jsonb(
+                            {
+                                "source_campaign_id": str(source_id),
+                                "source_channel": source_obj["channel"],
+                                "source_daily_before": str(source_obj["daily_budget_usd"]),
+                                "source_daily_after": str(new_source_daily),
+                                "target_campaign_id": str(target_id),
+                                "target_channel": target_obj["channel"],
+                                "target_daily_before": str(target_obj["daily_budget_usd"]),
+                                "target_daily_after": str(new_target_daily),
+                                "shift_usd": str(shift),
+                            }
+                        ),
+                        params.get("reason", "Cross-channel efficiency reallocation"),
+                        token_id,
+                        Jsonb(
+                            {
+                                "kind": "reallocation_revert",
+                                "source_campaign_id": str(source_id),
+                                "source_daily_restore": str(source_obj["daily_budget_usd"]),
+                                "target_campaign_id": str(target_id),
+                                "target_daily_restore": str(target_obj["daily_budget_usd"]),
+                            }
+                        ),
+                        shift,
+                    ),
+                ).fetchone()
+                action_id = action_row["id"] if action_row else None
+
             conn.execute(
                 """INSERT INTO autonomous_decision(
                     brand_id, finding_id, kind, target_id, channel,
@@ -357,20 +639,37 @@ def run_tick(
             )
             executed_actions.append(cand["kind"])
 
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
         conn.execute(
             """UPDATE loop_tick_run SET
                 status='completed', step='done',
                 summary=%s, finished_at=now()
             WHERE id=%s""",
             (
-                Jsonb({"executed": executed_actions, "findings_count": len(findings)}),
+                Jsonb(
+                    {
+                        "executed": executed_actions,
+                        "findings_count": len(findings),
+                        "findings_detected": len(findings),
+                        "decisions_evaluated": len(candidates),
+                        "actions_executed": len(executed_actions),
+                        "escalations_raised": escalations_raised,
+                        "elapsed_ms": elapsed_ms,
+                    }
+                ),
                 tid,
             ),
         )
         return {
             "status": "completed",
             "tick_id": str(tid),
+            "findings_detected": len(findings),
+            "decisions_evaluated": len(candidates),
+            "actions_executed": len(executed_actions),
+            "escalations_raised": escalations_raised,
+            "elapsed_ms": elapsed_ms,
             "executed": executed_actions,
+            "findings_count": len(findings),
         }
 
     except Exception as exc:

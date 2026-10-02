@@ -3,6 +3,7 @@
 import asyncio
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 from urllib.parse import quote
 
@@ -301,3 +302,87 @@ class CampaignControl:
             "platform console.",
             502,
         )
+
+    async def set_daily_budget(self, daily_budget_usd: Decimal) -> dict:
+        """Update campaign daily budget remotely across provider APIs."""
+        channel = self.target.channel
+        account, identity = self.account, self.identity
+        if daily_budget_usd <= Decimal("0.00"):
+            raise DomainError("InvalidBudget", "Daily budget must be greater than zero.", 422)
+
+        if channel == "meta":
+            cents = int((daily_budget_usd * Decimal("100.00")).quantize(Decimal("1")))
+            await self.request(
+                "POST",
+                f"https://graph.facebook.com/v26.0/{identity}",
+                data={"daily_budget": cents},
+            )
+        elif channel in {"google_ads", "youtube"}:
+            search_res = await self.request(
+                "POST",
+                f"https://googleads.googleapis.com/v25/customers/{account}/googleAds:search",
+                json={
+                    "query": (
+                        "SELECT campaign.campaign_budget FROM campaign "
+                        f"WHERE campaign.id = {identity}"
+                    )
+                },
+            )
+            results = search_res.get("results", [])
+            if not results or not results[0].get("campaign", {}).get("campaignBudget"):
+                raise DomainError(
+                    "BudgetUpdateFailed",
+                    "Could not find campaign budget resource in Google Ads.",
+                    502,
+                )
+            budget_res = results[0]["campaign"]["campaignBudget"]
+            amount_micros = str(
+                int((daily_budget_usd * Decimal("1000000.00")).quantize(Decimal("1")))
+            )
+            await self.request(
+                "POST",
+                f"https://googleads.googleapis.com/v25/customers/{account}/campaignBudgets:mutate",
+                json={
+                    "operations": [
+                        {
+                            "update": {
+                                "resourceName": budget_res,
+                                "amountMicros": amount_micros,
+                            },
+                            "updateMask": "amountMicros",
+                        }
+                    ],
+                    "partialFailure": False,
+                },
+            )
+        elif channel == "linkedin":
+            await self.request(
+                "POST",
+                f"https://api.linkedin.com/rest/adAccounts/{account}/adCampaigns/{identity}",
+                headers={"X-RestLi-Method": "PARTIAL_UPDATE"},
+                json={
+                    "patch": {
+                        "$set": {
+                            "dailyBudget": {
+                                "amount": str(daily_budget_usd.quantize(Decimal("0.01"))),
+                                "currencyCode": "USD",
+                            }
+                        }
+                    }
+                },
+            )
+        elif channel == "reddit":
+            cents = int((daily_budget_usd * Decimal("100.00")).quantize(Decimal("1")))
+            await self.request(
+                "PATCH",
+                f"https://ads-api.reddit.com/api/v3/campaigns/{identity}",
+                json={"data": {"daily_budget": cents}},
+            )
+        else:
+            raise DomainError("UnknownChannel", f"Unsupported channel {channel}", 422)
+
+        return {
+            "native_id": self.target.native_id,
+            "daily_budget_usd": str(daily_budget_usd),
+            "updated": True,
+        }

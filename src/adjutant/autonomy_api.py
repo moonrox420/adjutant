@@ -1,21 +1,36 @@
 """Human review and editable limits for autonomous brand operation."""
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
 from psycopg import sql
+from pydantic import Field
 
-from adjutant.approval_client import approval_request
+from adjutant.approval_client import approval_request, authorize_launch_remotely
 from adjutant.autonomy import GuardrailInput, LaunchApprovalInput, launch_scope
 from adjutant.config import Settings
 from adjutant.db import Database, Principal, one, require_role
 from adjutant.errors import DomainError
 from adjutant.events import EventRegistry
+from adjutant.models import Channel, Input
+from adjutant.runner import run_tick
 from adjutant.service import audit, locked_brand
 from adjutant.storage import ObjectStore
+
+
+class PlanApproveInput(Input):
+    request_key: UUID
+    expected_plan_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    max_spend_authorized_usd: Decimal = Field(gt=0)
+    allowed_channels: list[Channel] = Field(default_factory=list)
+
+
+class RunnerTickInput(Input):
+    request_key: UUID
 
 
 def consume_remotely(config: Settings, brand_id: UUID, authorization_id: str) -> dict[str, Any]:
@@ -170,5 +185,129 @@ def autonomy_router(
             )
         with db.transaction(actor) as conn:
             return launch_scope(conn, brand_id, plan_id)
+
+    @router.post("/plans/{plan_id}/approve")
+    def approve_plan(
+        brand_id: UUID,
+        plan_id: UUID,
+        data: PlanApproveInput,
+        request: Request,
+        actor: Principal = Depends(authenticate),
+    ) -> dict[str, Any]:
+        with db.transaction(actor) as conn:
+            locked_brand(conn, brand_id)
+            require_role(conn, brand_id, {"owner", "admin"})
+
+            limits = one(conn, "SELECT * FROM guardrail WHERE brand_id=%s", (brand_id,))
+            if limits["monthly_spend_cap_usd"] < data.max_spend_authorized_usd:
+                raise DomainError(
+                    "SpendCapExceeded",
+                    "Monthly spend cap in guardrails is lower than requested launch budget.",
+                    422,
+                )
+
+            scope = launch_scope(conn, brand_id, plan_id)
+            if scope["plan_hash"] != data.expected_plan_hash:
+                raise DomainError(
+                    "PlanHashMismatch",
+                    "Plan hash does not match expected plan hash.",
+                    400,
+                )
+
+            if data.allowed_channels:
+                plan_channels = {item["channel"] for item in scope["channels"]}
+                unauthorized = plan_channels - set(data.allowed_channels)
+                if unauthorized:
+                    ch_list = ", ".join(sorted(unauthorized))
+                    raise DomainError(
+                        "ChannelNotInScope",
+                        f"Plan contains channels not permitted in allowed_channels: {ch_list}.",
+                        400,
+                    )
+
+            launch_input = LaunchApprovalInput(
+                expected_hash=scope["plan_hash"],
+                expected_guardrail_version=scope["guardrails"]["version"],
+                request_key=data.request_key,
+                expected_review_hash=scope["review_hash"],
+            )
+
+        result = authorize_launch_remotely(
+            config,
+            brand_id,
+            plan_id,
+            request.cookies.get("adjutant_session", ""),
+            launch_input.model_dump(mode="json"),
+        )
+
+        auth_id = result.get("authorization_id")
+        if auth_id:
+            consume_remotely(config, brand_id, auth_id)
+        elif result.get("already_authorized") is not True:
+            raise DomainError(
+                "ApprovalUnavailable",
+                "The approval service returned no authorization.",
+                503,
+            )
+
+        with db.transaction(actor) as conn:
+            if not auth_id:
+                prev = conn.execute(
+                    "SELECT id FROM launch_authorization WHERE brand_id=%s AND request_key=%s",
+                    (brand_id, data.request_key),
+                ).fetchone()
+                if not prev:
+                    raise DomainError(
+                        "ApprovalNotFound",
+                        "Could not locate matching launch authorization record.",
+                        404,
+                    )
+                auth_id = prev["id"]
+
+            auth_record = one(
+                conn,
+                "SELECT id, signature, expires_at, claims FROM launch_authorization WHERE id=%s",
+                (auth_id,),
+            )
+            conn.execute(
+                "UPDATE brand SET status='active', activated_at=COALESCE(activated_at, now()) "
+                "WHERE id=%s AND status='pending_first_launch'",
+                (brand_id,),
+            )
+
+        return {
+            "token_id": str(auth_record["id"]),
+            "brand_id": str(brand_id),
+            "plan_id": str(plan_id),
+            "signed_token": bytes(auth_record["signature"]).hex(),
+            "expires_at": auth_record["expires_at"].isoformat(),
+            "spend_cap_usd": str(data.max_spend_authorized_usd),
+        }
+
+    @router.post("/runner/tick")
+    def trigger_runner_tick(
+        brand_id: UUID,
+        data: RunnerTickInput,
+        actor: Principal = Depends(authenticate),
+    ) -> dict[str, Any]:
+        with db.transaction(actor) as conn:
+            require_role(conn, brand_id, {"owner", "admin"})
+            result = run_tick(
+                conn,
+                config,
+                events,
+                brand_id,
+                tick_id=data.request_key,
+            )
+
+        return {
+            "tick_id": str(result.get("tick_id", data.request_key)),
+            "status": result.get("status", "completed"),
+            "findings_detected": result.get("findings_detected", 0),
+            "decisions_evaluated": result.get("decisions_evaluated", 0),
+            "actions_executed": result.get("actions_executed", 0),
+            "escalations_raised": result.get("escalations_raised", 0),
+            "elapsed_ms": result.get("elapsed_ms", 0),
+        }
 
     return router

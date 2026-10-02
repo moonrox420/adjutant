@@ -101,6 +101,24 @@ def evaluate_guardrails(
                 "params": params,
             }
 
+        # Mandatory 72-hour reallocation cooldown
+        recent_realloc = conn.execute(
+            """SELECT executed_at FROM action
+            WHERE brand_id=%s AND action_type='budget_reallocation'
+            AND executed_at > now() - interval '72 hours'""",
+            (brand_id,),
+        ).fetchone()
+        if recent_realloc:
+            return {
+                "approved": False,
+                "state": "rejected",
+                "reason": (
+                    "ReallocationInCooldown: A mandatory 72-hour cooldown must elapse "
+                    "between cross-channel budget reallocations."
+                ),
+                "params": params,
+            }
+
     # Hard guardrail: daily_spend_cap_usd
     daily_cap = Decimal(str(limits["daily_spend_cap_usd"]))
     raw_proposed = Decimal(str(params.get("proposed_daily_usd", "0.00")))
