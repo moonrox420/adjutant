@@ -677,24 +677,29 @@ class MetaCopy(BaseModel):
     description: str = Field(default="", max_length=30)
     call_to_action: str = Field(min_length=1, max_length=30)
 
+
 class GoogleAdsCopy(BaseModel):
     headlines: list[str] = Field(min_length=3, max_length=15)
     descriptions: list[str] = Field(min_length=2, max_length=4)
     final_url_suffix: str = Field(default="", max_length=100)
+
 
 class YouTubeCopy(BaseModel):
     headline: str = Field(min_length=1, max_length=30)
     long_headline: str = Field(min_length=1, max_length=90)
     description: str = Field(min_length=1, max_length=90)
 
+
 class LinkedInCopy(BaseModel):
     introductory_text: str = Field(min_length=1, max_length=600)
     headline: str = Field(min_length=1, max_length=70)
     landing_page_url: str = Field(min_length=1, max_length=2000)
 
+
 class RedditCopy(BaseModel):
     post_title: str = Field(min_length=1, max_length=300)
     call_to_action: str = Field(min_length=1, max_length=30)
+
 
 class CreativeCopyBundle(BaseModel):
     concept_id: str

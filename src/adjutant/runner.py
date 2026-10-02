@@ -282,8 +282,8 @@ def run_tick(
 
                         async def _activate_rep(
                             _t: CampaignTarget = rep_target,
-                            _a: Any = app,
-                            _tok: str = token,
+                            _a: dict[str, Any] = app,
+                            _tok: dict[str, Any] = token,
                         ) -> dict[str, Any]:
                             async with httpx.AsyncClient(timeout=15.0) as client:
                                 control = CampaignControl(client, _t, _a, _tok)
@@ -365,8 +365,8 @@ def run_tick(
 
                         async def _pause_fatigued(
                             _t: CampaignTarget = fatigued_target,
-                            _a: Any = app,
-                            _tok: str = token,
+                            _a: dict[str, Any] = app,
+                            _tok: dict[str, Any] = token,
                         ) -> dict[str, Any]:
                             async with httpx.AsyncClient(timeout=15.0) as client:
                                 control = CampaignControl(client, _t, _a, _tok)
@@ -484,8 +484,8 @@ def run_tick(
 
                         async def _remote_scale(
                             _t: CampaignTarget = target,
-                            _a: Any = app,
-                            _tok: str = token,
+                            _a: dict[str, Any] = app,
+                            _tok: dict[str, Any] = token,
                             _b: Decimal = new_budget,
                         ) -> dict[str, Any]:
                             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -579,8 +579,8 @@ def run_tick(
                             async def _remote_realloc(
                                 _target: CampaignTarget = target,
                                 _budget: Decimal = new_b,
-                                _a: Any = app,
-                                _tok: str = token,
+                                _a: dict[str, Any] = app,
+                                _tok: dict[str, Any] = token,
                             ) -> dict[str, Any]:
                                 async with httpx.AsyncClient(timeout=15.0) as client:
                                     control = CampaignControl(client, _target, _a, _tok)
