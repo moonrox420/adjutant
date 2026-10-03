@@ -16,3 +16,6 @@ node_modules/
 test-results/
 playwright-report/
 BUILD_STATUS.md
+dist/
+build/
+*.spec

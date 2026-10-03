@@ -74,6 +74,8 @@ def generate_spec(
     migrations_dir = (ROOT / "migrations").resolve()
     event_registry = (ROOT / "src" / "adjutant" / "event_registry.json").resolve()
     scripts_dir = (ROOT / "scripts").resolve()
+    hooks_dir = (ROOT / "hooks").resolve()
+    venv_site_packages = (ROOT / ".venv" / "Lib" / "site-packages").resolve()
 
     spec_content = f"""# -*- mode: python ; coding: utf-8 -*-
 
@@ -100,6 +102,7 @@ hidden_imports = [
     'uvicorn.lifespan.on',
     'psycopg',
     'psycopg.pool',
+    'psycopg_pool',
     'psycopg_binary',
     'cryptography',
     'pydantic_settings',
@@ -114,14 +117,23 @@ hidden_imports = [
 
 a = Analysis(
     [r'{entry_script}'],
-    pathex=[r'{src_dir}', r'{ROOT}'],
+    pathex=[r'{src_dir}', r'{ROOT}', r'{venv_site_packages}'],
     binaries=[],
     datas=added_files,
     hiddenimports=hidden_imports,
-    hookspath=[],
+    hookspath=[r'{hooks_dir}'],
     hooksconfig={{}},
     runtime_hooks=[],
-    excludes=['pytest', 'unittest'],
+    excludes=[
+        'numpy',
+        'scipy',
+        'pandas',
+        'matplotlib',
+        'pytest',
+        'unittest',
+        'tkinter',
+        'IPython',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -171,21 +183,28 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 def run_pyinstaller(spec_path: Path, dist_dir: Path, work_dir: Path) -> bool:
     """Execute PyInstaller on the generated spec file."""
-    pyinstaller = shutil.which("pyinstaller")
-    if not pyinstaller:
-        # Check in active python virtual environment Scripts directory
-        venv_pyinstaller = Path(sys.executable).parent / (
-            "pyinstaller.exe" if os.name == "nt" else "pyinstaller"
-        )
-        if venv_pyinstaller.exists():
-            pyinstaller = str(venv_pyinstaller)
-        else:
-            logger.error(
-                "PyInstaller is not installed in the environment. "
-                "Install it using: pip install pyinstaller"
-            )
-            return False
+    # Check in active python virtual environment Scripts directory first
+    venv_pyinstaller = Path(sys.executable).parent / (
+        "pyinstaller.exe" if os.name == "nt" else "pyinstaller"
+    )
+    if venv_pyinstaller.exists():
+        pyinstaller = str(venv_pyinstaller)
+    else:
+        pyinstaller = shutil.which("pyinstaller")
 
+    if not pyinstaller:
+        logger.error(
+            "PyInstaller is not installed in the environment. "
+            "Install it using: pip install pyinstaller"
+        )
+        return False
+
+    venv_site_packages = (ROOT / ".venv" / "Lib" / "site-packages").resolve()
+    sep = ";" if os.name == "nt" else ":"
+    env = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}{sep}{ROOT}{sep}{venv_site_packages}",
+    )
     cmd = [
         pyinstaller,
         "--noconfirm",
@@ -196,7 +215,7 @@ def run_pyinstaller(spec_path: Path, dist_dir: Path, work_dir: Path) -> bool:
         str(spec_path),
     ]
     logger.info("Executing PyInstaller: %s", " ".join(cmd))
-    res = subprocess.run(cmd, cwd=ROOT)
+    res = subprocess.run(cmd, cwd=ROOT, env=env)
     return res.returncode == 0
 
 
