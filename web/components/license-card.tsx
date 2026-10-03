@@ -178,7 +178,7 @@ export function LicenseCard({ onUpdated }: { onUpdated?: () => Promise<void> | v
           <form onSubmit={handleActivate} className="form-stack">
             <Field
               label="Enter Commercial License Key"
-              hint="Paste the license key provided in your LemonSqueezy subscription receipt."
+              hint="Paste the license key provided in your LemonSqueezy or Polar subscription receipt."
             >
               <div style={{ display: "flex", gap: "8px" }}>
                 <input

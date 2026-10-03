@@ -43,9 +43,44 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: SecretStr = SecretStr("")
     smtp_security: Literal["starttls", "ssl"] = "starttls"
-    license_provider: Literal["lemonsqueezy", "polar", "custom", "none"] = "none"
-    license_api_url: str = "https://api.lemonsqueezy.com/v1/licenses"
-    license_store_id: str = ""
+    license_provider: Literal["lemonsqueezy", "polar", "custom", "none"] = Field(
+        default="none",
+        validation_alias=AliasChoices(
+            "ADJUTANT_LICENSE_PROVIDER",
+            "LICENSE_PROVIDER",
+        ),
+    )
+    license_api_url: str = Field(
+        default="https://api.lemonsqueezy.com/v1/licenses",
+        validation_alias=AliasChoices(
+            "ADJUTANT_LICENSE_API_URL",
+            "LICENSE_API_URL",
+        ),
+    )
+    license_store_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "ADJUTANT_LICENSE_STORE_ID",
+            "LEMONSQUEEZY_STORE_ID",
+            "POLAR_ORGANIZATION_ID",
+        ),
+    )
+    license_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices(
+            "ADJUTANT_LICENSE_API_KEY",
+            "LEMONSQUEEZY_API_KEY",
+            "POLAR_API_KEY",
+        ),
+    )
+    license_webhook_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices(
+            "ADJUTANT_LICENSE_WEBHOOK_SECRET",
+            "LEMONSQUEEZY_WEBHOOK_SECRET",
+            "POLAR_WEBHOOK_SECRET",
+        ),
+    )
     license_lease_path: Path = Path(".local/license.lease")
     dev_bypass_license: bool = True
 

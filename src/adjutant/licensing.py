@@ -248,6 +248,64 @@ def activate_license(config: Settings, license_key: str) -> dict[str, Any]:
         write_cached_lease(config, lease_record)
         return get_license_status(config)
 
+    if config.license_provider == "polar":
+        api_url = (
+            config.license_api_url
+            if "polar" in config.license_api_url
+            else "https://api.polar.sh/v1"
+        )
+        endpoint = f"{api_url.rstrip('/')}/customer-portal/license-keys/activate"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        api_key = config.license_api_key.get_secret_value()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(
+                    endpoint,
+                    headers=headers,
+                    json={
+                        "key": clean_key,
+                        "organization_id": config.license_store_id,
+                        "label": instance_name,
+                    },
+                )
+                data = res.json()
+        except Exception as exc:
+            raise DomainError(
+                "LicenseActivationFailed",
+                f"Could not reach Polar license server: {exc}",
+                503,
+            ) from exc
+
+        if res.status_code >= 400 or not data.get("id"):
+            error_detail = data.get("detail") or "Polar license activation failed or invalid key."
+            raise DomainError("LicenseActivationRejected", error_detail, 400)
+
+        expires_str = data.get("expires_at")
+        if expires_str:
+            expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
+        else:
+            expires_at = datetime.now(UTC) + timedelta(days=31)
+
+        grace_period_end = expires_at + timedelta(days=OFFLINE_GRACE_PERIOD_DAYS)
+        lease_record = {
+            "license_key": clean_key,
+            "provider": "polar",
+            "tier": "pro",
+            "tier_display": "Adjutant Pro (Polar)",
+            "customer_name": data.get("user", {}).get("email") or "Subscriber",
+            "customer_email": data.get("user", {}).get("email") or "",
+            "instance_id": data.get("id"),
+            "expires_at": expires_at.isoformat(),
+            "grace_period_end": grace_period_end.isoformat(),
+        }
+        write_cached_lease(config, lease_record)
+        return get_license_status(config)
+
     # For standalone, custom, or direct license simulation
     now = datetime.now(UTC)
     expires_at = now + timedelta(days=30)
@@ -283,6 +341,29 @@ def deactivate_license(config: Settings) -> dict[str, Any]:
                 )
         except Exception as exc:
             logger.warning("license.remote_deactivation_error: %s", exc)
+    elif lease and config.license_provider == "polar" and lease.get("instance_id"):
+        try:
+            api_url = (
+                config.license_api_url
+                if "polar" in config.license_api_url
+                else "https://api.polar.sh/v1"
+            )
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            api_key = config.license_api_key.get_secret_value()
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            with httpx.Client(timeout=10.0) as client:
+                client.post(
+                    f"{api_url.rstrip('/')}/customer-portal/license-keys/deactivate",
+                    headers=headers,
+                    json={
+                        "key": lease["license_key"],
+                        "organization_id": config.license_store_id,
+                        "activation_id": lease["instance_id"],
+                    },
+                )
+        except Exception as exc:
+            logger.warning("license.polar_deactivation_error: %s", exc)
 
     if config.license_lease_path.exists():
         try:
@@ -291,3 +372,66 @@ def deactivate_license(config: Settings) -> dict[str, Any]:
             logger.warning("license.lease_deletion_failed: %s", exc)
 
     return get_license_status(config)
+
+
+def verify_license_webhook_signature(raw_body: bytes, signature: str, secret: str) -> bool:
+    """Verify HMAC-SHA256 signature for Lemon Squeezy or Polar webhooks."""
+    if not secret:
+        return False
+    computed = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    clean_sig = signature.removeprefix("sha256=").strip().lower()
+    return hmac.compare_digest(computed.lower(), clean_sig)
+
+
+def process_license_webhook(config: Settings, payload: dict[str, Any]) -> dict[str, Any]:
+    """Process incoming webhook from Lemon Squeezy or Polar."""
+    meta = payload.get("meta", {})
+    event_name = meta.get("event_name") or payload.get("type") or "unknown"
+    data = payload.get("data", {})
+    attributes = data.get("attributes", {})
+
+    logger.info("Received license webhook event: %s", event_name)
+
+    current_lease = read_cached_lease(config)
+    if not current_lease:
+        return {"status": "ignored", "reason": "No active machine lease on this appliance"}
+
+    active_key = current_lease.get("license_key")
+    incoming_key = (
+        attributes.get("key")
+        or attributes.get("license_key")
+        or meta.get("custom_data", {}).get("license_key")
+    )
+
+    if event_name in {"subscription_cancelled", "subscription_expired", "subscription.canceled"}:
+        if incoming_key == active_key or not incoming_key:
+            logger.warning("Subscription %s for active lease. Moving to grace period.", event_name)
+            now = datetime.now(UTC)
+            current_lease["expires_at"] = now.isoformat()
+            current_lease["grace_period_end"] = (
+                now + timedelta(days=OFFLINE_GRACE_PERIOD_DAYS)
+            ).isoformat()
+            write_cached_lease(config, current_lease)
+            return {"status": "updated", "action": "grace_period_initiated"}
+
+    elif event_name in {
+        "subscription_created",
+        "subscription_updated",
+        "subscription_resumed",
+        "license_key_updated",
+        "subscription.updated",
+    }:
+        renews_at = (
+            attributes.get("renews_at") or attributes.get("ends_at") or attributes.get("expires_at")
+        )
+        if renews_at:
+            new_expiry = datetime.fromisoformat(renews_at.replace("Z", "+00:00"))
+            current_lease["expires_at"] = new_expiry.isoformat()
+            current_lease["grace_period_end"] = (
+                new_expiry + timedelta(days=OFFLINE_GRACE_PERIOD_DAYS)
+            ).isoformat()
+            write_cached_lease(config, current_lease)
+            logger.info("Refreshed machine lease renewal date to %s", new_expiry)
+            return {"status": "updated", "action": "lease_renewed"}
+
+    return {"status": "processed", "event": event_name}
