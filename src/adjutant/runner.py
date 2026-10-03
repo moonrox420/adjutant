@@ -18,6 +18,7 @@ from adjutant.config import Settings
 from adjutant.decision import evaluate_guardrails
 from adjutant.diagnosis import diagnose_campaign_objects
 from adjutant.events import EventRegistry
+from adjutant.licensing import check_license_gate
 from adjutant.metrics_worker import sync_brand_channel_metrics, sync_live_brand_metrics
 from adjutant.service import locked_brand
 
@@ -196,7 +197,51 @@ def run_tick(
                         )
 
         executed_actions = []
-        # Step 5: Execute survivors with idempotency & strict ordering
+        # Step 5: Execute survivors with idempotency & strict ordering (licensed gate)
+        permitted, license_reason = check_license_gate(config)
+        if not permitted:
+            logger.warning(
+                "License gate blocked autonomous runner actions for brand %s: %s",
+                brand_id,
+                license_reason,
+            )
+            elapsed_ms = int((time.monotonic() - start_time) * 1000)
+            conn.execute(
+                """UPDATE loop_tick_run SET
+                    status='completed', step='license_suspended',
+                    summary=%s, finished_at=now()
+                WHERE id=%s""",
+                (
+                    Jsonb(
+                        {
+                            "executed": [],
+                            "findings_count": len(findings),
+                            "findings_detected": len(findings),
+                            "decisions_evaluated": len(candidates),
+                            "actions_executed": 0,
+                            "escalations_raised": escalations_raised,
+                            "license_blocked": True,
+                            "license_reason": license_reason,
+                            "elapsed_ms": elapsed_ms,
+                        }
+                    ),
+                    tid,
+                ),
+            )
+            return {
+                "status": "completed",
+                "tick_id": str(tid),
+                "findings_detected": len(findings),
+                "decisions_evaluated": len(candidates),
+                "actions_executed": 0,
+                "escalations_raised": escalations_raised,
+                "license_blocked": True,
+                "license_reason": license_reason,
+                "elapsed_ms": elapsed_ms,
+                "executed": [],
+                "findings_count": len(findings),
+            }
+
         conn.execute("UPDATE loop_tick_run SET step='execute' WHERE id=%s", (tid,))
         for cand in candidates:
             idem_key = f"{brand_id}:{tid}:{cand['kind']}:{cand['target_id']}"

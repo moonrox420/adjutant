@@ -150,9 +150,39 @@ export type Channel = {
   objectives: string[];
   prerequisites: string[];
 };
+export type LicenseStatus = {
+  status: "active" | "grace_period" | "expired" | "unlicensed";
+  provider: string;
+  tier: string;
+  tier_display: string;
+  license_key_masked: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  expires_at: string | null;
+  grace_period_end: string | null;
+  days_remaining: number;
+  in_grace_period: boolean;
+  instance_id: string | null;
+  dev_mode: boolean;
+};
+
 export type Status = {
   database: string;
   approval_signing: string;
   live_channel_writes: boolean;
   outbox_pending: number;
+  license?: LicenseStatus;
 };
+
+export async function fetchLicenseStatus(): Promise<LicenseStatus> {
+  return api<LicenseStatus>("/license/status");
+}
+
+export async function activateLicense(licenseKey: string): Promise<LicenseStatus> {
+  return api<LicenseStatus>("/license/activate", "POST", { license_key: licenseKey });
+}
+
+export async function deactivateLicense(): Promise<{ deactivated: boolean; message: string }> {
+  return api<{ deactivated: boolean; message: string }>("/license/deactivate", "POST", {});
+}
+

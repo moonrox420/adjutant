@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: SecretStr = SecretStr("")
     smtp_security: Literal["starttls", "ssl"] = "starttls"
+    license_provider: Literal["lemonsqueezy", "polar", "custom", "none"] = "none"
+    license_api_url: str = "https://api.lemonsqueezy.com/v1/licenses"
+    license_store_id: str = ""
+    license_lease_path: Path = Path(".local/license.lease")
+    dev_bypass_license: bool = True
 
     @model_validator(mode="after")
     def validate_delivery(self) -> "Settings":

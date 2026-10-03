@@ -23,6 +23,7 @@ import { GenerateForm, Research } from "../components/research";
 import { DeploymentPreflight } from "../components/preflight";
 import { GuardrailEditor, LaunchReview } from "../components/autonomy";
 import { RemoteStopReport } from "../components/remote-stop";
+import { LicenseCard } from "../components/license-card";
 import {
   Badge,
   channelName,
@@ -65,7 +66,7 @@ export default function Console() {
     }
   }, []);
   const [modal, setModal] = useState<
-    "brand" | "plan" | "stop" | "generate" | null
+    "brand" | "plan" | "stop" | "generate" | "license" | null
   >(null);
   const [editing, setEditing] = useState<Plan | undefined>();
   const [error, setError] = useState("");
@@ -270,10 +271,41 @@ export default function Console() {
             Workspace <span>/</span> {tab}
           </div>
           <div className="topbar-right">
+            {status?.license && (
+              <button
+                type="button"
+                className={`license-pill ${
+                  status.license.status === "active"
+                    ? "active"
+                    : status.license.status === "grace_period"
+                      ? "warning"
+                      : status.license.dev_mode
+                        ? "active"
+                        : "critical"
+                }`}
+                onClick={() => setModal("license")}
+                title="View Appliance License and Subscription details"
+              >
+                {status.license.status === "active"
+                  ? `✓ ${status.license.tier_display || "Licensed"}`
+                  : status.license.status === "grace_period"
+                    ? `⚠️ Grace (${status.license.days_remaining}d)`
+                    : status.license.dev_mode
+                      ? "Dev Mode"
+                      : "⚡ Unlicensed"}
+              </button>
+            )}
             <details className="account-menu">
               <summary>Account</summary>
               <div>
                 <p>{me.email}</p>
+                <button
+                  className="button compact quiet"
+                  onClick={() => setModal("license")}
+                  style={{ width: "100%", textAlign: "left", marginBottom: "8px" }}
+                >
+                  Appliance License
+                </button>
                 {me.accounts
                   .filter((account) =>
                     me.seats.some(
@@ -341,6 +373,29 @@ export default function Console() {
           </div>
         </header>
         <main id="main" className="main-content">
+          {status?.license &&
+            !status.license.dev_mode &&
+            status.license.status !== "active" && (
+              <div className="message attention" style={{ marginBottom: "16px" }}>
+                <strong>
+                  {status.license.status === "grace_period"
+                    ? "Offline Grace Period:"
+                    : "Commercial License Required:"}
+                </strong>{" "}
+                Autonomous campaign adjustments are{" "}
+                {status.license.status === "grace_period"
+                  ? `set to pause in ${status.license.days_remaining} days unless verified.`
+                  : "paused until an active subscription is linked."}{" "}
+                <button
+                  type="button"
+                  className="button compact quiet"
+                  onClick={() => setModal("license")}
+                  style={{ textDecoration: "underline", padding: "0 4px" }}
+                >
+                  Manage License →
+                </button>
+              </div>
+            )}
           {workspace?.stop && (
             <RemoteStopReport brandId={selected} refreshToken={stopRevision} />
           )}
@@ -953,15 +1008,20 @@ export default function Console() {
                 ? "Stop brand operations"
                 : modal === "generate"
                   ? "Give the strategist a brief."
-                  : editing
-                    ? "Revise the campaign plan."
-                    : "Shape the next campaign."
+                  : modal === "license"
+                    ? "Appliance License & Subscription"
+                    : editing
+                      ? "Revise the campaign plan."
+                      : "Shape the next campaign."
           }
           close={() => {
             setModal(null);
             setEditing(undefined);
           }}
         >
+          {modal === "license" && (
+            <LicenseCard onUpdated={refresh} />
+          )}
           {error && (
             <p className="message error" role="alert">
               {error}

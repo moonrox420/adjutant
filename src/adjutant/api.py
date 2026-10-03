@@ -32,6 +32,8 @@ from adjutant.errors import DomainError
 from adjutant.events import EventRegistry
 from adjutant.foundation import foundation_router
 from adjutant.generation import OllamaPlanner
+from adjutant.licensing import get_license_status
+from adjutant.licensing_api import licensing_router
 from adjutant.models import (
     ApprovalInput,
     AssertionInput,
@@ -179,6 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db, CredentialStore(config.credential_master_key_path), storage, principal
         )
     )
+    app.include_router(licensing_router(config, principal))
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -1084,6 +1087,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "live_channel_writes": False,
             "model_configured": bool(config.ollama_model),
             "outbox_pending": pending,
+            "license": get_license_status(config),
             "checked_at": datetime.now(UTC),
         }
 
