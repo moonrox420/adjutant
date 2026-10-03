@@ -219,6 +219,16 @@ def run_pyinstaller(spec_path: Path, dist_dir: Path, work_dir: Path) -> bool:
     return res.returncode == 0
 
 
+def kill_running_instances() -> None:
+    """Terminate any running adjutant.exe to prevent file lock errors during packaging."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "adjutant.exe"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build Adjutant Windows Desktop Executable")
     parser.add_argument(
@@ -232,6 +242,8 @@ def main() -> None:
         help="Skip rebuilding the Next.js frontend console",
     )
     args = parser.parse_args()
+
+    kill_running_instances()
 
     icon_path = ensure_icon(ROOT / "assets" / "app_icon.ico")
 

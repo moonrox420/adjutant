@@ -146,32 +146,63 @@ def set_autostart(enable: bool) -> None:
 class ApplianceManager:
     """Manages background service lifecycle, health probes, and status telemetry."""
 
-    def __init__(self, port: int, db_port: int, state_dir: Path) -> None:
-        self.port = port
+    def __init__(
+        self,
+        web_port: int = 3000,
+        api_port: int = 8000,
+        db_port: int = 55439,
+        state_dir: Path | None = None,
+    ) -> None:
+        self.web_port = web_port
+        self.api_port = api_port
         self.db_port = db_port
-        self.state_dir = state_dir
+        self.state_dir = state_dir or (ROOT / ".local" / "runner")
         self.orchestrator_proc: subprocess.Popen[Any] | None = None
         self.running = False
         self.license_status: dict[str, Any] = {}
         self.runner_status = "Initializing"
 
+    def is_api_alive(self) -> bool:
+        """Check if the backend API service is already running and responding."""
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        for path in ("/healthz", "/readyz"):
+            try:
+                with opener.open(f"http://127.0.0.1:{self.api_port}{path}", timeout=1.0) as res:
+                    if res.status == 200:
+                        return True
+            except (urllib.error.URLError, TimeoutError, OSError):
+                pass
+        return False
+
     def start_services(self) -> bool:
-        """Launch the database and API orchestrator via up.py."""
+        """Connect to existing services or launch the database and API orchestrator."""
         self.state_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.is_api_alive():
+            logger.info(
+                "Adjutant backend API is already running on port %s. Connecting...",
+                self.api_port,
+            )
+            self.running = True
+            self.runner_status = "Active"
+            self.poll_status()
+            return True
+
         env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
         up_script = ROOT / "scripts" / "up.py"
 
         logger.info(
-            "Starting Adjutant appliance on port %s (db port %s)...",
-            self.port,
+            "Starting Adjutant appliance (API port %s, db port %s, web port %s)...",
+            self.api_port,
             self.db_port,
+            self.web_port,
         )
         self.orchestrator_proc = subprocess.Popen(
             [
                 sys.executable,
                 str(up_script),
                 "--port",
-                str(self.port),
+                str(self.api_port),
                 "--db-port",
                 str(self.db_port),
                 "--state-directory",
@@ -183,9 +214,8 @@ class ApplianceManager:
         )
         self.running = True
 
-        # Wait for readiness on /readyz
+        # Wait for readiness on /readyz or /healthz
         deadline = time.monotonic() + 45
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         while time.monotonic() < deadline:
             if self.orchestrator_proc.poll() is not None:
                 logger.error(
@@ -193,18 +223,15 @@ class ApplianceManager:
                     self.orchestrator_proc.returncode,
                 )
                 return False
-            try:
-                with opener.open(f"http://127.0.0.1:{self.port}/readyz", timeout=1.5) as res:
-                    if res.status == 200:
-                        logger.info(
-                            "Adjutant appliance is online and ready at http://127.0.0.1:%s",
-                            self.port,
-                        )
-                        self.runner_status = "Active"
-                        self.poll_status()
-                        return True
-            except (urllib.error.URLError, TimeoutError, OSError):
-                time.sleep(0.5)
+            if self.is_api_alive():
+                logger.info(
+                    "Adjutant appliance is online. Web console at http://127.0.0.1:%s",
+                    self.web_port,
+                )
+                self.runner_status = "Active"
+                self.poll_status()
+                return True
+            time.sleep(0.5)
 
         logger.error("Timed out waiting for Adjutant service readiness.")
         return False
@@ -214,7 +241,7 @@ class ApplianceManager:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         try:
             req = urllib.request.Request(
-                f"http://127.0.0.1:{self.port}/api/status",
+                f"http://127.0.0.1:{self.api_port}/api/status",
                 headers={"X-Adjutant-Client": "console"},
             )
             with opener.open(req, timeout=2.0) as res:
@@ -420,7 +447,7 @@ class WindowsSystemTray:
         user32.DestroyMenu(hmenu)
 
     def _open_console(self) -> None:
-        url = f"http://127.0.0.1:{self.manager.port}"
+        url = f"http://127.0.0.1:{self.manager.web_port}"
         webbrowser.open(url)
 
     def _open_logs(self) -> None:
@@ -463,16 +490,24 @@ class WindowsSystemTray:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Adjutant Desktop Appliance")
     parser.add_argument(
+        "--web-port",
         "--port",
+        dest="web_port",
+        type=int,
+        default=3000,
+        help="Web Console frontend port (default: 3000)",
+    )
+    parser.add_argument(
+        "--api-port",
         type=int,
         default=8000,
-        help="HTTP web console port (default: 8000)",
+        help="Core backend API port (default: 8000)",
     )
     parser.add_argument(
         "--db-port",
         type=int,
-        default=55440,
-        help="Local PostgreSQL port (default: 55440)",
+        default=55439,
+        help="Local PostgreSQL port (default: 55439)",
     )
     parser.add_argument(
         "--state-directory",
@@ -488,7 +523,12 @@ def main() -> None:
     args = parser.parse_args()
 
     state = args.state_directory.resolve()
-    manager = ApplianceManager(args.port, args.db_port, state)
+    manager = ApplianceManager(
+        web_port=args.web_port,
+        api_port=args.api_port,
+        db_port=args.db_port,
+        state_dir=state,
+    )
 
     try:
         success = manager.start_services()
@@ -501,7 +541,7 @@ def main() -> None:
             tray.run()
         else:
             if not args.no_browser:
-                webbrowser.open(f"http://127.0.0.1:{args.port}")
+                webbrowser.open(f"http://127.0.0.1:{args.web_port}")
             logger.info("Adjutant running. Press Ctrl+C to terminate.")
             while manager.running:
                 time.sleep(1)
