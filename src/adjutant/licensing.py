@@ -306,6 +306,72 @@ def activate_license(config: Settings, license_key: str) -> dict[str, Any]:
         write_cached_lease(config, lease_record)
         return get_license_status(config)
 
+    if config.license_provider == "gumroad":
+        api_url = (
+            config.license_api_url
+            if "gumroad" in config.license_api_url
+            else "https://api.gumroad.com/v2/licenses"
+        )
+        endpoint = f"{api_url.rstrip('/')}/verify"
+        req_data = {
+            "product_id": config.license_store_id,
+            "license_key": clean_key,
+            "increment_uses_count": "true",
+        }
+        api_key = config.license_api_key.get_secret_value()
+        if api_key:
+            req_data["access_token"] = api_key
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(endpoint, data=req_data)
+                data = res.json()
+        except Exception as exc:
+            raise DomainError(
+                "LicenseActivationFailed",
+                f"Could not reach Gumroad license server: {exc}",
+                503,
+            ) from exc
+
+        if not data.get("success"):
+            error_msg = (
+                data.get("message") or "Gumroad license key verification failed or invalid key."
+            )
+            raise DomainError("LicenseActivationRejected", error_msg, 400)
+
+        purchase = data.get("purchase", {})
+        if purchase.get("refunded") or purchase.get("chargebacked") or purchase.get("disputed"):
+            raise DomainError(
+                "LicenseActivationRejected",
+                "This Gumroad license purchase was refunded, disputed, or charged back.",
+                400,
+            )
+
+        if purchase.get("subscription_failed_at"):
+            raise DomainError(
+                "LicenseActivationRejected",
+                "Subscription payment has failed on Gumroad.",
+                400,
+            )
+
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(days=31)
+        grace_period_end = expires_at + timedelta(days=OFFLINE_GRACE_PERIOD_DAYS)
+
+        lease_record = {
+            "license_key": clean_key,
+            "provider": "gumroad",
+            "tier": "pro",
+            "tier_display": purchase.get("product_name") or "Adjutant Pro (Gumroad)",
+            "customer_name": purchase.get("email") or "Gumroad Customer",
+            "customer_email": purchase.get("email") or "",
+            "instance_id": f"gumroad-use-{data.get('uses', 1)}",
+            "expires_at": expires_at.isoformat(),
+            "grace_period_end": grace_period_end.isoformat(),
+        }
+        write_cached_lease(config, lease_record)
+        return get_license_status(config)
+
     # For standalone, custom, or direct license simulation
     now = datetime.now(UTC)
     expires_at = now + timedelta(days=30)
@@ -364,6 +430,24 @@ def deactivate_license(config: Settings) -> dict[str, Any]:
                 )
         except Exception as exc:
             logger.warning("license.polar_deactivation_error: %s", exc)
+    elif lease and config.license_provider == "gumroad":
+        try:
+            api_url = (
+                config.license_api_url
+                if "gumroad" in config.license_api_url
+                else "https://api.gumroad.com/v2/licenses"
+            )
+            req_data = {
+                "product_id": config.license_store_id,
+                "license_key": lease["license_key"],
+            }
+            api_key = config.license_api_key.get_secret_value()
+            if api_key:
+                req_data["access_token"] = api_key
+            with httpx.Client(timeout=10.0) as client:
+                client.post(f"{api_url.rstrip('/')}/decrement_uses_count", data=req_data)
+        except Exception as exc:
+            logger.warning("license.gumroad_deactivation_error: %s", exc)
 
     if config.license_lease_path.exists():
         try:
@@ -401,9 +485,24 @@ def process_license_webhook(config: Settings, payload: dict[str, Any]) -> dict[s
         attributes.get("key")
         or attributes.get("license_key")
         or meta.get("custom_data", {}).get("license_key")
+        or payload.get("license_key")
+        or payload.get("purchase", {}).get("license_key")
     )
 
-    if event_name in {"subscription_cancelled", "subscription_expired", "subscription.canceled"}:
+    is_gumroad_cancel = (
+        payload.get("refunded")
+        or payload.get("disputed")
+        or payload.get("subscription_cancelled_at")
+        or payload.get("resource_name") in {"cancellation", "refund"}
+    )
+    is_gumroad_renew = payload.get("is_recurring_charge") or (
+        payload.get("resource_name") == "sale" and payload.get("subscription_id")
+    )
+
+    if (
+        event_name in {"subscription_cancelled", "subscription_expired", "subscription.canceled"}
+        or is_gumroad_cancel
+    ):
         if incoming_key == active_key or not incoming_key:
             logger.warning("Subscription %s for active lease. Moving to grace period.", event_name)
             now = datetime.now(UTC)
@@ -414,24 +513,34 @@ def process_license_webhook(config: Settings, payload: dict[str, Any]) -> dict[s
             write_cached_lease(config, current_lease)
             return {"status": "updated", "action": "grace_period_initiated"}
 
-    elif event_name in {
-        "subscription_created",
-        "subscription_updated",
-        "subscription_resumed",
-        "license_key_updated",
-        "subscription.updated",
-    }:
+    elif (
+        event_name
+        in {
+            "subscription_created",
+            "subscription_updated",
+            "subscription_resumed",
+            "license_key_updated",
+            "subscription.updated",
+        }
+        or is_gumroad_renew
+    ):
         renews_at = (
-            attributes.get("renews_at") or attributes.get("ends_at") or attributes.get("expires_at")
+            attributes.get("renews_at")
+            or attributes.get("ends_at")
+            or attributes.get("expires_at")
+            or payload.get("next_bill_date")
         )
-        if renews_at:
-            new_expiry = datetime.fromisoformat(renews_at.replace("Z", "+00:00"))
-            current_lease["expires_at"] = new_expiry.isoformat()
-            current_lease["grace_period_end"] = (
-                new_expiry + timedelta(days=OFFLINE_GRACE_PERIOD_DAYS)
-            ).isoformat()
-            write_cached_lease(config, current_lease)
-            logger.info("Refreshed machine lease renewal date to %s", new_expiry)
-            return {"status": "updated", "action": "lease_renewed"}
+        new_expiry = (
+            datetime.fromisoformat(renews_at.replace("Z", "+00:00"))
+            if renews_at
+            else datetime.now(UTC) + timedelta(days=31)
+        )
+        current_lease["expires_at"] = new_expiry.isoformat()
+        current_lease["grace_period_end"] = (
+            new_expiry + timedelta(days=OFFLINE_GRACE_PERIOD_DAYS)
+        ).isoformat()
+        write_cached_lease(config, current_lease)
+        logger.info("Refreshed machine lease renewal date to %s", new_expiry)
+        return {"status": "updated", "action": "lease_renewed"}
 
     return {"status": "processed", "event": event_name}

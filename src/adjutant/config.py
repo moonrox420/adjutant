@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: SecretStr = SecretStr("")
     smtp_security: Literal["starttls", "ssl"] = "starttls"
-    license_provider: Literal["lemonsqueezy", "polar", "custom", "none"] = Field(
+    license_provider: Literal["lemonsqueezy", "polar", "gumroad", "custom", "none"] = Field(
         default="none",
         validation_alias=AliasChoices(
             "ADJUTANT_LICENSE_PROVIDER",
@@ -63,6 +63,8 @@ class Settings(BaseSettings):
             "ADJUTANT_LICENSE_STORE_ID",
             "LEMONSQUEEZY_STORE_ID",
             "POLAR_ORGANIZATION_ID",
+            "GUMROAD_PRODUCT_ID",
+            "GUMROAD_PRODUCT_PERMALINK",
         ),
     )
     license_api_key: SecretStr = Field(
@@ -71,6 +73,7 @@ class Settings(BaseSettings):
             "ADJUTANT_LICENSE_API_KEY",
             "LEMONSQUEEZY_API_KEY",
             "POLAR_API_KEY",
+            "GUMROAD_ACCESS_TOKEN",
         ),
     )
     license_webhook_secret: SecretStr = Field(
